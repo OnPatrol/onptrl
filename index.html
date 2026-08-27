@@ -214,6 +214,7 @@
     <div class="user-badge" id="userBadge" style="display:none;">
       <span id="userBadgeText"></span>
       <button class="btn" id="claimAdminBtn" style="width:auto; padding:6px 10px; font-size:11px; display:none;">Have an admin code?</button>
+      <button class="btn" id="joinSiteBtn" style="width:auto; padding:6px 10px; font-size:11px; display:none;">Join a site</button>
       <button class="btn" id="signOutBtn" style="width:auto; padding:6px 10px; font-size:11px;">Sign out</button>
     </div>
     <div class="tabs">
@@ -228,44 +229,49 @@
       <div class="phone">
         <div class="phone-notch"></div>
 
-        <div class="cam-box" id="camBox">
-          <div class="cam-placeholder" id="camPlaceholder">Camera off.<br>Tap "Start camera" to auto-scan a QR,<br>or use manual scan below.</div>
-          <video id="video" playsinline style="display:none;"></video>
-          <canvas id="canvas" style="display:none;"></canvas>
-          <div class="scan-frame" id="scanFrame" style="display:none;"></div>
+        <div id="guardNoSiteGate" style="display:none; text-align:center; padding:30px 10px;">
+          <div style="font-size:14px; font-weight:600; margin-bottom:8px;">You haven't joined a site yet</div>
+          <div class="result-meta" style="margin-bottom:16px;">Ask your admin for your site code, then join to start scanning.</div>
+          <button class="btn btn-primary" id="guardJoinSiteBtn" style="width:auto; padding:9px 16px;">Join a site</button>
         </div>
 
-        <div class="top-row">
-          <button class="btn" id="camToggleBtn" style="flex:1;">Start camera</button>
-          <button class="icon-btn on" id="soundToggleBtn" title="Sound notifications">🔊</button>
-        </div>
+        <div id="guardMainContent">
+          <div class="field-label" style="margin-top:0;">Site</div>
+          <div id="guardSiteName" style="font-family:var(--mono); font-size:13px; padding:2px 0 10px; font-weight:600;">—</div>
 
-        <div class="field-label">Site</div>
-        <select id="siteScanSelect"></select>
-
-        <div class="field-label">Patrol route</div>
-        <select id="dutyRouteSelect"></select>
-
-        <div class="patrol-card" id="guardPatrolCard" style="display:none;">
-          <div class="patrol-card-head">
-            <span class="patrol-card-title">Your patrol</span>
-            <span class="status-pill" id="guardPatrolStatus"></span>
+          <div class="cam-box" id="camBox">
+            <div class="cam-placeholder" id="camPlaceholder">Camera off.<br>Tap "Start camera" to auto-scan a QR,<br>or use manual scan below.</div>
+            <video id="video" playsinline style="display:none;"></video>
+            <canvas id="canvas" style="display:none;"></canvas>
+            <div class="scan-frame" id="scanFrame" style="display:none;"></div>
           </div>
-          <div id="guardPatrolRouteName" style="font-size:13px; font-weight:600;"></div>
-          <div class="patrol-countdown" id="guardPatrolCountdown"></div>
-          <div class="cp-progress" id="guardPatrolCps"></div>
-        </div>
 
-        <div class="field-label">Manual checkpoint scan (if camera can't read the code)</div>
-        <select id="cpSelect"></select>
-        <div class="btn-row">
-          <button class="btn btn-primary" id="manualScanBtn">Manual scan</button>
-        </div>
-        <div class="result-meta" id="manualScanStatus" style="margin-top:8px;"></div>
+          <div class="top-row">
+            <button class="btn" id="camToggleBtn" style="flex:1;">Start camera</button>
+            <button class="icon-btn on" id="soundToggleBtn" title="Sound notifications">🔊</button>
+          </div>
 
-        <div class="result-card" id="resultCard">
-          <div class="result-title" id="resultTitle"></div>
-          <div class="result-meta" id="resultMeta"></div>
+          <div class="patrol-card" id="guardPatrolCard" style="display:none;">
+            <div class="patrol-card-head">
+              <span class="patrol-card-title">Your patrol</span>
+              <span class="status-pill" id="guardPatrolStatus"></span>
+            </div>
+            <div id="guardPatrolRouteName" style="font-size:13px; font-weight:600;"></div>
+            <div class="patrol-countdown" id="guardPatrolCountdown"></div>
+            <div class="cp-progress" id="guardPatrolCps"></div>
+          </div>
+
+          <div class="field-label">Manual checkpoint scan (if camera can't read the code)</div>
+          <select id="cpSelect"></select>
+          <div class="btn-row">
+            <button class="btn btn-primary" id="manualScanBtn">Manual scan</button>
+          </div>
+          <div class="result-meta" id="manualScanStatus" style="margin-top:8px;"></div>
+
+          <div class="result-card" id="resultCard">
+            <div class="result-title" id="resultTitle"></div>
+            <div class="result-meta" id="resultMeta"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -286,6 +292,7 @@
       <button class="tab-btn" data-admin-view="guards">Routes</button>
       <button class="tab-btn" data-admin-view="patrols">Patrols</button>
       <button class="tab-btn" data-admin-view="alerts">Alert settings</button>
+      <button class="tab-btn" data-admin-view="invites">Admin invites</button>
     </div>
 
     <div class="admin-view active" id="admin-sites">
@@ -301,7 +308,7 @@
         </div>
         <div class="table-scroll">
         <table style="margin-top:10px;">
-          <thead><tr><th>Site</th><th>Address</th><th>Checkpoints</th><th>Routes</th><th></th></tr></thead>
+          <thead><tr><th>Site</th><th>Address</th><th>Site code</th><th>Checkpoints</th><th>Routes</th><th></th></tr></thead>
           <tbody id="siteTableBody"></tbody>
         </table>
         </div>
@@ -484,6 +491,25 @@
         <div class="result-meta" id="alertsSavedMsg" style="margin-top:10px; display:none; color:var(--success);">Settings saved.</div>
       </div>
     </div>
+
+    <div class="admin-view" id="admin-invites">
+      <div class="panel" style="max-width:560px;">
+        <h2>Admin invite codes</h2>
+        <div class="result-meta" style="margin-bottom:14px;">Generate a one-time code and share it privately with the person you want to promote to admin. They'll enter it during sign up (or later via "Claim admin access").</div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="generateInviteBtn">Generate new code</button>
+        </div>
+        <div class="result-meta" id="generateInviteMsg" style="margin-top:10px; display:none;"></div>
+
+        <div class="field-label" style="margin-top:20px;">Existing codes</div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Code</th><th>Created</th><th>Status</th></tr></thead>
+            <tbody id="inviteCodesBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   </div>
 
 </div>
@@ -527,6 +553,22 @@
   </div>
 </div>
 
+<div class="qr-modal-bg" id="joinSiteModalBg">
+  <div class="detail-modal">
+    <h2 style="margin:0 0 4px; font-size:16px;">Join a site</h2>
+    <div class="result-meta" style="margin-bottom:14px;">Enter the site code your admin gave you.</div>
+    <div id="joinSiteError" class="result-meta" style="color:var(--danger); display:none; margin-bottom:10px; font-family:var(--sans);"></div>
+
+    <div class="field-label" style="margin-top:0;">Site code</div>
+    <input type="text" id="joinSiteCode" placeholder="Site code">
+
+    <div class="btn-row" style="margin-top:14px;">
+      <button class="btn" id="joinSiteCancelBtn">Cancel</button>
+      <button class="btn btn-primary" id="joinSiteSubmitBtn">Join site</button>
+    </div>
+  </div>
+</div>
+
 <div class="qr-modal-bg show auth-gate" id="authGate">
   <div class="detail-modal">
     <h2 style="margin:0 0 4px; font-size:16px;">Patrol Verify</h2>
@@ -544,9 +586,22 @@
       <input type="text" id="authFullName" placeholder="Jane Guard">
     </div>
 
+    <div id="authRoleWrap" style="display:none;">
+      <div class="field-label">Sign up as</div>
+      <div class="tabs" style="display:flex;">
+        <button type="button" class="tab-btn active" id="authRoleGuardBtn" data-role="guard" style="flex:1;">Guard</button>
+        <button type="button" class="tab-btn" id="authRoleAdminBtn" data-role="admin" style="flex:1;">Admin</button>
+      </div>
+    </div>
+
     <div id="authInviteWrap" style="display:none;">
       <div class="field-label">Admin invite code</div>
-      <input type="text" id="authInviteCode" placeholder="Leave blank to sign up as a guard">
+      <input type="text" id="authInviteCode" placeholder="Enter the code you were given">
+    </div>
+
+    <div id="authSiteCodeWrap" style="display:none;">
+      <div class="field-label">Site code</div>
+      <input type="text" id="authSiteCode" placeholder="Ask your admin for your site's code">
     </div>
 
     <div class="btn-row">
@@ -574,6 +629,7 @@ let routes = [];
 let schedules = [];
 let scans = [];
 let activeSiteId = null;
+let guardSiteId = null;
 // Checkpoints tapped (in order) while building a new route in the admin UI.
 let routeBuilderOrder = [];
 let alertSettings = { dashboard: true, sms: false, email: false, escalation: 3 };
@@ -754,7 +810,7 @@ function rowToScan(row){
 async function loadSites(){
   const { data, error } = await sb.from('sites').select('*').order('created_at');
   if (error){ showToast('Could not load sites', error.message, 'danger'); return; }
-  sites = (data || []).map(s => ({ id: s.id, name: s.name, address: s.address || '—' }));
+  sites = (data || []).map(s => ({ id: s.id, name: s.name, address: s.address || '—', siteCode: s.site_code }));
   if (!activeSiteId || !sites.some(s => s.id === activeSiteId)){
     activeSiteId = sites[0] ? sites[0].id : null;
   }
@@ -805,6 +861,50 @@ async function loadAlertSettingsForActiveSite(){
     : { dashboard: true, sms: false, email: false, escalation: 3 };
   renderAlertsForm();
 }
+async function loadInviteCodes(){
+  const { data, error } = await sb.from('admin_invite_codes').select('*').order('created_at', { ascending: false });
+  if (error){ showToast('Could not load invite codes', error.message, 'danger'); return; }
+  const body = document.getElementById('inviteCodesBody');
+  if (!data || !data.length){
+    body.innerHTML = '<tr><td colspan="3" class="empty">No invite codes yet.</td></tr>';
+    return;
+  }
+  body.innerHTML = data.map(row => `
+    <tr>
+      <td>${row.code}</td>
+      <td>${new Date(row.created_at).toLocaleString()}</td>
+      <td>${row.used_by ? `<span class="badge rejected">Used</span>` : `<span class="badge accepted">Unused</span>`}</td>
+    </tr>
+  `).join('');
+}
+
+function generateInviteCode(){
+  const bytes = new Uint8Array(15);
+  crypto.getRandomValues(bytes);
+  const b32 = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I to avoid ambiguity
+  let out = '';
+  for (const b of bytes) out += b32[b % b32.length];
+  return out.match(/.{1,4}/g).join('-');
+}
+
+document.getElementById('generateInviteBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('generateInviteBtn');
+  const msg = document.getElementById('generateInviteMsg');
+  btn.disabled = true;
+  const code = generateInviteCode();
+  const { error } = await sb.from('admin_invite_codes').insert({ code });
+  if (error){
+    msg.textContent = 'Could not generate code — ' + error.message;
+    msg.style.color = 'var(--danger)';
+  } else {
+    msg.textContent = 'New code: ' + code + ' — copy it now and share it privately.';
+    msg.style.color = 'var(--success)';
+  }
+  msg.style.display = 'block';
+  btn.disabled = false;
+  await loadInviteCodes();
+});
+
 async function loadAllData(){
   await loadSites();
   await loadCheckpoints();
@@ -812,10 +912,12 @@ async function loadAllData(){
   await loadSchedules();
   await loadScans();
   await loadAlertSettingsForActiveSite();
+  if (profile && profile.role === 'admin') await loadInviteCodes();
 }
 
 // ---------------- Auth ----------------
 let authMode = 'signin';
+let authSignupRole = 'guard';
 let notificationInterval = null;
 
 function showAuthGate(message){
@@ -829,10 +931,21 @@ function showAuthGate(message){
   }
 }
 
+function setAuthSignupRole(role){
+  authSignupRole = role;
+  document.getElementById('authRoleGuardBtn').classList.toggle('active', role === 'guard');
+  document.getElementById('authRoleAdminBtn').classList.toggle('active', role === 'admin');
+  document.getElementById('authInviteWrap').style.display = role === 'admin' ? 'block' : 'none';
+  document.getElementById('authSiteCodeWrap').style.display = role === 'guard' ? 'block' : 'none';
+  if (role === 'guard') document.getElementById('authInviteCode').value = '';
+  else document.getElementById('authSiteCode').value = '';
+}
+
 function setAuthMode(mode){
   authMode = mode;
   document.getElementById('authFullNameWrap').style.display = mode === 'signup' ? 'block' : 'none';
-  document.getElementById('authInviteWrap').style.display = mode === 'signup' ? 'block' : 'none';
+  document.getElementById('authRoleWrap').style.display = mode === 'signup' ? 'block' : 'none';
+  setAuthSignupRole('guard');
   document.getElementById('authSubmitBtn').textContent = mode === 'signup' ? 'Create account' : 'Sign in';
   document.getElementById('authModeToggle').textContent = mode === 'signup' ? 'Already have an account? Sign in' : 'Need an account? Sign up';
   document.getElementById('authError').style.display = 'none';
@@ -842,6 +955,9 @@ document.getElementById('authModeToggle').addEventListener('click', e => {
   e.preventDefault();
   setAuthMode(authMode === 'signin' ? 'signup' : 'signin');
 });
+
+document.getElementById('authRoleGuardBtn').addEventListener('click', () => setAuthSignupRole('guard'));
+document.getElementById('authRoleAdminBtn').addEventListener('click', () => setAuthSignupRole('admin'));
 
 document.getElementById('authSubmitBtn').addEventListener('click', async () => {
   const email = document.getElementById('authEmail').value.trim();
@@ -854,23 +970,48 @@ document.getElementById('authSubmitBtn').addEventListener('click', async () => {
     errEl.style.display = 'block';
     return;
   }
+  if (authMode === 'signup' && authSignupRole === 'admin' && !document.getElementById('authInviteCode').value.trim()){
+    errEl.textContent = 'An admin invite code is required to sign up as an admin.';
+    errEl.style.color = 'var(--danger)';
+    errEl.style.display = 'block';
+    return;
+  }
+  if (authMode === 'signup' && authSignupRole === 'guard' && !document.getElementById('authSiteCode').value.trim()){
+    errEl.textContent = 'A site code is required to sign up as a guard.';
+    errEl.style.color = 'var(--danger)';
+    errEl.style.display = 'block';
+    return;
+  }
   const btn = document.getElementById('authSubmitBtn');
   btn.disabled = true;
   try{
     if (authMode === 'signup'){
       const fullName = document.getElementById('authFullName').value.trim();
+      const wantsAdmin = authSignupRole === 'admin';
+      const inviteCode = document.getElementById('authInviteCode').value.trim();
+      const siteCode = document.getElementById('authSiteCode').value.trim();
       const { data, error } = await sb.auth.signUp({ email, password, options: { data: { full_name: fullName } } });
       if (error) throw error;
 
-      const inviteCode = document.getElementById('authInviteCode').value.trim();
-      if (inviteCode && data.session){
+      if (wantsAdmin && data.session){
         const { data: claimed, error: claimErr } = await sb.rpc('claim_admin', { p_code: inviteCode });
         if (claimErr || !claimed){
-          showToast('Signed up as guard', 'That invite code was invalid or already used.', 'warn');
+          showToast('Signed up as guard', 'That invite code was invalid or already used — your account was created with guard access instead.', 'warn');
+        } else {
+          showToast('Admin access granted', '', 'success');
+        }
+      } else if (!wantsAdmin && data.session){
+        const { data: joinedSiteId, error: joinErr } = await sb.rpc('join_site', { p_site_code: siteCode });
+        if (joinErr || !joinedSiteId){
+          showToast('Account created', 'That site code was invalid — use "Join a site" after signing in to try again.', 'warn');
+        } else {
+          showToast('Joined site', '', 'success');
         }
       }
       if (!data.session){
-        errEl.textContent = 'Account created — check your email to confirm it, then sign in.';
+        errEl.textContent = wantsAdmin
+          ? 'Account created — check your email to confirm it, then sign in and use "Claim admin access" with your invite code.'
+          : 'Account created — check your email to confirm it, then sign in and use "Join a site" with your site code.';
         errEl.style.color = 'var(--text)';
         errEl.style.display = 'block';
         setAuthMode('signin');
@@ -928,6 +1069,47 @@ document.getElementById('claimAdminSubmitBtn').addEventListener('click', async (
   }
 });
 
+function openJoinSiteModal(){
+  document.getElementById('joinSiteError').style.display = 'none';
+  document.getElementById('joinSiteCode').value = '';
+  document.getElementById('joinSiteModalBg').classList.add('show');
+}
+
+document.getElementById('joinSiteBtn').addEventListener('click', openJoinSiteModal);
+document.getElementById('guardJoinSiteBtn').addEventListener('click', openJoinSiteModal);
+document.getElementById('joinSiteCancelBtn').addEventListener('click', () => {
+  document.getElementById('joinSiteModalBg').classList.remove('show');
+});
+
+document.getElementById('joinSiteSubmitBtn').addEventListener('click', async () => {
+  const code = document.getElementById('joinSiteCode').value.trim();
+  const errEl = document.getElementById('joinSiteError');
+  errEl.style.display = 'none';
+  if (!code){
+    errEl.textContent = 'Enter a site code.';
+    errEl.style.display = 'block';
+    return;
+  }
+  const btn = document.getElementById('joinSiteSubmitBtn');
+  btn.disabled = true;
+  try{
+    const { data: joinedSiteId, error } = await sb.rpc('join_site', { p_site_code: code });
+    if (error || !joinedSiteId){
+      errEl.textContent = 'That site code is invalid, or you already belong to a site.';
+      errEl.style.display = 'block';
+      return;
+    }
+    document.getElementById('joinSiteModalBg').classList.remove('show');
+    showToast('Joined site', '', 'success');
+    await loadProfileAndApp();
+  } catch(err){
+    errEl.textContent = err.message;
+    errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 async function loadProfileAndApp(){
   const { data: prof, error } = await sb.from('profiles').select('*').eq('id', session.user.id).single();
   if (error || !prof){
@@ -935,6 +1117,7 @@ async function loadProfileAndApp(){
     return;
   }
   profile = prof;
+  guardSiteId = profile.site_id || null;
 
   document.getElementById('authGate').classList.remove('show');
   document.getElementById('userBadge').style.display = 'flex';
@@ -943,14 +1126,21 @@ async function loadProfileAndApp(){
 
   const adminTabBtn = document.querySelector('.tab-btn[data-view="admin"]');
   const claimAdminBtn = document.getElementById('claimAdminBtn');
+  const joinSiteBtn = document.getElementById('joinSiteBtn');
   if (profile.role === 'admin'){
     adminTabBtn.style.display = '';
     claimAdminBtn.style.display = 'none';
+    joinSiteBtn.style.display = 'none';
   } else {
     adminTabBtn.style.display = 'none';
     claimAdminBtn.style.display = '';
+    joinSiteBtn.style.display = guardSiteId ? 'none' : '';
     document.querySelector('.tab-btn[data-view="guard"]').click();
   }
+
+  const hasSite = profile.role === 'admin' || !!guardSiteId;
+  document.getElementById('guardNoSiteGate').style.display = hasSite ? 'none' : 'block';
+  document.getElementById('guardMainContent').style.display = hasSite ? 'block' : 'none';
 
   await loadAllData();
   renderAll();
@@ -999,9 +1189,9 @@ function subscribeRealtime(){
 // ---------------- Rendering ----------------
 function renderCpSelect(){
   const sel = document.getElementById('cpSelect');
-  const siteScan = document.getElementById('siteScanSelect').value || activeSiteId;
-  const scoped = checkpoints.filter(c => c.siteId === siteScan);
-  sel.innerHTML = scoped.map(c => `<option value="${c.qrId}">${c.qrId} — ${c.name}</option>`).join('')
+  if (!sel) return;
+  const scoped = checkpoints.filter(c => c.siteId === guardSiteId);
+  sel.innerHTML = scoped.map(c => `<option value="${c.qrId}">${c.name}</option>`).join('')
     || '<option value="">No checkpoints at this site</option>';
 }
 
@@ -1030,6 +1220,7 @@ function renderCpTable(){
       cp.radius = newRadius;
       const { error } = await sb.from('checkpoints').update({ radius_m: newRadius }).eq('id', cp.id);
       if (error){ cp.radius = prevRadius; inp.value = prevRadius; showToast('Could not update radius', error.message, 'danger'); }
+      else showToast('Radius updated', `${cp.name} now accepts scans within ${newRadius}m.`, 'success');
     });
   });
 
@@ -1041,8 +1232,10 @@ function renderCpTable(){
     btn.addEventListener('click', async () => {
       const cp = checkpoints.find(c => c.qrId === btn.dataset.del);
       if (!cp) return;
+      if (!confirm(`Delete checkpoint "${cp.name}"? Any routes or schedules that use it will stop working until you update them. This can't be undone.`)) return;
       const { error } = await sb.from('checkpoints').delete().eq('id', cp.id);
       if (error){ showToast('Could not delete checkpoint', error.message, 'danger'); return; }
+      showToast('Checkpoint deleted', `${cp.name} was removed.`, 'success');
       await loadAllData();
       renderAll();
     });
@@ -1093,13 +1286,11 @@ function renderLog(){
   }).join('');
 }
 
-function renderDutyRouteSelect(){
-  const sel = document.getElementById('dutyRouteSelect');
-  const siteScanEl = document.getElementById('siteScanSelect');
-  const siteScan = (siteScanEl && siteScanEl.value) || activeSiteId;
-  const scoped = routes.filter(r => r.siteId === siteScan);
-  sel.innerHTML = scoped.map(r => `<option value="${r.id}">${r.name}</option>`).join('')
-    || '<option value="">No routes at this site</option>';
+function renderGuardSiteName(){
+  const el = document.getElementById('guardSiteName');
+  if (!el) return;
+  const s = sites.find(s => s.id === guardSiteId);
+  el.textContent = s ? s.name : '—';
 }
 
 function renderRouteBuilder(){
@@ -1150,6 +1341,7 @@ async function persistRouteOrder(route){
   }).filter(Boolean);
   const { error } = await sb.rpc('reorder_route_checkpoints', { p_route_id: route.id, p_checkpoint_ids: checkpointIds });
   if (error) showToast('Could not save new order', error.message, 'danger');
+  else showToast('Order saved', `${route.name} checkpoint order updated.`, 'success');
 }
 
 function renderRouteTable(){
@@ -1210,11 +1402,15 @@ function renderRouteTable(){
     r.strictOrder = e.target.checked;
     const { error } = await sb.from('routes').update({ strict_order: e.target.checked }).eq('id', r.id);
     if (error){ r.strictOrder = prev; e.target.checked = prev; showToast('Could not update order mode', error.message, 'danger'); }
+    else showToast('Route updated', `${r.name} now ${e.target.checked ? 'requires' : "doesn't require"} checkpoints in strict order.`, 'success');
   }));
   body.querySelectorAll('[data-del-route]').forEach(btn => {
     btn.addEventListener('click', async () => {
+      const r = routes.find(rt => rt.id === btn.dataset.delRoute);
+      if (!confirm(`Delete route "${r ? r.name : ''}"? Any schedules using this route will also stop working. This can't be undone.`)) return;
       const { error } = await sb.from('routes').delete().eq('id', btn.dataset.delRoute);
       if (error){ showToast('Could not delete route', error.message, 'danger'); return; }
+      showToast('Route deleted', r ? `${r.name} was removed.` : '', 'success');
       await loadAllData();
       renderAll();
     });
@@ -1223,7 +1419,7 @@ function renderRouteTable(){
 
 function renderSiteSwitchers(){
   const opts = sites.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
-  ['siteQuickSwitchCp','siteQuickSwitchGuards','siteQuickSwitchPatrols','siteQuickSwitchAlerts','siteScanSelect'].forEach(id => {
+  ['siteQuickSwitchCp','siteQuickSwitchGuards','siteQuickSwitchPatrols','siteQuickSwitchAlerts'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     el.innerHTML = opts;
@@ -1236,7 +1432,7 @@ function renderSiteTable(){
   const q = (document.getElementById('siteSearch').value || '').toLowerCase();
   const filtered = sites.filter(s => s.name.toLowerCase().includes(q) || s.address.toLowerCase().includes(q));
   if (filtered.length === 0){
-    body.innerHTML = '<tr><td colspan="5" style="font-family:var(--sans); color:var(--muted);">No sites match.</td></tr>';
+    body.innerHTML = '<tr><td colspan="6" style="font-family:var(--sans); color:var(--muted);">No sites match.</td></tr>';
     return;
   }
   body.innerHTML = filtered.map(s => {
@@ -1246,6 +1442,7 @@ function renderSiteTable(){
       <tr>
         <td style="font-family:var(--sans); font-weight:600;">${s.name}</td>
         <td style="font-family:var(--sans); color:var(--muted);">${s.address}</td>
+        <td style="letter-spacing:0.5px;">${s.siteCode || '—'}</td>
         <td>${cpCount}</td>
         <td>${routeCount}</td>
         <td style="display:flex; gap:6px;">
@@ -1265,8 +1462,11 @@ function renderSiteTable(){
   body.querySelectorAll('[data-del-site]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const id = btn.dataset.delSite;
+      const s = sites.find(st => st.id === id);
+      if (!confirm(`Delete site "${s ? s.name : ''}"? This permanently removes all of its checkpoints, routes, schedules, and scan history. This can't be undone.`)) return;
       const { error } = await sb.from('sites').delete().eq('id', id);
       if (error){ showToast('Could not delete site', error.message, 'danger'); return; }
+      showToast('Site deleted', s ? `${s.name} and all its data were removed.` : '', 'success');
       await loadAllData();
       if (!sites.some(s => s.id === activeSiteId)) setActiveSite(sites[0] ? sites[0].id : null);
       renderAll();
@@ -1306,8 +1506,10 @@ function renderSchedTable(){
   }).join('');
   body.querySelectorAll('[data-del-sched]').forEach(btn => {
     btn.addEventListener('click', async () => {
+      if (!confirm('Delete this schedule? Guards will no longer be prompted to run this patrol. This can\'t be undone.')) return;
       const { error } = await sb.from('schedules').delete().eq('id', btn.dataset.delSched);
       if (error){ showToast('Could not delete schedule', error.message, 'danger'); return; }
+      showToast('Schedule deleted', '', 'success');
       await loadSchedules();
       renderAll();
     });
@@ -1442,18 +1644,28 @@ function renderPatrolsAdmin(){
 let notifiedFiveMin = new Set(), notifiedStart = new Set(), notifiedLate = new Set();
 
 function currentDutyRouteNextInstance(){
-  const routeSel = document.getElementById('dutyRouteSelect');
-  const routeId = routeSel ? routeSel.value : null;
-  if (!routeId) return null;
-  const sched = schedules.find(s => s.routeId === routeId && s.active !== false);
-  if (!sched) return null;
+  if (!guardSiteId) return null;
+  const siteRouteIds = new Set(routes.filter(r => r.siteId === guardSiteId).map(r => r.id));
+  const siteScheds = schedules.filter(s => siteRouteIds.has(s.routeId) && s.active !== false);
+  if (!siteScheds.length) return null;
+
   const now = nowMs();
   const dayMs = 24*60*60*1000;
-  const insts = generateInstances(sched, now - dayMs, now + dayMs);
-  const active = insts.find(i => ['due_soon','active','late'].includes(instanceStatus(i, now).status));
-  if (active) return { inst: active };
-  const next = insts.find(i => instanceStatus(i, now).status === 'upcoming');
-  if (next) return { inst: next };
+  let allInsts = [];
+  siteScheds.forEach(sched => { allInsts = allInsts.concat(generateInstances(sched, now - dayMs, now + dayMs)); });
+
+  // Prefer whatever's happening right now (active/due soon/late), earliest first.
+  const inProgress = allInsts
+    .filter(i => ['due_soon','active','late'].includes(instanceStatus(i, now).status))
+    .sort((a,b) => a.expectedTime - b.expectedTime);
+  if (inProgress[0]) return { inst: inProgress[0] };
+
+  // Otherwise the soonest upcoming one.
+  const upcoming = allInsts
+    .filter(i => instanceStatus(i, now).status === 'upcoming')
+    .sort((a,b) => a.expectedTime - b.expectedTime);
+  if (upcoming[0]) return { inst: upcoming[0] };
+
   return null;
 }
 
@@ -1480,7 +1692,11 @@ function renderGuardPatrolCard(){
   countdownEl.className = 'patrol-countdown ' + (st.status === 'late' ? 'danger' : st.status === 'due_soon' ? 'warn' : st.status === 'active' ? 'ok' : '');
 
   const cpsEl = document.getElementById('guardPatrolCps');
-  cpsEl.innerHTML = st.cpIds.map(id => `<span class="cp-dot ${st.doneCps.includes(id) ? 'done' : ''}">${id}${st.doneCps.includes(id) ? ' ✓' : ''}</span>`).join('');
+  cpsEl.innerHTML = st.cpIds.map(id => {
+    const cp = checkpoints.find(c => c.qrId === id);
+    const label = cp ? cp.name : id;
+    return `<span class="cp-dot ${st.doneCps.includes(id) ? 'done' : ''}">${label}${st.doneCps.includes(id) ? ' ✓' : ''}</span>`;
+  }).join('');
 }
 
 function checkGuardNotifications(){
@@ -1520,11 +1736,11 @@ function renderAlertsForm(){
 function renderAll(){
   renderSiteSwitchers();
   renderSiteTable();
+  renderGuardSiteName();
   renderCpSelect();
   renderCpTable();
   renderStats();
   renderLog();
-  renderDutyRouteSelect();
   renderRouteBuilder();
   renderRouteTable();
   renderPatrolsAdmin();
@@ -1569,7 +1785,7 @@ async function processScan(qrId){
     result = 'ACCEPTED';
   }
 
-  const siteId = cp ? cp.siteId : (document.getElementById('siteScanSelect').value || activeSiteId);
+  const siteId = cp ? cp.siteId : guardSiteId;
   const insertPayload = {
     site_id: siteId,
     checkpoint_id: cp ? cp.id : null,
@@ -1771,6 +1987,7 @@ document.getElementById('addCpBtn').addEventListener('click', async () => {
   document.getElementById('newCpRadiusVal').textContent = '15 m';
   document.getElementById('detectCpStatus').textContent = '';
   document.getElementById('cpRadiusHint').textContent = 'Stand at the checkpoint and tap "Use my location" — radius auto-suggests from GPS accuracy, then adjust if needed.';
+  showToast('Checkpoint added', `${name} (${qrId}) is ready to scan.`, 'success');
   await loadCheckpoints();
   renderAll();
 });
@@ -1783,6 +2000,7 @@ document.getElementById('addSiteBtn').addEventListener('click', async () => {
   if (error){ showToast('Could not add site', error.message, 'danger'); return; }
   document.getElementById('newSiteName').value = '';
   document.getElementById('newSiteAddress').value = '';
+  showToast('Site added', `${name} is ready to configure. Share code ${data.site_code} with its guards.`, 'success');
   await loadSites();
   setActiveSite(data.id);
   renderAll();
@@ -1797,19 +2015,23 @@ document.getElementById('siteSearch').addEventListener('input', renderSiteTable)
   });
 });
 
-document.getElementById('siteScanSelect').addEventListener('change', () => {
-  renderCpSelect();
-  renderDutyRouteSelect();
-  renderGuardPatrolCard();
-});
-
-document.getElementById("dutyRouteSelect").addEventListener("change", renderGuardPatrolCard);
-
+let muteTimeout = null;
 document.getElementById('soundToggleBtn').addEventListener('click', (e) => {
   soundOn = !soundOn;
   e.target.classList.toggle('on', soundOn);
   e.target.textContent = soundOn ? '🔊' : '🔇';
-  if (soundOn) beep(700, 90, 'sine', 0.12);
+  if (muteTimeout){ clearTimeout(muteTimeout); muteTimeout = null; }
+  if (soundOn){
+    beep(700, 90, 'sine', 0.12);
+  } else {
+    muteTimeout = setTimeout(() => {
+      soundOn = true;
+      e.target.classList.add('on');
+      e.target.textContent = '🔊';
+      muteTimeout = null;
+      showToast('Sound re-enabled', 'Mute automatically expires after 60 seconds so alerts don\'t stay silenced by accident.', '');
+    }, 60000);
+  }
 });
 
 document.getElementById('addRouteBtn').addEventListener('click', async () => {
@@ -1827,6 +2049,9 @@ document.getElementById('addRouteBtn').addEventListener('click', async () => {
   if (rcRows.length){
     const { error: rcError } = await sb.from('route_checkpoints').insert(rcRows);
     if (rcError) showToast('Route created but checkpoints failed to save', rcError.message, 'danger');
+    else showToast('Route added', `${name} was created with ${rcRows.length} checkpoint${rcRows.length === 1 ? '' : 's'}.`, 'success');
+  } else {
+    showToast('Route added', `${name} was created.`, 'success');
   }
 
   document.getElementById('newRouteName').value = '';
@@ -1882,6 +2107,7 @@ document.getElementById('addSchedBtn').addEventListener('click', async () => {
   });
   if (error){ showToast('Could not add schedule', error.message, 'danger'); return; }
   document.getElementById('newSchedIntervalCustom').value = '';
+  showToast('Schedule added', `Guards will be prompted every ${intervalMinutes}m between ${shiftStart}\u2013${shiftEnd}.`, 'success');
   await loadSchedules();
   renderAll();
 });
