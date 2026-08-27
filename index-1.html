@@ -1,0 +1,1914 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Patrol Verify</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<style>
+  :root{
+    --bg:#0D1117;
+    --panel:#161B22;
+    --panel-2:#1C2330;
+    --border:#2A313C;
+    --text:#E6EDF3;
+    --muted:#8B96A5;
+    --accent:#4EA1FF;
+    --accent-dim:#1E3A5C;
+    --success:#3FB878;
+    --success-dim:#123324;
+    --danger:#E5484D;
+    --danger-dim:#3A1418;
+    --warn:#F0A020;
+    --warn-dim:#3A2A0A;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--text); font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;
+  }
+  .app{max-width:1100px; margin:0 auto; padding:20px;}
+  .topbar{display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; flex-wrap:wrap; gap:12px;}
+  .brand{display:flex; align-items:center; gap:10px;}
+  .brand-dot{width:10px; height:10px; border-radius:50%; background:var(--success); box-shadow:0 0 0 3px var(--success-dim);}
+  .brand h1{font-size:16px; margin:0; font-weight:600; letter-spacing:0.2px;}
+  .brand p{margin:0; font-size:12px; color:var(--muted);}
+  .tabs{display:flex; gap:6px; background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:4px; flex-wrap:wrap;}
+  .tab-btn{
+    background:transparent; border:none; color:var(--muted); padding:8px 16px;
+    border-radius:7px; font-size:13px; font-weight:600; cursor:pointer; font-family:var(--sans);
+  }
+  .tab-btn.active{background:var(--accent-dim); color:var(--accent);}
+  .view{display:none;}
+  .view.active{display:block;}
+  .admin-view{display:none;}
+  .admin-view.active{display:block;}
+
+  /* ---- Guard view ---- */
+  .phone-wrap{display:flex; justify-content:center;}
+  .phone{
+    width:340px; max-width:100%; background:var(--panel); border:1px solid var(--border); border-radius:28px;
+    padding:18px; position:relative;
+  }
+  .phone-notch{width:60px; height:5px; background:var(--border); border-radius:3px; margin:0 auto 14px;}
+  .cam-box{
+    width:100%; aspect-ratio:1/1; background:#000; border-radius:14px; overflow:hidden; position:relative;
+    border:1px solid var(--border); display:flex; align-items:center; justify-content:center;
+  }
+  .cam-box video, .cam-box canvas{width:100%; height:100%; object-fit:cover; position:absolute; top:0; left:0;}
+  .cam-placeholder{color:var(--muted); font-size:12px; text-align:center; padding:20px; z-index:1;}
+  .scan-frame{
+    position:absolute; inset:15%; border:2px solid var(--accent); border-radius:12px; z-index:2;
+    box-shadow:0 0 0 2000px rgba(0,0,0,0.35);
+  }
+  .btn{
+    background:var(--panel-2); color:var(--text); border:1px solid var(--border); border-radius:9px;
+    padding:11px 16px; font-size:13px; font-weight:600; cursor:pointer; font-family:var(--sans); width:100%;
+  }
+  .btn:hover{border-color:var(--accent);}
+  .btn-primary{background:var(--accent); border-color:var(--accent); color:#04121F;}
+  .btn-primary:hover{opacity:0.9;}
+  .btn-row{display:flex; gap:8px; margin-top:10px;}
+  .btn-row .btn{flex:1;}
+  .field-label{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; margin:16px 0 6px;}
+  select, input[type=text], input[type=password], input[type=email]{
+    width:100%; background:var(--panel-2); border:1px solid var(--border); color:var(--text);
+    padding:9px 10px; border-radius:8px; font-size:13px; font-family:var(--mono);
+  }
+  .auth-gate{z-index:100;}
+  .auth-gate .detail-modal{max-width:380px;}
+  .user-badge{display:flex; align-items:center; gap:10px; font-size:12px; color:var(--muted); flex-wrap:wrap;}
+  .user-badge .role-pill{font-family:var(--mono); font-size:10px; padding:2px 8px; border-radius:20px; background:var(--accent-dim); color:var(--accent); text-transform:uppercase;}
+  .slider-row{display:flex; align-items:center; gap:10px; margin-top:6px;}
+  .slider-row input[type=range]{flex:1;}
+  .slider-val{font-family:var(--mono); font-size:12px; color:var(--accent); min-width:52px; text-align:right;}
+  .toggle-row{display:flex; align-items:center; justify-content:space-between; margin-top:12px; font-size:12px; color:var(--muted);}
+  .switch{position:relative; width:38px; height:21px;}
+  .switch input{opacity:0; width:0; height:0;}
+  .slider-tog{position:absolute; inset:0; background:var(--panel-2); border:1px solid var(--border); border-radius:20px; cursor:pointer; transition:0.15s;}
+  .slider-tog:before{content:""; position:absolute; width:15px; height:15px; left:2px; top:2px; background:var(--muted); border-radius:50%; transition:0.15s;}
+  input:checked + .slider-tog{background:var(--danger-dim); border-color:var(--danger);}
+  input:checked + .slider-tog:before{transform:translateX(17px); background:var(--danger);}
+
+  .result-card{margin-top:14px; padding:12px 14px; border-radius:10px; border:1px solid var(--border); background:var(--panel-2); font-size:13px; display:none;}
+  .result-card.show{display:block;}
+  .result-card.accepted{border-color:var(--success); background:var(--success-dim);}
+  .result-card.rejected{border-color:var(--danger); background:var(--danger-dim);}
+  .result-title{font-weight:700; margin-bottom:4px;}
+  .result-meta{color:var(--muted); font-family:var(--mono); font-size:11px; line-height:1.6;}
+
+  /* ---- Admin view ---- */
+  .stat-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:20px;}
+  .stat-card{background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:14px 16px;}
+  .stat-label{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px;}
+  .stat-val{font-size:24px; font-weight:700; margin-top:4px; font-family:var(--mono);}
+  .stat-val.danger{color:var(--danger);}
+  .stat-val.warn{color:var(--warn);}
+  .stat-val.success{color:var(--success);}
+
+  .grid-2{display:grid; grid-template-columns:1.1fr 1.4fr; gap:16px; align-items:start;}
+  .panel{background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:16px;}
+  .panel h2{font-size:13px; margin:0 0 12px; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted);}
+  .cp-row{display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap;}
+  .cp-row input{flex:1; min-width:120px;}
+  .table-scroll{overflow-x:auto; -webkit-overflow-scrolling:touch;}
+  .table-scroll table{min-width:480px;}
+  table{width:100%; border-collapse:collapse; font-size:12px;}
+  th{text-align:left; color:var(--muted); font-weight:600; padding:6px 8px; border-bottom:1px solid var(--border); font-size:10px; text-transform:uppercase; letter-spacing:0.4px;}
+  td{padding:8px; border-bottom:1px solid var(--border); font-family:var(--mono); vertical-align:middle;}
+  tr:last-child td{border-bottom:none;}
+  .badge{display:inline-block; padding:2px 8px; border-radius:20px; font-size:10px; font-weight:700; font-family:var(--sans);}
+  .badge.accepted{background:var(--success-dim); color:var(--success);}
+  .badge.rejected{background:var(--danger-dim); color:var(--danger);}
+  .qr-thumb{width:28px; height:28px; border-radius:4px; background:#fff; cursor:pointer;}
+  .del-btn{background:none; border:none; color:var(--muted); cursor:pointer; font-size:14px;}
+  .del-btn:hover{color:var(--danger);}
+  .log-wrap{max-height:340px; overflow-y:auto;}
+  .log-entry{
+    display:flex; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); font-size:12px;
+    animation:slideIn 0.3s ease;
+  }
+  @keyframes slideIn{from{opacity:0; transform:translateX(-6px);} to{opacity:1; transform:translateX(0);}}
+  .log-entry:last-child{border-bottom:none;}
+  .log-bar{width:3px; border-radius:2px; flex-shrink:0;}
+  .log-bar.accepted{background:var(--success);}
+  .log-bar.rejected{background:var(--danger);}
+  .log-main{flex:1;}
+  .log-top{display:flex; justify-content:space-between; font-family:var(--mono); font-weight:600;}
+  .log-sub{color:var(--muted); font-family:var(--mono); font-size:11px; margin-top:2px;}
+  .empty{color:var(--muted); font-size:12px; text-align:center; padding:24px 0;}
+  .qr-modal-bg{position:fixed; inset:0; background:rgba(0,0,0,0.6); display:none; align-items:center; justify-content:center; z-index:50;}
+  .qr-modal-bg.show{display:flex;}
+  .qr-modal{background:#fff; border-radius:14px; padding:20px; text-align:center;}
+  .detail-modal{background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:20px; text-align:left; max-width:560px; width:92vw; max-height:80vh; overflow-y:auto;}
+  #pastPatrolsBody tr{cursor:pointer;}
+  #pastPatrolsBody tr:hover{background:var(--panel-2);}
+  .qr-modal p{color:#111; font-family:var(--mono); font-size:12px; margin:10px 0 0;}
+  .qr-modal button{margin-top:14px;}
+  @media (max-width:760px){
+    .grid-2{grid-template-columns:1fr;}
+    .stat-grid{grid-template-columns:repeat(2,1fr);}
+  }
+  @media (max-width:420px){
+    .app{padding:14px;}
+    .stat-grid{grid-template-columns:1fr 1fr; gap:8px;}
+    .stat-card{padding:10px 12px;}
+    .stat-val{font-size:20px;}
+    .tab-btn{padding:7px 11px; font-size:12px;}
+  }
+
+  /* ---- Patrols / scheduling ---- */
+  .icon-btn{
+    background:var(--panel-2); border:1px solid var(--border); color:var(--muted); border-radius:9px;
+    width:38px; height:38px; flex:0 0 auto; cursor:pointer; font-size:15px; display:flex; align-items:center; justify-content:center;
+  }
+  .icon-btn.on{color:var(--accent); border-color:var(--accent);}
+  .top-row{display:flex; gap:8px;}
+  .patrol-card{margin-top:14px; padding:12px 14px; border-radius:10px; border:1px solid var(--border); background:var(--panel-2);}
+  .patrol-card-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;}
+  .patrol-card-title{font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px;}
+  .patrol-countdown{font-family:var(--mono); font-weight:700; font-size:15px;}
+  .patrol-countdown.warn{color:var(--warn);}
+  .patrol-countdown.danger{color:var(--danger);}
+  .patrol-countdown.ok{color:var(--success);}
+  .cp-progress{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;}
+  .cp-dot{font-family:var(--mono); font-size:10px; padding:3px 7px; border-radius:20px; border:1px solid var(--border); background:var(--panel); color:var(--muted);}
+  .cp-dot.done{border-color:var(--success); color:var(--success); background:var(--success-dim);}
+  .toast-wrap{position:fixed; top:16px; right:16px; z-index:80; display:flex; flex-direction:column; gap:8px; max-width:min(300px, calc(100vw - 32px));}
+  .toast{background:var(--panel); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:8px; padding:10px 12px; font-size:12px; box-shadow:0 6px 18px rgba(0,0,0,0.4); animation:slideIn 0.2s ease;}
+  .toast.warn{border-left-color:var(--warn);}
+  .toast.danger{border-left-color:var(--danger);}
+  .toast.success{border-left-color:var(--success);}
+  .toast-title{font-weight:700; margin-bottom:2px;}
+  .toast-sub{color:var(--muted); font-family:var(--mono); font-size:11px;}
+  .inline-fields{display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end;}
+  .inline-fields .f{display:flex; flex-direction:column; gap:4px;}
+  .inline-fields label{font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.4px;}
+  .inline-fields input, .inline-fields select{background:var(--panel-2); border:1px solid var(--border); color:var(--text); padding:8px 9px; border-radius:8px; font-size:12px; font-family:var(--mono);}
+  .status-pill{display:inline-block; padding:2px 9px; border-radius:20px; font-size:10px; font-weight:700; font-family:var(--sans); white-space:nowrap;}
+  .status-pill.upcoming{background:var(--panel); color:var(--muted); border:1px solid var(--border);}
+  .status-pill.due_soon{background:var(--warn-dim); color:var(--warn);}
+  .status-pill.active{background:var(--accent-dim); color:var(--accent);}
+  .status-pill.late{background:var(--danger-dim); color:var(--danger);}
+  .status-pill.completed{background:var(--success-dim); color:var(--success);}
+  .status-pill.completed_late{background:var(--warn-dim); color:var(--warn);}
+  .status-pill.missed{background:var(--danger-dim); color:var(--danger);}
+  .progress-mini{color:var(--muted); font-family:var(--mono); font-size:11px;}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-dot"></div>
+      <div>
+        <h1>Patrol Verify</h1>
+        <p>Location-bound QR checkpoint verification</p>
+      </div>
+    </div>
+    <div class="user-badge" id="userBadge" style="display:none;">
+      <span id="userBadgeText"></span>
+      <button class="btn" id="claimAdminBtn" style="width:auto; padding:6px 10px; font-size:11px; display:none;">Have an admin code?</button>
+      <button class="btn" id="signOutBtn" style="width:auto; padding:6px 10px; font-size:11px;">Sign out</button>
+    </div>
+    <div class="tabs">
+      <button class="tab-btn active" data-view="guard">Guard scan</button>
+      <button class="tab-btn" data-view="admin">Admin</button>
+    </div>
+  </div>
+
+  <!-- GUARD VIEW -->
+  <div class="view active" id="view-guard">
+    <div class="phone-wrap">
+      <div class="phone">
+        <div class="phone-notch"></div>
+
+        <div class="cam-box" id="camBox">
+          <div class="cam-placeholder" id="camPlaceholder">Camera off.<br>Tap "Start camera" to auto-scan a QR,<br>or use manual scan below.</div>
+          <video id="video" playsinline style="display:none;"></video>
+          <canvas id="canvas" style="display:none;"></canvas>
+          <div class="scan-frame" id="scanFrame" style="display:none;"></div>
+        </div>
+
+        <div class="top-row">
+          <button class="btn" id="camToggleBtn" style="flex:1;">Start camera</button>
+          <button class="icon-btn on" id="soundToggleBtn" title="Sound notifications">🔊</button>
+        </div>
+
+        <div class="field-label">Site</div>
+        <select id="siteScanSelect"></select>
+
+        <div class="field-label">Patrol route</div>
+        <select id="dutyRouteSelect"></select>
+
+        <div class="patrol-card" id="guardPatrolCard" style="display:none;">
+          <div class="patrol-card-head">
+            <span class="patrol-card-title">Your patrol</span>
+            <span class="status-pill" id="guardPatrolStatus"></span>
+          </div>
+          <div id="guardPatrolRouteName" style="font-size:13px; font-weight:600;"></div>
+          <div class="patrol-countdown" id="guardPatrolCountdown"></div>
+          <div class="cp-progress" id="guardPatrolCps"></div>
+        </div>
+
+        <div class="field-label">Manual checkpoint scan (if camera can't read the code)</div>
+        <select id="cpSelect"></select>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="manualScanBtn">Manual scan</button>
+        </div>
+        <div class="result-meta" id="manualScanStatus" style="margin-top:8px;"></div>
+
+        <div class="result-card" id="resultCard">
+          <div class="result-title" id="resultTitle"></div>
+          <div class="result-meta" id="resultMeta"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ADMIN VIEW -->
+  <div class="view" id="view-admin">
+    <div class="stat-grid">
+      <div class="stat-card"><div class="stat-label">Total scans</div><div class="stat-val" id="statTotal">0</div></div>
+      <div class="stat-card"><div class="stat-label">Accepted</div><div class="stat-val success" id="statAccepted">0</div></div>
+      <div class="stat-card"><div class="stat-label">Rejected</div><div class="stat-val danger" id="statRejected">0</div></div>
+      <div class="stat-card"><div class="stat-label">Position alerts</div><div class="stat-val warn" id="statAlerts">0</div></div>
+    </div>
+
+    <div class="tabs" style="margin-bottom:16px; display:inline-flex;">
+      <button class="tab-btn active" data-admin-view="sites">Sites</button>
+      <button class="tab-btn" data-admin-view="overview">Checkpoints & log</button>
+      <button class="tab-btn" data-admin-view="guards">Routes</button>
+      <button class="tab-btn" data-admin-view="patrols">Patrols</button>
+      <button class="tab-btn" data-admin-view="alerts">Alert settings</button>
+    </div>
+
+    <div class="admin-view active" id="admin-sites">
+      <div class="panel">
+        <h2>Sites</h2>
+        <div class="cp-row">
+          <input type="text" id="siteSearch" placeholder="Search sites by name or address…">
+        </div>
+        <div class="cp-row">
+          <input type="text" id="newSiteName" placeholder="Site name">
+          <input type="text" id="newSiteAddress" placeholder="Address">
+          <button class="btn btn-primary" id="addSiteBtn" style="flex:0 0 auto; width:auto; padding:9px 14px;">Add site</button>
+        </div>
+        <div class="table-scroll">
+        <table style="margin-top:10px;">
+          <thead><tr><th>Site</th><th>Address</th><th>Checkpoints</th><th>Routes</th><th></th></tr></thead>
+          <tbody id="siteTableBody"></tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="admin-view" id="admin-overview">
+      <div class="panel" style="margin-bottom:16px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+        <span class="field-label" style="margin:0;">Managing site</span>
+        <select id="siteQuickSwitchCp" style="max-width:260px;"></select>
+      </div>
+    <div class="grid-2">
+      <div class="panel">
+        <h2>Checkpoints</h2>
+        <div class="cp-row">
+          <input type="text" id="newCpName" placeholder="Checkpoint name">
+        </div>
+
+        <div class="cp-row">
+          <button class="btn btn-primary" id="detectCpLocBtn" style="width:auto; padding:9px 14px;">📍 Use my location</button>
+          <span class="result-meta" id="detectCpStatus" style="align-self:center;"></span>
+        </div>
+
+        <div class="cp-row">
+          <input type="text" id="newCpLat" placeholder="Latitude" readonly>
+          <input type="text" id="newCpLng" placeholder="Longitude" readonly>
+        </div>
+
+        <div class="field-label">Detection radius</div>
+        <div class="slider-row">
+          <input type="range" id="newCpRadiusSlider" min="5" max="100" value="15" step="1">
+          <span class="slider-val" id="newCpRadiusVal">15 m</span>
+        </div>
+        <div class="result-meta" id="cpRadiusHint" style="margin-top:4px;">Stand at the checkpoint and tap "Use my location" — radius auto-suggests from GPS accuracy, then adjust if needed.</div>
+
+        <div class="btn-row">
+          <button class="btn btn-primary" id="addCpBtn">Add checkpoint</button>
+        </div>
+
+        <div class="table-scroll">
+        <table style="margin-top:14px;">
+          <thead><tr><th>QR</th><th>Name</th><th>Radius</th><th></th></tr></thead>
+          <tbody id="cpTableBody"></tbody>
+        </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Live activity log</h2>
+        <div class="log-wrap" id="logWrap">
+          <div class="empty">No scans yet — try the guard view.</div>
+        </div>
+      </div>
+    </div>
+    </div>
+
+    <div class="admin-view" id="admin-guards">
+      <div class="panel" style="margin-bottom:16px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+        <span class="field-label" style="margin:0;">Managing site</span>
+        <select id="siteQuickSwitchGuards" style="max-width:260px;"></select>
+      </div>
+      <div class="panel">
+        <h2>Routes</h2>
+        <div class="cp-row">
+          <input type="text" id="newRouteName" placeholder="Route name (e.g. Night perimeter)">
+        </div>
+        <div class="field-label" style="margin-top:8px;">Tap checkpoints in the order guards should scan them</div>
+        <div id="routeCpAvailable" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px;"></div>
+        <div class="field-label">Route order</div>
+        <div id="routeCpOrderList" style="display:flex; flex-direction:column; gap:6px; margin-bottom:6px;"></div>
+        <div class="toggle-row" style="margin-top:8px;">
+          <span>Require checkpoints scanned in this exact order</span>
+          <label class="switch">
+            <input type="checkbox" id="newRouteStrictOrder">
+            <span class="slider-tog"></span>
+          </label>
+        </div>
+        <div class="result-meta" style="margin:6px 0 10px;">Strict order rejects a scan that's out of sequence. Flexible lets guards scan checkpoints in any order.</div>
+        <button class="btn btn-primary" id="addRouteBtn">Add route</button>
+        <div class="table-scroll">
+        <table style="margin-top:14px;">
+          <thead><tr><th>Route</th><th>Checkpoints (in order)</th><th>Order mode</th><th></th></tr></thead>
+          <tbody id="routeTableBody"></tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="admin-view" id="admin-patrols">
+      <div class="panel" style="margin-bottom:16px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+        <span class="field-label" style="margin:0;">Managing site</span>
+        <select id="siteQuickSwitchPatrols" style="max-width:260px;"></select>
+        <span class="result-meta">Schedules, upcoming and past patrols below are all scoped to this site — sites can run different routes and orders.</span>
+      </div>
+      <div class="grid-2">
+        <div class="panel">
+          <h2>New patrol schedule</h2>
+          <div class="field-label" style="margin-top:0;">Route</div>
+          <select id="newSchedRoute"></select>
+
+          <div class="field-label">Repeat every</div>
+          <div class="inline-fields">
+            <div class="f">
+              <label>Preset</label>
+              <select id="newSchedIntervalPreset">
+                <option value="15">15 min</option>
+                <option value="30" selected>30 min</option>
+                <option value="60">Hourly</option>
+                <option value="90">90 min</option>
+                <option value="120">2 hours</option>
+                <option value="custom">Custom…</option>
+              </select>
+            </div>
+            <div class="f" id="newSchedCustomWrap" style="display:none;">
+              <label>Custom (min)</label>
+              <input type="text" id="newSchedIntervalCustom" placeholder="e.g. 45" style="width:80px;">
+            </div>
+          </div>
+
+          <div class="field-label">Shift window</div>
+          <div class="inline-fields">
+            <div class="f"><label>Start</label><input type="time" id="newSchedStart" value="22:00"></div>
+            <div class="f"><label>End</label><input type="time" id="newSchedEnd" value="05:00"></div>
+          </div>
+          <div class="result-meta" style="margin-top:4px;">End time earlier than start means the shift crosses midnight.</div>
+
+          <div class="field-label">Late / second reminder after</div>
+          <div class="inline-fields">
+            <div class="f"><label>Minutes past due</label><input type="text" id="newSchedLate" value="10" style="width:80px;"></div>
+          </div>
+
+          <div class="btn-row">
+            <button class="btn btn-primary" id="addSchedBtn">Add schedule</button>
+          </div>
+
+          <div class="table-scroll">
+        <table style="margin-top:14px;">
+            <thead><tr><th>Route</th><th>Repeats</th><th>Shift</th><th>Late after</th><th></th></tr></thead>
+            <tbody id="schedTableBody"></tbody>
+          </table>
+        </div>
+        </div>
+
+        <div class="panel">
+          <h2>Upcoming patrols</h2>
+          <div class="log-wrap" id="upcomingWrap" style="max-height:220px;"></div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:16px;">
+        <h2>Past patrols</h2>
+        <div class="result-meta" style="margin:-6px 0 8px;">Tap a row to see how each checkpoint on the round was scanned — including rejected or late attempts.</div>
+        <div class="table-scroll">
+        <table>
+          <thead><tr><th>Scheduled</th><th>Route</th><th>Checkpoints</th><th>Result</th></tr></thead>
+          <tbody id="pastPatrolsBody"></tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="admin-view" id="admin-alerts">
+      <div class="panel" style="margin-bottom:16px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; max-width:480px;">
+        <span class="field-label" style="margin:0;">Managing site</span>
+        <select id="siteQuickSwitchAlerts" style="max-width:260px;"></select>
+      </div>
+      <div class="panel" style="max-width:480px;">
+        <h2>Alert routing</h2>
+        <div class="field-label">Notify on rejected scans via</div>
+        <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:16px;">
+          <label style="display:flex; align-items:center; gap:8px; font-size:13px;"><input type="checkbox" id="notifyDashboard" checked> Control room dashboard</label>
+          <label style="display:flex; align-items:center; gap:8px; font-size:13px;"><input type="checkbox" id="notifySms"> SMS to supervisor</label>
+          <label style="display:flex; align-items:center; gap:8px; font-size:13px;"><input type="checkbox" id="notifyEmail"> Email to site manager</label>
+        </div>
+        <div class="field-label">Escalate after this many rejections from one guard in a shift</div>
+        <input type="text" id="escalationThreshold" value="3" style="max-width:120px;">
+        <div class="btn-row">
+          <button class="btn btn-primary" id="saveAlertsBtn">Save settings</button>
+        </div>
+        <div class="result-meta" id="alertsSavedMsg" style="margin-top:10px; display:none; color:var(--success);">Settings saved.</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast-wrap" id="toastWrap"></div>
+
+<div class="qr-modal-bg" id="qrModalBg">
+  <div class="qr-modal">
+    <canvas id="qrModalCanvas" width="200" height="200"></canvas>
+    <p id="qrModalLabel"></p>
+    <button class="btn" onclick="document.getElementById('qrModalBg').classList.remove('show')">Close</button>
+  </div>
+</div>
+
+<div class="qr-modal-bg" id="patrolDetailModalBg">
+  <div class="detail-modal">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
+      <div>
+        <div id="patrolDetailTitle" style="font-weight:700; font-size:14px;"></div>
+        <div id="patrolDetailSub" style="margin-top:6px; font-size:12px;"></div>
+      </div>
+      <button class="btn" style="width:auto; padding:5px 10px; font-size:11px; flex:0 0 auto;" onclick="document.getElementById('patrolDetailModalBg').classList.remove('show')">Close</button>
+    </div>
+    <div id="patrolDetailBody" style="margin-top:14px;"></div>
+  </div>
+</div>
+
+<div class="qr-modal-bg" id="claimAdminModalBg">
+  <div class="detail-modal">
+    <h2 style="margin:0 0 4px; font-size:16px;">Claim admin access</h2>
+    <div class="result-meta" style="margin-bottom:14px;">Enter the admin invite code you were given.</div>
+    <div id="claimAdminError" class="result-meta" style="color:var(--danger); display:none; margin-bottom:10px; font-family:var(--sans);"></div>
+
+    <div class="field-label" style="margin-top:0;">Admin invite code</div>
+    <input type="text" id="claimAdminCode" placeholder="Invite code">
+
+    <div class="btn-row" style="margin-top:14px;">
+      <button class="btn" onclick="document.getElementById('claimAdminModalBg').classList.remove('show')">Cancel</button>
+      <button class="btn btn-primary" id="claimAdminSubmitBtn">Claim access</button>
+    </div>
+  </div>
+</div>
+
+<div class="qr-modal-bg show auth-gate" id="authGate">
+  <div class="detail-modal">
+    <h2 style="margin:0 0 4px; font-size:16px;">Patrol Verify</h2>
+    <div class="result-meta" style="margin-bottom:14px;">Sign in to continue.</div>
+    <div id="authError" class="result-meta" style="color:var(--danger); display:none; margin-bottom:10px; font-family:var(--sans);"></div>
+
+    <div class="field-label" style="margin-top:0;">Email</div>
+    <input type="email" id="authEmail" placeholder="you@company.com" autocomplete="username">
+
+    <div class="field-label">Password</div>
+    <input type="password" id="authPassword" placeholder="••••••••" autocomplete="current-password">
+
+    <div id="authFullNameWrap" style="display:none;">
+      <div class="field-label">Full name</div>
+      <input type="text" id="authFullName" placeholder="Jane Guard">
+    </div>
+
+    <div id="authInviteWrap" style="display:none;">
+      <div class="field-label">Admin invite code</div>
+      <input type="text" id="authInviteCode" placeholder="Leave blank to sign up as a guard">
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-primary" id="authSubmitBtn">Sign in</button>
+    </div>
+    <div class="result-meta" style="margin-top:12px; text-align:center; font-family:var(--sans);">
+      <a href="#" id="authModeToggle" style="color:var(--accent); text-decoration:none;">Need an account? Sign up</a>
+    </div>
+  </div>
+</div>
+<script>
+// ============================================================
+// Patrol Verify — Supabase-backed client
+// ============================================================
+const SUPABASE_URL = 'https://apesgglcqczyohykelup.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_BqKUmCs6Eu-AbP6uKXZh0w_lsBDgJnT';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let session = null, profile = null;
+
+// ---------------- Local state (mirrors the DB; loaded async) ----------------
+let sites = [];
+let checkpoints = [];
+let routes = [];
+let schedules = [];
+let scans = [];
+let activeSiteId = null;
+// Checkpoints tapped (in order) while building a new route in the admin UI.
+let routeBuilderOrder = [];
+let alertSettings = { dashboard: true, sms: false, email: false, escalation: 3 };
+
+// Central place to change which site the admin is managing — also clears
+// the in-progress route builder and refreshes that site's alert settings.
+function setActiveSite(id){
+  activeSiteId = id;
+  routeBuilderOrder = [];
+  loadAlertSettingsForActiveSite();
+}
+
+function nowMs(){ return Date.now(); }
+
+// ---------------- Sound notifications ----------------
+let soundOn = true;
+let audioCtx = null;
+function beep(freq, duration, type, vol){
+  if (!soundOn) return;
+  try{
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.value = freq;
+    gain.gain.value = vol != null ? vol : 0.16;
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration/1000);
+  } catch(e){ /* audio unavailable — fail silently */ }
+}
+function playTone(seq){
+  let t = 0;
+  seq.forEach(s => {
+    setTimeout(() => beep(s.freq, s.duration, s.type, s.vol), t);
+    t += s.delay != null ? s.delay : s.duration + 50;
+  });
+  return t;
+}
+function ring(seq, totalMs){
+  if (!soundOn) return;
+  const cycle = seq.reduce((acc, s) => acc + (s.delay != null ? s.delay : s.duration + 50), 0) + 350;
+  let elapsed = 0;
+  playTone(seq);
+  const timer = setInterval(() => {
+    elapsed += cycle;
+    if (elapsed >= totalMs || !soundOn){ clearInterval(timer); return; }
+    playTone(seq);
+  }, cycle);
+}
+const SOUND = {
+  fiveMinWarning: () => playTone([{freq:660,duration:140},{freq:660,duration:140}]),
+  patrolStart:    () => ring([{freq:520,duration:150},{freq:820,duration:250}], 15000),
+  tagScan:        () => playTone([{freq:1000,duration:60}]),
+  tagAccepted:    () => playTone([{freq:880,duration:110},{freq:1180,duration:170}]),
+  tagRejected:    () => playTone([{freq:320,duration:220},{freq:220,duration:260}]),
+  lateReminder:   () => ring([{freq:420,duration:200},{freq:420,duration:200},{freq:420,duration:200}], 30000)
+};
+
+function showToast(title, sub, kind){
+  const wrap = document.getElementById('toastWrap');
+  if (!wrap) return;
+  const el = document.createElement('div');
+  el.className = 'toast' + (kind ? ' ' + kind : '');
+  el.innerHTML = `<div class="toast-title">${title}</div><div class="toast-sub">${sub || ''}</div>`;
+  wrap.appendChild(el);
+  setTimeout(() => el.remove(), 6000);
+}
+
+// ---------------- Patrol scheduling engine (pure — operates on local state) ----------------
+function parseHM(hm){
+  const [h,m] = hm.split(':').map(Number);
+  return { h, m };
+}
+function generateInstances(sched, winStart, winEnd){
+  const out = [];
+  const start = parseHM(sched.shiftStart);
+  const end = parseHM(sched.shiftEnd);
+  const dayMs = 24*60*60*1000;
+  const firstDay = new Date(winStart - dayMs);
+  firstDay.setHours(0,0,0,0);
+  for (let dayStart = firstDay.getTime(); dayStart <= winEnd + dayMs; dayStart += dayMs){
+    const shiftStart = dayStart + (start.h*60+start.m)*60000;
+    let shiftEnd = dayStart + (end.h*60+end.m)*60000;
+    if (shiftEnd <= shiftStart) shiftEnd += dayMs;
+    const stepMs = sched.intervalMinutes * 60000;
+    for (let t = shiftStart; t < shiftEnd; t += stepMs){
+      if (t >= winStart && t <= winEnd){
+        out.push({ id: sched.id + '-' + t, scheduleId: sched.id, routeId: sched.routeId, expectedTime: t, intervalMinutes: sched.intervalMinutes, lateThresholdMinutes: sched.lateThresholdMinutes });
+      }
+    }
+  }
+  out.sort((a,b) => a.expectedTime - b.expectedTime);
+  return out;
+}
+function routeCheckpoints(routeId){
+  const r = routes.find(r => r.id === routeId);
+  return r ? r.cpIds : [];
+}
+function scansForInstance(inst){
+  const cpIds = routeCheckpoints(inst.routeId);
+  const winStart = inst.expectedTime - 5*60000;
+  const winEnd = inst.expectedTime + inst.intervalMinutes*60000;
+  return scans.filter(s => cpIds.includes(s.qrId) && s.result === 'ACCEPTED' && s.timestamp >= winStart && s.timestamp < winEnd);
+}
+function instanceStatus(inst, at){
+  const cpIds = routeCheckpoints(inst.routeId);
+  const found = scansForInstance(inst);
+  const doneCps = [...new Set(found.map(s => s.qrId))];
+  const totalCps = cpIds.length;
+  const complete = totalCps > 0 && doneCps.length >= totalCps;
+  const lateAt = inst.expectedTime + inst.lateThresholdMinutes*60000;
+  const windowEnd = inst.expectedTime + inst.intervalMinutes*60000;
+
+  let status;
+  if (complete){
+    status = at <= lateAt ? 'completed' : 'completed_late';
+  } else if (at < inst.expectedTime - 5*60000){
+    status = 'upcoming';
+  } else if (at < inst.expectedTime){
+    status = 'due_soon';
+  } else if (at < lateAt){
+    status = 'active';
+  } else if (at < windowEnd){
+    status = 'late';
+  } else {
+    status = doneCps.length > 0 ? 'completed_late' : 'missed';
+  }
+  return { status, doneCps, totalCps, cpIds };
+}
+function nextExpectedCheckpoint(inst){
+  const st = instanceStatus(inst, nowMs());
+  return st.cpIds.find(id => !st.doneCps.includes(id)) || null;
+}
+function statusLabel(s){
+  return { upcoming:'Upcoming', due_soon:'Due soon', active:'In progress', late:'Late', completed:'Completed', completed_late:'Completed (late)', missed:'Missed' }[s] || s;
+}
+function fmtCountdown(ms){
+  const sign = ms < 0 ? -1 : 1;
+  ms = Math.abs(ms);
+  const totalMin = Math.floor(ms/60000);
+  const h = Math.floor(totalMin/60), m = totalMin%60, s = Math.floor((ms%60000)/1000);
+  const core = h > 0 ? `${h}h ${m}m` : `${m}m ${s}s`;
+  return sign < 0 ? `overdue by ${core}` : `in ${core}`;
+}
+
+// ---------------- Utility: haversine distance in meters ----------------
+function distMeters(lat1, lng1, lat2, lng2){
+  const R = 6371000;
+  const toRad = d => d * Math.PI/180;
+  const dLat = toRad(lat2-lat1), dLng = toRad(lng2-lng1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+function pointAtDistance(cp, meters){
+  const metersPerDegLat = 111320;
+  const dLat = meters / metersPerDegLat;
+  return { lat: cp.lat + dLat, lng: cp.lng };
+}
+
+// ---------------- Data loading (DB -> local state) ----------------
+function rowToScan(row){
+  const cp = checkpoints.find(c => c.qrId === row.raw_qr_id);
+  return {
+    id: row.id,
+    qrId: row.raw_qr_id,
+    cpName: cp ? cp.name : null,
+    siteId: row.site_id,
+    distance: row.distance_m != null ? Number(row.distance_m) : null,
+    result: row.result,
+    expectedQrId: row.expected_qr_id,
+    timestamp: new Date(row.created_at).getTime(),
+    guardId: row.guard_id
+  };
+}
+
+async function loadSites(){
+  const { data, error } = await sb.from('sites').select('*').order('created_at');
+  if (error){ showToast('Could not load sites', error.message, 'danger'); return; }
+  sites = (data || []).map(s => ({ id: s.id, name: s.name, address: s.address || '—' }));
+  if (!activeSiteId || !sites.some(s => s.id === activeSiteId)){
+    activeSiteId = sites[0] ? sites[0].id : null;
+  }
+}
+async function loadCheckpoints(){
+  const { data, error } = await sb.from('checkpoints').select('*').order('created_at');
+  if (error){ showToast('Could not load checkpoints', error.message, 'danger'); return; }
+  checkpoints = (data || []).map(c => ({ id: c.id, qrId: c.qr_id, name: c.name, lat: Number(c.lat), lng: Number(c.lng), radius: Number(c.radius_m), siteId: c.site_id }));
+}
+async function loadRoutes(){
+  const { data: routeRows, error } = await sb.from('routes').select('*').order('created_at');
+  if (error){ showToast('Could not load routes', error.message, 'danger'); return; }
+  const { data: rcRows, error: rcError } = await sb.from('route_checkpoints').select('route_id, position, checkpoints(qr_id)').order('position');
+  if (rcError){ showToast('Could not load route checkpoints', rcError.message, 'danger'); return; }
+  routes = (routeRows || []).map(r => ({
+    id: r.id,
+    name: r.name,
+    siteId: r.site_id,
+    strictOrder: r.strict_order,
+    cpIds: (rcRows || [])
+      .filter(rc => rc.route_id === r.id)
+      .sort((a,b) => a.position - b.position)
+      .map(rc => rc.checkpoints ? rc.checkpoints.qr_id : null)
+      .filter(Boolean)
+  }));
+}
+async function loadSchedules(){
+  const { data, error } = await sb.from('schedules').select('*').order('created_at');
+  if (error){ showToast('Could not load schedules', error.message, 'danger'); return; }
+  schedules = (data || []).map(s => ({
+    id: s.id, routeId: s.route_id, intervalMinutes: s.interval_minutes,
+    shiftStart: (s.shift_start || '00:00:00').slice(0,5), shiftEnd: (s.shift_end || '00:00:00').slice(0,5),
+    lateThresholdMinutes: s.late_threshold_minutes, active: s.active
+  }));
+}
+async function loadScans(){
+  const since = new Date(Date.now() - 48*60*60*1000).toISOString();
+  const { data, error } = await sb.from('scans').select('*').gte('created_at', since).order('created_at', { ascending: true }).limit(2000);
+  if (error){ showToast('Could not load scan history', error.message, 'danger'); return; }
+  scans = (data || []).map(rowToScan);
+}
+async function loadAlertSettingsForActiveSite(){
+  if (!activeSiteId) return;
+  const { data, error } = await sb.from('alert_settings').select('*').eq('site_id', activeSiteId).maybeSingle();
+  if (error){ showToast('Could not load alert settings', error.message, 'danger'); return; }
+  alertSettings = data
+    ? { dashboard: data.notify_dashboard, sms: data.notify_sms, email: data.notify_email, escalation: data.escalation_threshold }
+    : { dashboard: true, sms: false, email: false, escalation: 3 };
+  renderAlertsForm();
+}
+async function loadAllData(){
+  await loadSites();
+  await loadCheckpoints();
+  await loadRoutes();
+  await loadSchedules();
+  await loadScans();
+  await loadAlertSettingsForActiveSite();
+}
+
+// ---------------- Auth ----------------
+let authMode = 'signin';
+let notificationInterval = null;
+
+function showAuthGate(message){
+  document.getElementById('authGate').classList.add('show');
+  document.getElementById('userBadge').style.display = 'none';
+  if (message){
+    const errEl = document.getElementById('authError');
+    errEl.textContent = message;
+    errEl.style.color = 'var(--danger)';
+    errEl.style.display = 'block';
+  }
+}
+
+function setAuthMode(mode){
+  authMode = mode;
+  document.getElementById('authFullNameWrap').style.display = mode === 'signup' ? 'block' : 'none';
+  document.getElementById('authInviteWrap').style.display = mode === 'signup' ? 'block' : 'none';
+  document.getElementById('authSubmitBtn').textContent = mode === 'signup' ? 'Create account' : 'Sign in';
+  document.getElementById('authModeToggle').textContent = mode === 'signup' ? 'Already have an account? Sign in' : 'Need an account? Sign up';
+  document.getElementById('authError').style.display = 'none';
+}
+
+document.getElementById('authModeToggle').addEventListener('click', e => {
+  e.preventDefault();
+  setAuthMode(authMode === 'signin' ? 'signup' : 'signin');
+});
+
+document.getElementById('authSubmitBtn').addEventListener('click', async () => {
+  const email = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPassword').value;
+  const errEl = document.getElementById('authError');
+  errEl.style.display = 'none';
+  if (!email || !password){
+    errEl.textContent = 'Email and password are both required.';
+    errEl.style.color = 'var(--danger)';
+    errEl.style.display = 'block';
+    return;
+  }
+  const btn = document.getElementById('authSubmitBtn');
+  btn.disabled = true;
+  try{
+    if (authMode === 'signup'){
+      const fullName = document.getElementById('authFullName').value.trim();
+      const { data, error } = await sb.auth.signUp({ email, password, options: { data: { full_name: fullName } } });
+      if (error) throw error;
+
+      const inviteCode = document.getElementById('authInviteCode').value.trim();
+      if (inviteCode && data.session){
+        const { data: claimed, error: claimErr } = await sb.rpc('claim_admin', { p_code: inviteCode });
+        if (claimErr || !claimed){
+          showToast('Signed up as guard', 'That invite code was invalid or already used.', 'warn');
+        }
+      }
+      if (!data.session){
+        errEl.textContent = 'Account created — check your email to confirm it, then sign in.';
+        errEl.style.color = 'var(--text)';
+        errEl.style.display = 'block';
+        setAuthMode('signin');
+      }
+    } else {
+      const { error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+    }
+  } catch(err){
+    errEl.textContent = err.message;
+    errEl.style.color = 'var(--danger)';
+    errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('signOutBtn').addEventListener('click', async () => {
+  if (notificationInterval){ clearInterval(notificationInterval); notificationInterval = null; }
+  await sb.auth.signOut();
+});
+
+document.getElementById('claimAdminBtn').addEventListener('click', () => {
+  document.getElementById('claimAdminError').style.display = 'none';
+  document.getElementById('claimAdminCode').value = '';
+  document.getElementById('claimAdminModalBg').classList.add('show');
+});
+
+document.getElementById('claimAdminSubmitBtn').addEventListener('click', async () => {
+  const code = document.getElementById('claimAdminCode').value.trim();
+  const errEl = document.getElementById('claimAdminError');
+  errEl.style.display = 'none';
+  if (!code){
+    errEl.textContent = 'Enter an invite code.';
+    errEl.style.display = 'block';
+    return;
+  }
+  const btn = document.getElementById('claimAdminSubmitBtn');
+  btn.disabled = true;
+  try{
+    const { data: claimed, error } = await sb.rpc('claim_admin', { p_code: code });
+    if (error || !claimed){
+      errEl.textContent = 'That invite code is invalid or already used.';
+      errEl.style.display = 'block';
+      return;
+    }
+    document.getElementById('claimAdminModalBg').classList.remove('show');
+    showToast('Admin access granted', '', 'success');
+    await loadProfileAndApp();
+  } catch(err){
+    errEl.textContent = err.message;
+    errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+async function loadProfileAndApp(){
+  const { data: prof, error } = await sb.from('profiles').select('*').eq('id', session.user.id).single();
+  if (error || !prof){
+    showAuthGate('Could not load your profile — try signing in again.');
+    return;
+  }
+  profile = prof;
+
+  document.getElementById('authGate').classList.remove('show');
+  document.getElementById('userBadge').style.display = 'flex';
+  document.getElementById('userBadgeText').innerHTML =
+    `${profile.full_name || session.user.email} <span class="role-pill">${profile.role}</span>`;
+
+  const adminTabBtn = document.querySelector('.tab-btn[data-view="admin"]');
+  const claimAdminBtn = document.getElementById('claimAdminBtn');
+  if (profile.role === 'admin'){
+    adminTabBtn.style.display = '';
+    claimAdminBtn.style.display = 'none';
+  } else {
+    adminTabBtn.style.display = 'none';
+    claimAdminBtn.style.display = '';
+    document.querySelector('.tab-btn[data-view="guard"]').click();
+  }
+
+  await loadAllData();
+  renderAll();
+  subscribeRealtime();
+  if (!notificationInterval){
+    notificationInterval = setInterval(() => {
+      checkGuardNotifications();
+      renderGuardPatrolCard();
+      renderPatrolsAdmin();
+    }, 1000);
+  }
+}
+
+function initAuth(){
+  sb.auth.getSession().then(({ data: { session: s } }) => {
+    session = s;
+    if (session) loadProfileAndApp();
+    else showAuthGate();
+  });
+  sb.auth.onAuthStateChange((event, s2) => {
+    session = s2;
+    if (event === 'SIGNED_IN' && (!profile || profile.id !== s2.user.id)) loadProfileAndApp();
+    if (event === 'SIGNED_OUT'){ profile = null; window.location.reload(); }
+  });
+}
+
+// ---------------- Realtime ----------------
+let realtimeChannel = null;
+function subscribeRealtime(){
+  if (realtimeChannel){ sb.removeChannel(realtimeChannel); realtimeChannel = null; }
+  realtimeChannel = sb.channel('scans-live')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'scans' }, payload => {
+      const record = rowToScan(payload.new);
+      if (!scans.some(s => s.id === record.id)){
+        scans.push(record);
+        scans.sort((a,b) => a.timestamp - b.timestamp);
+        renderStats();
+        renderLog();
+        renderGuardPatrolCard();
+        renderPatrolsAdmin();
+      }
+    })
+    .subscribe();
+}
+
+// ---------------- Rendering ----------------
+function renderCpSelect(){
+  const sel = document.getElementById('cpSelect');
+  const siteScan = document.getElementById('siteScanSelect').value || activeSiteId;
+  const scoped = checkpoints.filter(c => c.siteId === siteScan);
+  sel.innerHTML = scoped.map(c => `<option value="${c.qrId}">${c.qrId} — ${c.name}</option>`).join('')
+    || '<option value="">No checkpoints at this site</option>';
+}
+
+function renderCpTable(){
+  const body = document.getElementById('cpTableBody');
+  const scoped = checkpoints.filter(c => c.siteId === activeSiteId);
+  if (scoped.length === 0){
+    body.innerHTML = '<tr><td colspan="4" style="font-family:var(--sans); color:var(--muted);">No checkpoints at this site yet.</td></tr>';
+    return;
+  }
+  body.innerHTML = scoped.map(c => `
+    <tr>
+      <td><canvas class="qr-thumb" data-qr="${c.qrId}"></canvas></td>
+      <td>${c.name}</td>
+      <td><input type="number" class="cp-radius-edit" data-qr-radius="${c.qrId}" value="${c.radius}" min="5" max="200" style="width:56px; padding:4px 6px; font-size:11px;">m</td>
+      <td><button class="del-btn" data-del="${c.qrId}" aria-label="Delete checkpoint"><i>&times;</i></button></td>
+    </tr>
+  `).join('');
+
+  body.querySelectorAll('.cp-radius-edit').forEach(inp => {
+    inp.addEventListener('change', async () => {
+      const cp = checkpoints.find(c => c.qrId === inp.dataset.qrRadius);
+      if (!cp) return;
+      const newRadius = parseFloat(inp.value) || cp.radius;
+      const prevRadius = cp.radius;
+      cp.radius = newRadius;
+      const { error } = await sb.from('checkpoints').update({ radius_m: newRadius }).eq('id', cp.id);
+      if (error){ cp.radius = prevRadius; inp.value = prevRadius; showToast('Could not update radius', error.message, 'danger'); }
+    });
+  });
+
+  body.querySelectorAll('.qr-thumb').forEach(cv => {
+    new QRious({ element: cv, value: cv.dataset.qr, size: 56, background: '#fff', foreground: '#000' });
+    cv.addEventListener('click', () => openQrModal(cv.dataset.qr));
+  });
+  body.querySelectorAll('[data-del]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const cp = checkpoints.find(c => c.qrId === btn.dataset.del);
+      if (!cp) return;
+      const { error } = await sb.from('checkpoints').delete().eq('id', cp.id);
+      if (error){ showToast('Could not delete checkpoint', error.message, 'danger'); return; }
+      await loadAllData();
+      renderAll();
+    });
+  });
+}
+
+function openQrModal(qrId){
+  const cp = checkpoints.find(c => c.qrId === qrId);
+  const canvas = document.getElementById('qrModalCanvas');
+  new QRious({ element: canvas, value: qrId, size: 200, background: '#fff', foreground: '#000' });
+  document.getElementById('qrModalLabel').textContent = `${qrId} — ${cp ? cp.name : ''}`;
+  document.getElementById('qrModalBg').classList.add('show');
+}
+
+function renderStats(){
+  const total = scans.length;
+  const accepted = scans.filter(s => s.result === 'ACCEPTED').length;
+  const rejected = total - accepted;
+  const alerts = scans.filter(s => s.result === 'REJECTED_OUT_OF_RANGE' || s.result === 'REJECTED_NO_LOCATION').length;
+  document.getElementById('statTotal').textContent = total;
+  document.getElementById('statAccepted').textContent = accepted;
+  document.getElementById('statRejected').textContent = rejected;
+  document.getElementById('statAlerts').textContent = alerts;
+}
+
+function renderLog(){
+  const wrap = document.getElementById('logWrap');
+  if (scans.length === 0){
+    wrap.innerHTML = '<div class="empty">No scans yet — try the guard view.</div>';
+    return;
+  }
+  wrap.innerHTML = scans.slice().reverse().slice(0, 200).map(s => {
+    const ok = s.result === 'ACCEPTED';
+    const time = new Date(s.timestamp).toLocaleTimeString();
+    const site = sites.find(x => x.id === s.siteId);
+    return `
+      <div class="log-entry">
+        <div class="log-bar ${ok ? 'accepted' : 'rejected'}"></div>
+        <div class="log-main">
+          <div class="log-top">
+            <span>${site ? site.name : 'Unknown site'} · ${s.qrId} · ${s.cpName || 'unknown'}</span>
+            <span class="badge ${ok ? 'accepted' : 'rejected'}">${s.result.replace('REJECTED_','').replace(/_/g,' ')}</span>
+          </div>
+          <div class="log-sub">${time} · ${s.distance != null ? s.distance.toFixed(0)+'m from checkpoint' : ''} ${s.result === 'REJECTED_OUT_OF_ORDER' && s.expectedQrId ? `· expected ${s.expectedQrId} next` : ''}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderDutyRouteSelect(){
+  const sel = document.getElementById('dutyRouteSelect');
+  const siteScanEl = document.getElementById('siteScanSelect');
+  const siteScan = (siteScanEl && siteScanEl.value) || activeSiteId;
+  const scoped = routes.filter(r => r.siteId === siteScan);
+  sel.innerHTML = scoped.map(r => `<option value="${r.id}">${r.name}</option>`).join('')
+    || '<option value="">No routes at this site</option>';
+}
+
+function renderRouteBuilder(){
+  const avail = document.getElementById('routeCpAvailable');
+  const scoped = checkpoints.filter(c => c.siteId === activeSiteId);
+  avail.innerHTML = scoped.map(c => `
+    <button type="button" class="btn" data-add-order-cp="${c.qrId}" style="width:auto; padding:6px 10px; font-size:11px; ${routeBuilderOrder.includes(c.qrId) ? 'opacity:0.35; pointer-events:none;' : ''}">+ ${c.qrId} — ${c.name}</button>
+  `).join('') || '<span style="font-size:12px; color:var(--muted); font-family:var(--sans);">No checkpoints at this site yet.</span>';
+  avail.querySelectorAll('[data-add-order-cp]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      routeBuilderOrder.push(btn.dataset.addOrderCp);
+      renderRouteBuilder();
+    });
+  });
+
+  const listEl = document.getElementById('routeCpOrderList');
+  listEl.innerHTML = routeBuilderOrder.length ? routeBuilderOrder.map((id, i) => {
+    const cp = checkpoints.find(c => c.qrId === id);
+    return `
+      <div style="display:flex; align-items:center; gap:8px; background:var(--panel-2); border:1px solid var(--border); border-radius:8px; padding:6px 10px; font-size:12px; font-family:var(--mono);">
+        <span style="color:var(--accent); font-weight:700;">${i+1}.</span>
+        <span style="flex:1;">${id} — ${cp ? cp.name : '?'}</span>
+        <button type="button" class="del-btn" data-order-up="${i}" title="Move earlier" ${i===0?'disabled':''}>↑</button>
+        <button type="button" class="del-btn" data-order-down="${i}" title="Move later" ${i===routeBuilderOrder.length-1?'disabled':''}>↓</button>
+        <button type="button" class="del-btn" data-order-remove="${i}" title="Remove">&times;</button>
+      </div>
+    `;
+  }).join('') : '<span style="font-size:12px; color:var(--muted); font-family:var(--sans);">Tap checkpoints above to build the route, in order.</span>';
+
+  listEl.querySelectorAll('[data-order-up]').forEach(btn => btn.addEventListener('click', () => {
+    const i = parseInt(btn.dataset.orderUp);
+    if (i > 0){ [routeBuilderOrder[i-1], routeBuilderOrder[i]] = [routeBuilderOrder[i], routeBuilderOrder[i-1]]; renderRouteBuilder(); }
+  }));
+  listEl.querySelectorAll('[data-order-down]').forEach(btn => btn.addEventListener('click', () => {
+    const i = parseInt(btn.dataset.orderDown);
+    if (i < routeBuilderOrder.length - 1){ [routeBuilderOrder[i+1], routeBuilderOrder[i]] = [routeBuilderOrder[i], routeBuilderOrder[i+1]]; renderRouteBuilder(); }
+  }));
+  listEl.querySelectorAll('[data-order-remove]').forEach(btn => btn.addEventListener('click', () => {
+    routeBuilderOrder.splice(parseInt(btn.dataset.orderRemove), 1);
+    renderRouteBuilder();
+  }));
+}
+
+async function persistRouteOrder(route){
+  const checkpointIds = route.cpIds.map(qrId => {
+    const cp = checkpoints.find(c => c.qrId === qrId);
+    return cp ? cp.id : null;
+  }).filter(Boolean);
+  const { error } = await sb.rpc('reorder_route_checkpoints', { p_route_id: route.id, p_checkpoint_ids: checkpointIds });
+  if (error) showToast('Could not save new order', error.message, 'danger');
+}
+
+function renderRouteTable(){
+  const body = document.getElementById('routeTableBody');
+  const scoped = routes.filter(r => r.siteId === activeSiteId);
+  if (scoped.length === 0){
+    body.innerHTML = '<tr><td colspan="4" style="font-family:var(--sans); color:var(--muted);">No routes yet.</td></tr>';
+    return;
+  }
+  body.innerHTML = scoped.map(r => `
+    <tr>
+      <td style="font-family:var(--sans);">${r.name}</td>
+      <td>
+        <div style="display:flex; flex-direction:column; gap:4px;">
+        ${r.cpIds.map((id,i) => `
+          <span style="display:flex; align-items:center; gap:4px;">
+            <b style="color:var(--accent);">${i+1}.</b> ${id}
+            <button type="button" class="del-btn" data-route-cp-up="${r.id}:${i}" title="Move earlier" ${i===0?'disabled':''} style="font-size:11px;">↑</button>
+            <button type="button" class="del-btn" data-route-cp-down="${r.id}:${i}" title="Move later" ${i===r.cpIds.length-1?'disabled':''} style="font-size:11px;">↓</button>
+          </span>
+        `).join('') || '—'}
+        </div>
+      </td>
+      <td>
+        <label class="switch" title="${r.strictOrder ? 'Strict order' : 'Flexible order'}">
+          <input type="checkbox" class="route-order-toggle" data-route-order="${r.id}" ${r.strictOrder ? 'checked' : ''}>
+          <span class="slider-tog"></span>
+        </label>
+        <div class="result-meta" style="margin-top:2px;">${r.strictOrder ? 'Strict' : 'Flexible'}</div>
+      </td>
+      <td><button class="del-btn" data-del-route="${r.id}" aria-label="Delete route"><i>&times;</i></button></td>
+    </tr>
+  `).join('');
+  body.querySelectorAll('[data-route-cp-up]').forEach(btn => btn.addEventListener('click', () => {
+    const [routeId, idxStr] = btn.dataset.routeCpUp.split(':');
+    const idx = parseInt(idxStr);
+    const r = routes.find(rt => rt.id === routeId);
+    if (r && idx > 0){
+      [r.cpIds[idx-1], r.cpIds[idx]] = [r.cpIds[idx], r.cpIds[idx-1]];
+      renderAll();
+      persistRouteOrder(r);
+    }
+  }));
+  body.querySelectorAll('[data-route-cp-down]').forEach(btn => btn.addEventListener('click', () => {
+    const [routeId, idxStr] = btn.dataset.routeCpDown.split(':');
+    const idx = parseInt(idxStr);
+    const r = routes.find(rt => rt.id === routeId);
+    if (r && idx < r.cpIds.length - 1){
+      [r.cpIds[idx+1], r.cpIds[idx]] = [r.cpIds[idx], r.cpIds[idx+1]];
+      renderAll();
+      persistRouteOrder(r);
+    }
+  }));
+  body.querySelectorAll('.route-order-toggle').forEach(tog => tog.addEventListener('change', async e => {
+    const r = routes.find(rt => rt.id === e.target.dataset.routeOrder);
+    if (!r) return;
+    const prev = r.strictOrder;
+    r.strictOrder = e.target.checked;
+    const { error } = await sb.from('routes').update({ strict_order: e.target.checked }).eq('id', r.id);
+    if (error){ r.strictOrder = prev; e.target.checked = prev; showToast('Could not update order mode', error.message, 'danger'); }
+  }));
+  body.querySelectorAll('[data-del-route]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const { error } = await sb.from('routes').delete().eq('id', btn.dataset.delRoute);
+      if (error){ showToast('Could not delete route', error.message, 'danger'); return; }
+      await loadAllData();
+      renderAll();
+    });
+  });
+}
+
+function renderSiteSwitchers(){
+  const opts = sites.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+  ['siteQuickSwitchCp','siteQuickSwitchGuards','siteQuickSwitchPatrols','siteQuickSwitchAlerts','siteScanSelect'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = opts;
+    el.value = activeSiteId;
+  });
+}
+
+function renderSiteTable(){
+  const body = document.getElementById('siteTableBody');
+  const q = (document.getElementById('siteSearch').value || '').toLowerCase();
+  const filtered = sites.filter(s => s.name.toLowerCase().includes(q) || s.address.toLowerCase().includes(q));
+  if (filtered.length === 0){
+    body.innerHTML = '<tr><td colspan="5" style="font-family:var(--sans); color:var(--muted);">No sites match.</td></tr>';
+    return;
+  }
+  body.innerHTML = filtered.map(s => {
+    const cpCount = checkpoints.filter(c => c.siteId === s.id).length;
+    const routeCount = routes.filter(r => r.siteId === s.id).length;
+    return `
+      <tr>
+        <td style="font-family:var(--sans); font-weight:600;">${s.name}</td>
+        <td style="font-family:var(--sans); color:var(--muted);">${s.address}</td>
+        <td>${cpCount}</td>
+        <td>${routeCount}</td>
+        <td style="display:flex; gap:6px;">
+          <button class="btn" data-manage-site="${s.id}" style="width:auto; padding:5px 10px; font-size:11px;">Manage</button>
+          <button class="del-btn" data-del-site="${s.id}" aria-label="Delete site"><i>&times;</i></button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+  body.querySelectorAll('[data-manage-site]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      setActiveSite(btn.dataset.manageSite);
+      renderAll();
+      document.querySelector('[data-admin-view="overview"]').click();
+    });
+  });
+  body.querySelectorAll('[data-del-site]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.delSite;
+      const { error } = await sb.from('sites').delete().eq('id', id);
+      if (error){ showToast('Could not delete site', error.message, 'danger'); return; }
+      await loadAllData();
+      if (!sites.some(s => s.id === activeSiteId)) setActiveSite(sites[0] ? sites[0].id : null);
+      renderAll();
+    });
+  });
+}
+
+// ---------------- Patrols admin rendering ----------------
+function renderSchedRouteSelect(){
+  const sel = document.getElementById('newSchedRoute');
+  const scoped = routes.filter(r => r.siteId === activeSiteId);
+  sel.innerHTML = scoped.map(r => `<option value="${r.id}">${r.name}</option>`).join('')
+    || '<option value="">No routes at this site — add one under Routes</option>';
+}
+
+function renderSchedTable(){
+  const body = document.getElementById('schedTableBody');
+  const scoped = schedules.filter(s => {
+    const r = routes.find(r => r.id === s.routeId);
+    return r && r.siteId === activeSiteId;
+  });
+  if (scoped.length === 0){
+    body.innerHTML = '<tr><td colspan="5" style="font-family:var(--sans); color:var(--muted);">No schedules at this site yet.</td></tr>';
+    return;
+  }
+  body.innerHTML = scoped.map(s => {
+    const r = routes.find(r => r.id === s.routeId);
+    return `
+      <tr>
+        <td style="font-family:var(--sans);">${r ? r.name : '—'}</td>
+        <td>every ${s.intervalMinutes}m</td>
+        <td>${s.shiftStart}–${s.shiftEnd}</td>
+        <td>${s.lateThresholdMinutes}m</td>
+        <td><button class="del-btn" data-del-sched="${s.id}" aria-label="Delete schedule"><i>&times;</i></button></td>
+      </tr>
+    `;
+  }).join('');
+  body.querySelectorAll('[data-del-sched]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const { error } = await sb.from('schedules').delete().eq('id', btn.dataset.delSched);
+      if (error){ showToast('Could not delete schedule', error.message, 'danger'); return; }
+      await loadSchedules();
+      renderAll();
+    });
+  });
+}
+
+function allInstancesForSite(winStart, winEnd){
+  const scoped = schedules.filter(s => {
+    const r = routes.find(r => r.id === s.routeId);
+    return r && r.siteId === activeSiteId;
+  });
+  let out = [];
+  scoped.forEach(s => out = out.concat(generateInstances(s, winStart, winEnd)));
+  out.sort((a,b) => a.expectedTime - b.expectedTime);
+  return out;
+}
+
+// ---------------- Patrol detail modal ----------------
+let pastInstanceLookup = {};
+
+function openPatrolDetail(instId){
+  const inst = pastInstanceLookup[instId];
+  if (!inst) return;
+  const r = routes.find(rt => rt.id === inst.routeId);
+  const st = instanceStatus(inst, nowMs());
+  const winStart = inst.expectedTime - 5*60000;
+  const winEnd = inst.expectedTime + inst.intervalMinutes*60000;
+  const attempts = scans
+    .filter(s => st.cpIds.includes(s.qrId) && s.timestamp >= winStart && s.timestamp < winEnd)
+    .sort((a,b) => a.timestamp - b.timestamp);
+
+  document.getElementById('patrolDetailTitle').textContent =
+    `${r ? r.name : '—'} · ${new Date(inst.expectedTime).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}`;
+  document.getElementById('patrolDetailSub').innerHTML =
+    `<span class="status-pill ${st.status}">${statusLabel(st.status)}</span>
+     <span class="result-meta">${st.doneCps.length}/${st.totalCps} checkpoints · ${r && r.strictOrder ? 'strict order' : 'flexible order'} · late after ${inst.lateThresholdMinutes}m</span>`;
+
+  const sequenceHtml = st.cpIds.map((id, i) => {
+    const done = st.doneCps.includes(id);
+    return `<span class="cp-dot ${done ? 'done' : ''}">${i+1}. ${id}${done ? ' ✓' : ''}</span>`;
+  }).join('');
+
+  const attemptsHtml = attempts.length ? attempts.map(s => {
+    const ok = s.result === 'ACCEPTED';
+    const lateFlag = ok && s.timestamp > inst.expectedTime + inst.lateThresholdMinutes*60000
+      ? ' <span style="color:var(--warn); font-family:var(--sans); font-size:10px;">(late)</span>' : '';
+    const detailBits = [];
+    if (s.distance != null) detailBits.push(`${s.distance.toFixed(0)}m from point`);
+    if (s.result === 'REJECTED_OUT_OF_ORDER' && s.expectedQrId) detailBits.push(`expected ${s.expectedQrId} next`);
+    return `
+      <tr>
+        <td>${new Date(s.timestamp).toLocaleTimeString()}</td>
+        <td style="font-family:var(--sans);">${s.qrId} — ${s.cpName || 'unknown'}</td>
+        <td><span class="badge ${ok ? 'accepted' : 'rejected'}">${s.result.replace('REJECTED_','').replace(/_/g,' ')}</span>${lateFlag}</td>
+        <td class="progress-mini">${detailBits.join(' · ') || '—'}</td>
+      </tr>
+    `;
+  }).join('') : '<tr><td colspan="4" style="font-family:var(--sans); color:var(--muted);">No scan attempts recorded in this patrol\'s window — the checkpoints were never scanned at all.</td></tr>';
+
+  document.getElementById('patrolDetailBody').innerHTML = `
+    <div class="field-label" style="margin-top:0;">Expected sequence</div>
+    <div class="cp-progress" style="margin-bottom:14px;">${sequenceHtml}</div>
+    <div class="field-label">Scan attempts</div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Time</th><th>Checkpoint</th><th>Result</th><th>Detail</th></tr></thead>
+        <tbody>${attemptsHtml}</tbody>
+      </table>
+    </div>
+  `;
+
+  document.getElementById('patrolDetailModalBg').classList.add('show');
+}
+
+function renderPatrolsAdmin(){
+  if (!activeSiteId) return;
+  renderSchedRouteSelect();
+  renderSchedTable();
+  const now = nowMs();
+  const dayMs = 24*60*60*1000;
+
+  const upcoming = allInstancesForSite(now, now + dayMs)
+    .filter(inst => ['upcoming','due_soon','active'].includes(instanceStatus(inst, now).status))
+    .slice(0, 20);
+  const upWrap = document.getElementById('upcomingWrap');
+  if (upWrap){
+    upWrap.innerHTML = upcoming.length ? upcoming.map(inst => {
+      const r = routes.find(r => r.id === inst.routeId);
+      const st = instanceStatus(inst, now);
+      return `
+        <div class="log-entry">
+          <div class="log-bar ${st.status === 'due_soon' ? 'rejected' : 'accepted'}"></div>
+          <div class="log-main">
+            <div class="log-top">
+              <span>${r ? r.name : '—'} · ${new Date(inst.expectedTime).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span>
+              <span class="status-pill ${st.status}">${statusLabel(st.status)}</span>
+            </div>
+            <div class="log-sub">${fmtCountdown(inst.expectedTime - now)} · ${st.doneCps.length}/${st.totalCps} checkpoints</div>
+          </div>
+        </div>
+      `;
+    }).join('') : '<div class="empty">No upcoming patrols scheduled.</div>';
+  }
+
+  const past = allInstancesForSite(now - dayMs, now)
+    .filter(inst => ['completed','completed_late','late','missed'].includes(instanceStatus(inst, now).status))
+    .sort((a,b) => b.expectedTime - a.expectedTime)
+    .slice(0, 30);
+  const pastBody = document.getElementById('pastPatrolsBody');
+  if (pastBody){
+    pastInstanceLookup = {};
+    pastBody.innerHTML = past.length ? past.map(inst => {
+      pastInstanceLookup[inst.id] = inst;
+      const r = routes.find(r => r.id === inst.routeId);
+      const st = instanceStatus(inst, now);
+      return `
+        <tr data-patrol-detail="${inst.id}">
+          <td>${new Date(inst.expectedTime).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</td>
+          <td style="font-family:var(--sans);">${r ? r.name : '—'}</td>
+          <td class="progress-mini">${st.doneCps.length}/${st.totalCps}</td>
+          <td><span class="status-pill ${st.status}">${statusLabel(st.status)}</span></td>
+        </tr>
+      `;
+    }).join('') : '<tr><td colspan="4" style="font-family:var(--sans); color:var(--muted);">No past patrols in the last 24h yet.</td></tr>';
+    pastBody.querySelectorAll('[data-patrol-detail]').forEach(row => {
+      row.addEventListener('click', () => openPatrolDetail(row.dataset.patrolDetail));
+    });
+  }
+}
+
+// ---------------- Duty-route patrol notifications ----------------
+let notifiedFiveMin = new Set(), notifiedStart = new Set(), notifiedLate = new Set();
+
+function currentDutyRouteNextInstance(){
+  const routeSel = document.getElementById('dutyRouteSelect');
+  const routeId = routeSel ? routeSel.value : null;
+  if (!routeId) return null;
+  const sched = schedules.find(s => s.routeId === routeId && s.active !== false);
+  if (!sched) return null;
+  const now = nowMs();
+  const dayMs = 24*60*60*1000;
+  const insts = generateInstances(sched, now - dayMs, now + dayMs);
+  const active = insts.find(i => ['due_soon','active','late'].includes(instanceStatus(i, now).status));
+  if (active) return { inst: active };
+  const next = insts.find(i => instanceStatus(i, now).status === 'upcoming');
+  if (next) return { inst: next };
+  return null;
+}
+
+function renderGuardPatrolCard(){
+  const card = document.getElementById('guardPatrolCard');
+  if (!card) return;
+  const found = currentDutyRouteNextInstance();
+  if (!found){ card.style.display = 'none'; return; }
+  const { inst } = found;
+  const now = nowMs();
+  const st = instanceStatus(inst, now);
+  const r = routes.find(r => r.id === inst.routeId);
+  card.style.display = 'block';
+  document.getElementById('guardPatrolRouteName').textContent = r ? r.name : '—';
+  const statusEl = document.getElementById('guardPatrolStatus');
+  statusEl.className = 'status-pill ' + st.status;
+  statusEl.textContent = statusLabel(st.status);
+
+  const countdownEl = document.getElementById('guardPatrolCountdown');
+  const diff = inst.expectedTime - now;
+  countdownEl.textContent = diff > 0
+    ? `Next patrol ${fmtCountdown(diff)} (${new Date(inst.expectedTime).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})})`
+    : `Started ${fmtCountdown(diff)} ago`;
+  countdownEl.className = 'patrol-countdown ' + (st.status === 'late' ? 'danger' : st.status === 'due_soon' ? 'warn' : st.status === 'active' ? 'ok' : '');
+
+  const cpsEl = document.getElementById('guardPatrolCps');
+  cpsEl.innerHTML = st.cpIds.map(id => `<span class="cp-dot ${st.doneCps.includes(id) ? 'done' : ''}">${id}${st.doneCps.includes(id) ? ' ✓' : ''}</span>`).join('');
+}
+
+function checkGuardNotifications(){
+  const found = currentDutyRouteNextInstance();
+  if (!found) return;
+  const { inst } = found;
+  const now = nowMs();
+  const st = instanceStatus(inst, now);
+
+  if (now >= inst.expectedTime - 5*60000 && now < inst.expectedTime && !notifiedFiveMin.has(inst.id)){
+    notifiedFiveMin.add(inst.id);
+    SOUND.fiveMinWarning();
+    showToast('Patrol in 5 minutes', new Date(inst.expectedTime).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}), 'warn');
+  }
+  if (now >= inst.expectedTime && !notifiedStart.has(inst.id)){
+    notifiedStart.add(inst.id);
+    SOUND.patrolStart();
+    showToast('Patrol time — begin your round', '', 'success');
+  }
+  const lateAt = inst.expectedTime + inst.lateThresholdMinutes*60000;
+  if (now >= lateAt && st.doneCps.length < st.totalCps && !notifiedLate.has(inst.id)){
+    notifiedLate.add(inst.id);
+    SOUND.lateReminder();
+    showToast('Patrol overdue', `${st.doneCps.length}/${st.totalCps} checkpoints scanned`, 'danger');
+  }
+}
+
+function renderAlertsForm(){
+  const d = document.getElementById('notifyDashboard');
+  if (!d) return;
+  d.checked = alertSettings.dashboard;
+  document.getElementById('notifySms').checked = alertSettings.sms;
+  document.getElementById('notifyEmail').checked = alertSettings.email;
+  document.getElementById('escalationThreshold').value = alertSettings.escalation;
+}
+
+function renderAll(){
+  renderSiteSwitchers();
+  renderSiteTable();
+  renderCpSelect();
+  renderCpTable();
+  renderStats();
+  renderLog();
+  renderDutyRouteSelect();
+  renderRouteBuilder();
+  renderRouteTable();
+  renderPatrolsAdmin();
+  renderGuardPatrolCard();
+  renderAlertsForm();
+}
+
+// ---------------- Scan processing ----------------
+// Reads the guard's live GPS position. Returns null (rather than throwing) when
+// location can't be obtained, so callers can surface a clear rejection reason.
+function getGuardPosition(){
+  return new Promise(resolve => {
+    if (!navigator.geolocation){ resolve(null); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
+      () => resolve(null),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 }
+    );
+  });
+}
+
+async function processScan(qrId){
+  const cp = checkpoints.find(c => c.qrId === qrId);
+  let result, distance = null, expectedQrId = null;
+
+  const dutyInfo = currentDutyRouteNextInstance();
+  const dutyRoute = dutyInfo ? routes.find(r => r.id === dutyInfo.inst.routeId) : null;
+
+  const pos = cp ? await getGuardPosition() : null;
+  if (cp && pos) distance = distMeters(pos.lat, pos.lng, cp.lat, cp.lng);
+
+  if (!cp){
+    result = 'REJECTED_UNKNOWN_QR';
+  } else if (!pos){
+    result = 'REJECTED_NO_LOCATION';
+  } else if (distance > cp.radius){
+    result = 'REJECTED_OUT_OF_RANGE';
+  } else if (dutyRoute && dutyRoute.strictOrder && dutyRoute.cpIds.includes(qrId)){
+    expectedQrId = nextExpectedCheckpoint(dutyInfo.inst);
+    result = (expectedQrId && expectedQrId !== qrId) ? 'REJECTED_OUT_OF_ORDER' : 'ACCEPTED';
+  } else {
+    result = 'ACCEPTED';
+  }
+
+  const siteId = cp ? cp.siteId : (document.getElementById('siteScanSelect').value || activeSiteId);
+  const insertPayload = {
+    site_id: siteId,
+    checkpoint_id: cp ? cp.id : null,
+    raw_qr_id: qrId,
+    route_id: dutyInfo ? dutyInfo.inst.routeId : null,
+    guard_id: session.user.id,
+    result,
+    distance_m: distance,
+    is_mock: false,
+    expected_qr_id: result === 'REJECTED_OUT_OF_ORDER' ? expectedQrId : null
+  };
+
+  const { data: row, error } = await sb.from('scans').insert(insertPayload).select().single();
+  if (error){
+    showToast('Scan could not be saved', error.message, 'danger');
+    return { qrId, cpName: cp ? cp.name : null, distance, result, siteId, expectedQrId, timestamp: Date.now(), saveFailed: true };
+  }
+  const record = rowToScan(row);
+  if (!scans.some(s => s.id === record.id)) scans.push(record);
+  renderStats();
+  renderLog();
+  return record;
+}
+
+function advanceCpSelectAfterScan(record){
+  if (record.result !== 'ACCEPTED') return;
+  const dutyInfo = currentDutyRouteNextInstance();
+  if (!dutyInfo) return;
+  const next = nextExpectedCheckpoint(dutyInfo.inst);
+  if (!next) return;
+  const sel = document.getElementById('cpSelect');
+  if (sel && Array.from(sel.options).some(o => o.value === next)) sel.value = next;
+}
+
+function showResult(record){
+  const card = document.getElementById('resultCard');
+  const title = document.getElementById('resultTitle');
+  const meta = document.getElementById('resultMeta');
+  card.classList.remove('accepted','rejected');
+  card.classList.add('show', record.result === 'ACCEPTED' ? 'accepted' : 'rejected');
+
+  if (record.result === 'ACCEPTED'){
+    title.textContent = `Verified — ${record.cpName}`;
+  } else {
+    const expectedCp = record.expectedQrId ? checkpoints.find(c => c.qrId === record.expectedQrId) : null;
+    const reasons = {
+      REJECTED_UNKNOWN_QR: 'Unknown checkpoint code',
+      REJECTED_NO_LOCATION: 'Could not confirm your location — enable location services and try again',
+      REJECTED_OUT_OF_RANGE: 'Guard is outside the checkpoint radius',
+      REJECTED_OUT_OF_ORDER: `Wrong checkpoint — this route requires checkpoints in order, expected ${expectedCp ? expectedCp.name : record.expectedQrId} next`
+    };
+    title.textContent = `Rejected — ${reasons[record.result] || (record.saveFailed ? 'Could not save scan' : record.result)}`;
+  }
+  const site = sites.find(x => x.id === record.siteId);
+  meta.innerHTML = `site: ${site ? site.name : 'n/a'}<br>qrId: ${record.qrId}<br>distance: ${record.distance != null ? record.distance.toFixed(1)+'m' : 'n/a'}<br>time: ${new Date(record.timestamp).toLocaleTimeString()}`;
+}
+
+// ---------------- Guard view interactions ----------------
+document.getElementById('manualScanBtn').addEventListener('click', async () => {
+  const qrId = document.getElementById('cpSelect').value;
+  const statusEl = document.getElementById('manualScanStatus');
+  if (!qrId) return;
+  statusEl.textContent = 'Getting your location…';
+  const btn = document.getElementById('manualScanBtn');
+  btn.disabled = true;
+  SOUND.tagScan();
+  const record = await processScan(qrId);
+  btn.disabled = false;
+  statusEl.textContent = '';
+  SOUND[record.result === 'ACCEPTED' ? 'tagAccepted' : 'tagRejected']();
+  showResult(record);
+  advanceCpSelectAfterScan(record);
+  renderGuardPatrolCard();
+});
+
+// ---------------- Real camera + QR decode ----------------
+let stream = null, scanning = false;
+const video = document.getElementById('video');
+const canvasEl = document.getElementById('canvas');
+const camPlaceholder = document.getElementById('camPlaceholder');
+const scanFrame = document.getElementById('scanFrame');
+const camToggleBtn = document.getElementById('camToggleBtn');
+
+camToggleBtn.addEventListener('click', async () => {
+  if (scanning){ stopCamera(); return; }
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    video.srcObject = stream;
+    video.style.display = 'block';
+    camPlaceholder.style.display = 'none';
+    scanFrame.style.display = 'block';
+    await video.play();
+    scanning = true;
+    camToggleBtn.textContent = 'Stop camera';
+    requestAnimationFrame(tickScan);
+  } catch(err){
+    camPlaceholder.textContent = 'Camera unavailable in this environment (' + err.name + '). Use manual scan below instead.';
+  }
+});
+
+function stopCamera(){
+  scanning = false;
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  video.style.display = 'none';
+  scanFrame.style.display = 'none';
+  camPlaceholder.style.display = 'block';
+  camPlaceholder.textContent = 'Camera off. Tap "Start camera" to auto-scan a QR, or use manual scan below.';
+  camToggleBtn.textContent = 'Start camera';
+}
+
+let lastDecoded = null, lastDecodedAt = 0, decodeLocked = false;
+function tickScan(){
+  if (!scanning) return;
+  if (video.readyState === video.HAVE_ENOUGH_DATA && !decodeLocked){
+    canvasEl.width = video.videoWidth;
+    canvasEl.height = video.videoHeight;
+    const ctx = canvasEl.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvasEl.width, canvasEl.height);
+    const imageData = ctx.getImageData(0, 0, canvasEl.width, canvasEl.height);
+    const code = jsQR(imageData.data, imageData.width, imageData.height);
+    if (code && code.data){
+      const now = Date.now();
+      if (code.data !== lastDecoded || now - lastDecodedAt > 4000){
+        lastDecoded = code.data; lastDecodedAt = now;
+        decodeLocked = true; // pause decoding while we resolve location + save this scan
+        SOUND.tagScan();
+        processScan(code.data).then(record => {
+          SOUND[record.result === 'ACCEPTED' ? 'tagAccepted' : 'tagRejected']();
+          showResult(record);
+          advanceCpSelectAfterScan(record);
+          renderGuardPatrolCard();
+          decodeLocked = false;
+        });
+      }
+    }
+  }
+  requestAnimationFrame(tickScan);
+}
+
+// ---------------- Admin view interactions ----------------
+document.getElementById('newCpRadiusSlider').addEventListener('input', e => {
+  document.getElementById('newCpRadiusVal').textContent = `${e.target.value} m`;
+});
+
+document.getElementById('detectCpLocBtn').addEventListener('click', () => {
+  const statusEl = document.getElementById('detectCpStatus');
+  const hintEl = document.getElementById('cpRadiusHint');
+  if (!navigator.geolocation){
+    statusEl.textContent = 'Geolocation not supported in this browser.';
+    return;
+  }
+  statusEl.textContent = 'Detecting…';
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      const { latitude, longitude, accuracy } = pos.coords;
+      document.getElementById('newCpLat').value = latitude.toFixed(6);
+      document.getElementById('newCpLng').value = longitude.toFixed(6);
+      statusEl.textContent = `Locked — GPS accuracy ±${accuracy.toFixed(0)}m`;
+      const suggested = Math.min(100, Math.max(5, Math.round(accuracy * 1.5)));
+      const slider = document.getElementById('newCpRadiusSlider');
+      slider.value = suggested;
+      document.getElementById('newCpRadiusVal').textContent = `${suggested} m`;
+      hintEl.textContent = `Suggested from ±${accuracy.toFixed(0)}m GPS accuracy — narrow it for tighter spots (e.g. server rooms), widen it for open yards.`;
+    },
+    err => {
+      statusEl.textContent = `Couldn't get location (${err.message}). You can still enter coordinates manually.`;
+      document.getElementById('newCpLat').removeAttribute('readonly');
+      document.getElementById('newCpLng').removeAttribute('readonly');
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+});
+
+document.getElementById('addCpBtn').addEventListener('click', async () => {
+  const name = document.getElementById('newCpName').value.trim();
+  const lat = parseFloat(document.getElementById('newCpLat').value);
+  const lng = parseFloat(document.getElementById('newCpLng').value);
+  const radius = parseFloat(document.getElementById('newCpRadiusSlider').value) || 15;
+  if (!name || isNaN(lat) || isNaN(lng) || !activeSiteId){
+    document.getElementById('detectCpStatus').textContent = 'Name and a detected location are both required.';
+    return;
+  }
+
+  const maxNum = checkpoints.reduce((max, c) => {
+    const m = /^CP-(\d+)$/.exec(c.qrId);
+    return m ? Math.max(max, parseInt(m[1])) : max;
+  }, 0);
+  const qrId = 'CP-' + String(maxNum + 1).padStart(3, '0');
+
+  const { error } = await sb.from('checkpoints').insert({ site_id: activeSiteId, qr_id: qrId, name, lat, lng, radius_m: radius });
+  if (error){
+    document.getElementById('detectCpStatus').textContent = 'Could not save — ' + error.message;
+    return;
+  }
+  document.getElementById('newCpName').value = '';
+  document.getElementById('newCpLat').value = '';
+  document.getElementById('newCpLng').value = '';
+  document.getElementById('newCpRadiusSlider').value = 15;
+  document.getElementById('newCpRadiusVal').textContent = '15 m';
+  document.getElementById('detectCpStatus').textContent = '';
+  document.getElementById('cpRadiusHint').textContent = 'Stand at the checkpoint and tap "Use my location" — radius auto-suggests from GPS accuracy, then adjust if needed.';
+  await loadCheckpoints();
+  renderAll();
+});
+
+document.getElementById('addSiteBtn').addEventListener('click', async () => {
+  const name = document.getElementById('newSiteName').value.trim();
+  const address = document.getElementById('newSiteAddress').value.trim();
+  if (!name) return;
+  const { data, error } = await sb.from('sites').insert({ name, address: address || null }).select().single();
+  if (error){ showToast('Could not add site', error.message, 'danger'); return; }
+  document.getElementById('newSiteName').value = '';
+  document.getElementById('newSiteAddress').value = '';
+  await loadSites();
+  setActiveSite(data.id);
+  renderAll();
+});
+
+document.getElementById('siteSearch').addEventListener('input', renderSiteTable);
+
+['siteQuickSwitchCp','siteQuickSwitchGuards','siteQuickSwitchPatrols','siteQuickSwitchAlerts'].forEach(id => {
+  document.getElementById(id).addEventListener('change', e => {
+    setActiveSite(e.target.value);
+    renderAll();
+  });
+});
+
+document.getElementById('siteScanSelect').addEventListener('change', () => {
+  renderCpSelect();
+  renderDutyRouteSelect();
+  renderGuardPatrolCard();
+});
+
+document.getElementById("dutyRouteSelect").addEventListener("change", renderGuardPatrolCard);
+
+document.getElementById('soundToggleBtn').addEventListener('click', (e) => {
+  soundOn = !soundOn;
+  e.target.classList.toggle('on', soundOn);
+  e.target.textContent = soundOn ? '🔊' : '🔇';
+  if (soundOn) beep(700, 90, 'sine', 0.12);
+});
+
+document.getElementById('addRouteBtn').addEventListener('click', async () => {
+  const name = document.getElementById('newRouteName').value.trim();
+  if (!name || routeBuilderOrder.length === 0 || !activeSiteId) return;
+  const strictOrder = document.getElementById('newRouteStrictOrder').checked;
+
+  const { data: routeRow, error } = await sb.from('routes').insert({ site_id: activeSiteId, name, strict_order: strictOrder }).select().single();
+  if (error){ showToast('Could not add route', error.message, 'danger'); return; }
+
+  const rcRows = routeBuilderOrder.map((qrId, i) => {
+    const cp = checkpoints.find(c => c.qrId === qrId);
+    return cp ? { route_id: routeRow.id, checkpoint_id: cp.id, position: i + 1 } : null;
+  }).filter(Boolean);
+  if (rcRows.length){
+    const { error: rcError } = await sb.from('route_checkpoints').insert(rcRows);
+    if (rcError) showToast('Route created but checkpoints failed to save', rcError.message, 'danger');
+  }
+
+  document.getElementById('newRouteName').value = '';
+  document.getElementById('newRouteStrictOrder').checked = false;
+  routeBuilderOrder = [];
+  await loadAllData();
+  renderAll();
+});
+
+document.getElementById('saveAlertsBtn').addEventListener('click', async () => {
+  if (!activeSiteId) return;
+  const payload = {
+    site_id: activeSiteId,
+    notify_dashboard: document.getElementById('notifyDashboard').checked,
+    notify_sms: document.getElementById('notifySms').checked,
+    notify_email: document.getElementById('notifyEmail').checked,
+    escalation_threshold: parseInt(document.getElementById('escalationThreshold').value) || 3,
+    updated_at: new Date().toISOString()
+  };
+  const { error } = await sb.from('alert_settings').upsert(payload);
+  const msg = document.getElementById('alertsSavedMsg');
+  if (error){
+    msg.textContent = 'Could not save — ' + error.message;
+    msg.style.color = 'var(--danger)';
+  } else {
+    alertSettings = { dashboard: payload.notify_dashboard, sms: payload.notify_sms, email: payload.notify_email, escalation: payload.escalation_threshold };
+    msg.textContent = 'Settings saved.';
+    msg.style.color = 'var(--success)';
+  }
+  msg.style.display = 'block';
+  setTimeout(() => { msg.style.display = 'none'; }, 2500);
+});
+
+// ---------------- Patrol schedules ----------------
+document.getElementById('newSchedIntervalPreset').addEventListener('change', e => {
+  document.getElementById('newSchedCustomWrap').style.display = e.target.value === 'custom' ? 'flex' : 'none';
+});
+
+document.getElementById('addSchedBtn').addEventListener('click', async () => {
+  const routeId = document.getElementById('newSchedRoute').value;
+  if (!routeId) return;
+  const preset = document.getElementById('newSchedIntervalPreset').value;
+  const intervalMinutes = preset === 'custom'
+    ? (parseInt(document.getElementById('newSchedIntervalCustom').value) || 30)
+    : parseInt(preset);
+  const shiftStart = document.getElementById('newSchedStart').value || '22:00';
+  const shiftEnd = document.getElementById('newSchedEnd').value || '05:00';
+  const lateThresholdMinutes = parseInt(document.getElementById('newSchedLate').value) || 10;
+
+  const { error } = await sb.from('schedules').insert({
+    route_id: routeId, interval_minutes: intervalMinutes, shift_start: shiftStart,
+    shift_end: shiftEnd, late_threshold_minutes: lateThresholdMinutes, active: true
+  });
+  if (error){ showToast('Could not add schedule', error.message, 'danger'); return; }
+  document.getElementById('newSchedIntervalCustom').value = '';
+  await loadSchedules();
+  renderAll();
+});
+
+// ---------------- Inner admin tabs ----------------
+document.querySelectorAll('[data-admin-view]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-admin-view]').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.admin-view').forEach(v => v.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('admin-' + btn.dataset.adminView).classList.add('active');
+  });
+});
+
+// ---------------- Tabs ----------------
+document.querySelectorAll('.tab-btn[data-view]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn[data-view]').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('view-' + btn.dataset.view).classList.add('active');
+  });
+});
+
+// ---------------- Boot ----------------
+setAuthMode('signin');
+initAuth();
+</script>
+</body>
+</html>
