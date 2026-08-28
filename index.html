@@ -291,12 +291,13 @@
     <div class="stat-grid">
       <div class="stat-card"><div class="stat-label">Total scans</div><div class="stat-val" id="statTotal">0</div></div>
       <div class="stat-card"><div class="stat-label">Accepted</div><div class="stat-val success" id="statAccepted">0</div></div>
-      <div class="stat-card" id="statRejectedCard" style="cursor:pointer;"><div class="stat-label">Rejected</div><div class="stat-val danger" id="statRejected">0</div></div>
-      <div class="stat-card" id="statAlertsCard" style="cursor:pointer;"><div class="stat-label">Position alerts</div><div class="stat-val warn" id="statAlerts">0</div></div>
+      <div class="stat-card"><div class="stat-label">Rejected</div><div class="stat-val danger" id="statRejected">0</div></div>
+      <div class="stat-card"><div class="stat-label">Position alerts</div><div class="stat-val warn" id="statAlerts">0</div></div>
     </div>
 
     <div class="tabs" style="margin-bottom:16px; display:inline-flex;">
-      <button class="tab-btn active" data-admin-view="sites">Sites</button>
+      <button class="tab-btn active" data-admin-view="notifications">Notifications</button>
+      <button class="tab-btn" data-admin-view="sites">Sites</button>
       <button class="tab-btn" data-admin-view="overview">Checkpoints & log</button>
       <button class="tab-btn" data-admin-view="guards">Routes</button>
       <button class="tab-btn" data-admin-view="patrols">Patrols</button>
@@ -305,7 +306,19 @@
       <button class="tab-btn" data-admin-view="reports">Reports</button>
     </div>
 
-    <div class="admin-view active" id="admin-sites">
+    <div class="admin-view active" id="admin-notifications">
+      <div class="panel">
+        <h2>Active alerts</h2>
+        <div class="result-meta" style="margin-bottom:10px;">Red = missed or late. Orange = position, order, or declined-tag issues. Comment to resolve — this also clears it for the control room. Green successes clear on their own after an hour.</div>
+        <div id="adminNotifActive" style="display:flex; flex-direction:column; gap:10px;"><div class="empty">No alerts right now.</div></div>
+      </div>
+      <div class="panel" style="margin-top:16px;">
+        <h2>Recently resolved</h2>
+        <div id="adminNotifResolved" style="display:flex; flex-direction:column; gap:8px;"><div class="empty">Nothing resolved yet.</div></div>
+      </div>
+    </div>
+
+    <div class="admin-view" id="admin-sites">
       <div class="panel">
         <h2>Sites</h2>
         <div class="cp-row">
@@ -587,17 +600,30 @@
   <div class="stat-grid">
     <div class="stat-card"><div class="stat-label">Total scans</div><div class="stat-val" id="ctrlStatTotal">0</div></div>
     <div class="stat-card"><div class="stat-label">Accepted</div><div class="stat-val success" id="ctrlStatAccepted">0</div></div>
-    <div class="stat-card" id="ctrlStatRejectedCard" style="cursor:pointer;"><div class="stat-label">Rejected</div><div class="stat-val danger" id="ctrlStatRejected">0</div></div>
-    <div class="stat-card" id="ctrlStatAlertsCard" style="cursor:pointer;"><div class="stat-label">Position alerts</div><div class="stat-val warn" id="ctrlStatAlerts">0</div></div>
+    <div class="stat-card"><div class="stat-label">Rejected</div><div class="stat-val danger" id="ctrlStatRejected">0</div></div>
+    <div class="stat-card"><div class="stat-label">Position alerts</div><div class="stat-val warn" id="ctrlStatAlerts">0</div></div>
   </div>
 
   <div class="tabs" style="margin-bottom:16px; display:inline-flex;">
-    <button class="tab-btn active" data-ctrl-view="sites">Sites</button>
+    <button class="tab-btn active" data-ctrl-view="dashboard">Dashboard</button>
+    <button class="tab-btn" data-ctrl-view="sites">Sites</button>
     <button class="tab-btn" data-ctrl-view="log">Live activity log</button>
     <button class="tab-btn" data-ctrl-view="patrols">Patrols</button>
   </div>
 
-  <div class="ctrl-view active" id="ctrl-sites">
+  <div class="ctrl-view active" id="ctrl-dashboard">
+    <div class="panel">
+      <h2>Active alerts</h2>
+      <div class="result-meta" style="margin-bottom:10px;">Red = missed or late. Orange = position, order, or declined-tag issues. Comment to resolve — it'll clear here and update the admin. Green successes clear on their own after an hour.</div>
+      <div id="ctrlNotifActive" style="display:flex; flex-direction:column; gap:10px;"><div class="empty">No alerts right now.</div></div>
+    </div>
+    <div class="panel" style="margin-top:16px;">
+      <h2>Recently resolved</h2>
+      <div id="ctrlNotifResolved" style="display:flex; flex-direction:column; gap:8px;"><div class="empty">Nothing resolved yet.</div></div>
+    </div>
+  </div>
+
+  <div class="ctrl-view" id="ctrl-sites">
     <div class="panel">
       <h2>Sites</h2>
       <div class="result-meta" style="margin-bottom:10px;">Read-only — tap 🗺️ Map to see where a site is located.</div>
@@ -613,7 +639,7 @@
   <div class="ctrl-view" id="ctrl-log">
     <div class="panel">
       <h2>Live activity log</h2>
-      <div class="result-meta" style="margin-bottom:10px;">Tap "Rejected" or "Position alerts" above for a filtered list you can comment on.</div>
+      <div class="result-meta" style="margin-bottom:10px;">Every scan across every site, most recent first.</div>
       <div class="log-wrap" id="ctrlLogWrap"><div class="empty">No scans yet.</div></div>
     </div>
   </div>
@@ -666,19 +692,6 @@
         <button class="btn btn-primary" id="siteMapSaveBtn" style="flex:0 0 auto; width:auto; padding:9px 14px;">Save location</button>
       </div>
     </div>
-  </div>
-</div>
-
-<div class="qr-modal-bg" id="alertDetailModalBg">
-  <div class="detail-modal">
-    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
-      <div>
-        <div id="alertDetailTitle" style="font-weight:700; font-size:14px;"></div>
-        <div class="result-meta" style="margin-top:4px;">Comments are shared with the site admin.</div>
-      </div>
-      <button class="btn" style="width:auto; padding:5px 10px; font-size:11px; flex:0 0 auto;" id="alertDetailCloseBtn">Close</button>
-    </div>
-    <div id="alertDetailList" style="margin-top:12px; display:flex; flex-direction:column; gap:12px; max-height:60vh; overflow-y:auto;"></div>
   </div>
 </div>
 
@@ -1140,12 +1153,16 @@ async function loadAllData(){
     await loadInviteCodes();
     await loadControllerInviteCodes();
   }
+  if (profile && (profile.role === 'admin' || profile.role === 'controller')){
+    await loadNotifications();
+  }
 }
 
 // ---------------- Auth ----------------
 let authMode = 'signin';
 let authSignupRole = 'guard';
 let notificationInterval = null;
+let notifSweepInterval = null;
 
 function showAuthGate(message){
   document.getElementById('authGate').classList.add('show');
@@ -1279,6 +1296,7 @@ document.getElementById('authSubmitBtn').addEventListener('click', async () => {
 
 document.getElementById('signOutBtn').addEventListener('click', async () => {
   if (notificationInterval){ clearInterval(notificationInterval); notificationInterval = null; }
+  if (notifSweepInterval){ clearInterval(notifSweepInterval); notifSweepInterval = null; }
   await sb.auth.signOut();
 });
 
@@ -1456,6 +1474,14 @@ async function loadProfileAndApp(){
       renderPatrolsAdmin();
     }, 1000);
   }
+  if (!notifSweepInterval && (profile.role === 'admin' || profile.role === 'controller')){
+    sweepPatrolInstanceNotifications();
+    notifSweepInterval = setInterval(() => {
+      sweepPatrolInstanceNotifications();
+      sweepAutoClearGreens();
+      renderNotifications();
+    }, 30000);
+  }
 }
 
 function initAuth(){
@@ -1473,6 +1499,7 @@ function initAuth(){
 
 // ---------------- Realtime ----------------
 let realtimeChannel = null;
+let notificationsChannel = null;
 function subscribeRealtime(){
   if (realtimeChannel){ sb.removeChannel(realtimeChannel); realtimeChannel = null; }
   realtimeChannel = sb.channel('scans-live')
@@ -1488,6 +1515,15 @@ function subscribeRealtime(){
       }
     })
     .subscribe();
+
+  if (notificationsChannel){ sb.removeChannel(notificationsChannel); notificationsChannel = null; }
+  if (profile && (profile.role === 'admin' || profile.role === 'controller')){
+    notificationsChannel = sb.channel('notifications-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'patrol_notifications' }, () => {
+        loadNotifications().then(renderNotifications);
+      })
+      .subscribe();
+  }
 }
 
 // ---------------- Rendering ----------------
@@ -1882,84 +1918,161 @@ document.getElementById('siteMapSaveBtn').addEventListener('click', async () => 
   openSiteMapModal(siteMapCurrentSiteId);
 });
 
-// ---------------- Rejected / position-alert detail + comments ----------------
-let alertDetailComments = {};
+// ---------------- Patrol notifications dashboard ----------------
+let notifications = [];
 
-async function openAlertDetail(kind){
-  const title = kind === 'alerts' ? 'Position alerts' : 'Rejected scans';
-  document.getElementById('alertDetailTitle').textContent = title;
-  const listEl = document.getElementById('alertDetailList');
-  listEl.innerHTML = '<div class="empty">Loading…</div>';
-  document.getElementById('alertDetailModalBg').classList.add('show');
-
-  const filtered = scans
-    .filter(s => kind === 'alerts'
-      ? (s.result === 'REJECTED_OUT_OF_RANGE' || s.result === 'REJECTED_NO_LOCATION')
-      : s.result !== 'ACCEPTED')
-    .sort((a,b) => b.timestamp - a.timestamp)
-    .slice(0, 50);
-
-  if (!filtered.length){
-    listEl.innerHTML = '<div class="empty">Nothing here right now.</div>';
-    return;
-  }
-
-  const ids = filtered.map(s => s.id);
-  const { data: comments, error } = await sb.from('scan_comments').select('*, profiles(full_name)').in('scan_id', ids).order('created_at');
-  if (error){ showToast('Could not load comments', error.message, 'danger'); }
-  alertDetailComments = {};
-  (comments || []).forEach(c => {
-    if (!alertDetailComments[c.scan_id]) alertDetailComments[c.scan_id] = [];
-    alertDetailComments[c.scan_id].push(c);
-  });
-
-  listEl.innerHTML = filtered.map(s => {
-    const site = sites.find(x => x.id === s.siteId);
-    const cList = alertDetailComments[s.id] || [];
-    return `
-      <div class="panel" style="padding:10px 12px;">
-        <div style="display:flex; justify-content:space-between; gap:8px;">
-          <div style="font-family:var(--sans); font-size:12.5px; font-weight:600;">${site ? site.name : 'Unknown site'} · ${s.cpName || s.qrId}</div>
-          <span class="badge ${s.result === 'ACCEPTED' ? 'accepted' : 'rejected'}">${s.result.replace('REJECTED_','').replace(/_/g,' ')}</span>
-        </div>
-        <div class="result-meta" style="margin:4px 0 8px;">${new Date(s.timestamp).toLocaleString()}${s.distance != null ? ' · ' + s.distance.toFixed(0) + 'm from checkpoint' : ''}</div>
-        <div data-comment-list="${s.id}">
-          ${cList.length ? cList.map(c => `
-            <div class="comment-item"><b>${(c.profiles && c.profiles.full_name) || 'Someone'}</b> · <span class="result-meta">${new Date(c.created_at).toLocaleString()}</span><br>${c.body}</div>
-          `).join('') : '<div class="result-meta">No comments yet.</div>'}
-        </div>
-        <div class="cp-row" style="margin-top:8px;">
-          <input type="text" placeholder="Add a comment for the admin…" data-comment-input="${s.id}">
-          <button class="btn" data-comment-submit="${s.id}" style="flex:0 0 auto; width:auto; padding:8px 12px;">Post</button>
-        </div>
-      </div>
-    `;
-  }).join('');
-
-  listEl.querySelectorAll('[data-comment-submit]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const scanId = btn.dataset.commentSubmit;
-      const input = listEl.querySelector(`[data-comment-input="${scanId}"]`);
-      const body = input.value.trim();
-      if (!body) return;
-      btn.disabled = true;
-      const { error } = await sb.from('scan_comments').insert({ scan_id: scanId, author_id: session.user.id, body });
-      btn.disabled = false;
-      if (error){ showToast('Could not post comment', error.message, 'danger'); return; }
-      input.value = '';
-      showToast('Comment added', 'Visible to the admin.', 'success');
-      openAlertDetail(kind);
-    });
-  });
+function severityColor(sev){
+  return sev === 'red' ? 'var(--danger)' : sev === 'orange' ? 'var(--warn)' : 'var(--success)';
+}
+function timeAgo(iso){
+  const ms = nowMs() - new Date(iso).getTime();
+  const mins = Math.round(ms/60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + 'm ago';
+  const hrs = Math.round(mins/60);
+  if (hrs < 24) return hrs + 'h ago';
+  return new Date(iso).toLocaleDateString();
 }
 
-document.getElementById('statRejectedCard').addEventListener('click', () => openAlertDetail('rejected'));
-document.getElementById('statAlertsCard').addEventListener('click', () => openAlertDetail('alerts'));
-document.getElementById('ctrlStatRejectedCard').addEventListener('click', () => openAlertDetail('rejected'));
-document.getElementById('ctrlStatAlertsCard').addEventListener('click', () => openAlertDetail('alerts'));
-document.getElementById('alertDetailCloseBtn').addEventListener('click', () => {
-  document.getElementById('alertDetailModalBg').classList.remove('show');
-});
+async function loadNotifications(){
+  if (!profile || (profile.role !== 'admin' && profile.role !== 'controller')){ notifications = []; return; }
+  const cutoff = new Date(nowMs() - 24*60*60*1000).toISOString();
+  const { data, error } = await sb.from('patrol_notifications')
+    .select('*, notification_comments(id, body, created_at, author_id, profiles(full_name))')
+    .gte('occurred_at', cutoff)
+    .order('occurred_at', { ascending: false })
+    .limit(200);
+  if (error){ showToast('Could not load notifications', error.message, 'danger'); return; }
+  notifications = data || [];
+}
+
+function isGreenExpired(n){
+  return n.severity === 'green' && (nowMs() - new Date(n.occurred_at).getTime()) > 60*60*1000;
+}
+
+function renderNotificationsInto(activeId, resolvedId){
+  const activeEl = document.getElementById(activeId);
+  const resolvedEl = document.getElementById(resolvedId);
+  if (!activeEl && !resolvedEl) return;
+
+  const active = notifications.filter(n => !n.cleared_at && !isGreenExpired(n));
+  const resolved = notifications
+    .filter(n => n.cleared_at || isGreenExpired(n))
+    .sort((a,b) => new Date(b.cleared_at || b.occurred_at) - new Date(a.cleared_at || a.occurred_at))
+    .slice(0, 20);
+
+  if (activeEl){
+    activeEl.innerHTML = active.length ? active.map(n => {
+      const site = sites.find(s => s.id === n.site_id);
+      const color = severityColor(n.severity);
+      if (n.severity === 'green'){
+        const remainMin = Math.max(0, 60 - Math.round((nowMs() - new Date(n.occurred_at).getTime())/60000));
+        return `
+          <div class="panel" style="padding:10px 12px; border-left:4px solid ${color};">
+            <div style="display:flex; justify-content:space-between; gap:8px;">
+              <div style="font-family:var(--sans); font-weight:600; font-size:12.5px;">${n.title}</div>
+              <span class="result-meta">${timeAgo(n.occurred_at)}</span>
+            </div>
+            <div class="result-meta">${site ? site.name : (n.detail || '')}</div>
+            <div class="result-meta" style="margin-top:6px;">Clears automatically in ${remainMin}m</div>
+          </div>
+        `;
+      }
+      return `
+        <div class="panel" style="padding:10px 12px; border-left:4px solid ${color};">
+          <div style="display:flex; justify-content:space-between; gap:8px;">
+            <div style="font-family:var(--sans); font-weight:600; font-size:12.5px;">${n.title}</div>
+            <span class="result-meta">${timeAgo(n.occurred_at)}</span>
+          </div>
+          <div class="result-meta">${site ? site.name : (n.detail || '')}</div>
+          <div class="cp-row" style="margin-top:8px;">
+            <input type="text" placeholder="Comment to resolve…" data-notif-comment="${n.id}">
+            <button class="btn" data-notif-submit="${n.id}" style="flex:0 0 auto; width:auto; padding:8px 12px;">Post & clear</button>
+          </div>
+        </div>
+      `;
+    }).join('') : '<div class="empty">No alerts right now.</div>';
+
+    activeEl.querySelectorAll('[data-notif-submit]').forEach(btn => {
+      btn.addEventListener('click', () => submitNotificationComment(btn.dataset.notifSubmit, activeEl));
+    });
+  }
+
+  if (resolvedEl){
+    resolvedEl.innerHTML = resolved.length ? resolved.map(n => {
+      const site = sites.find(s => s.id === n.site_id);
+      const comment = (n.notification_comments || []).slice().sort((a,b) => new Date(b.created_at) - new Date(a.created_at))[0];
+      return `
+        <div class="comment-item">
+          <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${severityColor(n.severity)}; margin-right:6px;"></span>
+          <b>${n.title}</b> · <span class="result-meta">${site ? site.name : ''} · ${timeAgo(n.cleared_at || n.occurred_at)}</span>
+          ${comment ? `<br><span class="result-meta">"${comment.body}" — ${(comment.profiles && comment.profiles.full_name) || 'Someone'}</span>` : (n.severity === 'green' ? '<br><span class="result-meta">Auto-cleared</span>' : '')}
+        </div>
+      `;
+    }).join('') : '<div class="empty">Nothing resolved yet.</div>';
+  }
+}
+
+async function submitNotificationComment(notifId, containerEl){
+  const input = containerEl.querySelector(`[data-notif-comment="${notifId}"]`);
+  const body = input.value.trim();
+  if (!body) return;
+  const btn = containerEl.querySelector(`[data-notif-submit="${notifId}"]`);
+  btn.disabled = true;
+  const { error: cErr } = await sb.from('notification_comments').insert({ notification_id: notifId, author_id: session.user.id, body });
+  if (cErr){ showToast('Could not post comment', cErr.message, 'danger'); btn.disabled = false; return; }
+  const { error: uErr } = await sb.from('patrol_notifications').update({ cleared_at: new Date().toISOString(), cleared_by: session.user.id }).eq('id', notifId);
+  if (uErr){ showToast('Comment posted, but could not clear the alert', uErr.message, 'warn'); }
+  else showToast('Resolved', 'Cleared and visible to the admin.', 'success');
+  await loadNotifications();
+  renderNotifications();
+}
+
+function renderNotifications(){
+  renderNotificationsInto('adminNotifActive', 'adminNotifResolved');
+  renderNotificationsInto('ctrlNotifActive', 'ctrlNotifResolved');
+}
+
+// Detect newly-resolved whole-patrol instances (missed / late / on-time) and record them.
+// Best-effort: runs whenever an admin or controller session is open.
+async function sweepPatrolInstanceNotifications(){
+  if (!profile || (profile.role !== 'admin' && profile.role !== 'controller')) return;
+  const now = nowMs();
+  const windowStart = now - 6*60*60*1000;
+  const rows = [];
+  schedules.filter(s => s.active !== false).forEach(sched => {
+    const insts = generateInstances(sched, windowStart, now);
+    insts.forEach(inst => {
+      const st = instanceStatus(inst, now).status;
+      const r = routes.find(rt => rt.id === inst.routeId);
+      if (!r) return;
+      if (st === 'missed'){
+        rows.push({ site_id: r.siteId, route_id: r.id, kind: 'missed_patrol', severity: 'red', title: `${r.name} patrol missed`, detail: 'No valid scans in the patrol window.', occurred_at: new Date(inst.expectedTime).toISOString(), auto_clear: false });
+      } else if (st === 'completed_late'){
+        rows.push({ site_id: r.siteId, route_id: r.id, kind: 'late_patrol', severity: 'red', title: `${r.name} patrol finished late`, detail: 'Completed after the expected window.', occurred_at: new Date(inst.expectedTime).toISOString(), auto_clear: false });
+      } else if (st === 'completed'){
+        rows.push({ site_id: r.siteId, route_id: r.id, kind: 'success_patrol', severity: 'green', title: `${r.name} patrol completed on time`, detail: null, occurred_at: new Date(inst.expectedTime).toISOString(), auto_clear: true });
+      }
+    });
+  });
+  if (!rows.length) return;
+  const { error } = await sb.from('patrol_notifications').upsert(rows, { onConflict: 'kind,route_id,occurred_at', ignoreDuplicates: true });
+  if (!error){
+    await loadNotifications();
+    renderNotifications();
+  }
+}
+
+// Actually clear (not just hide) green successes once they've been visible for an hour.
+async function sweepAutoClearGreens(){
+  if (!profile || (profile.role !== 'admin' && profile.role !== 'controller')) return;
+  const stale = notifications.filter(n => n.severity === 'green' && !n.cleared_at && isGreenExpired(n));
+  if (!stale.length) return;
+  const { error } = await sb.from('patrol_notifications')
+    .update({ cleared_at: new Date().toISOString() })
+    .in('id', stale.map(n => n.id));
+  if (!error) await loadNotifications();
+}
 
 // ---------------- Patrols admin rendering ----------------
 function renderSchedRouteSelect(){
@@ -2241,6 +2354,7 @@ function renderAll(){
   renderAlertsForm();
   renderReportSiteSelect();
   defaultReportDates();
+  renderNotifications();
 }
 
 // ---------------- Scan processing ----------------
@@ -2263,6 +2377,7 @@ async function processScan(qrId){
 
   const dutyInfo = currentDutyRouteNextInstance();
   const dutyRoute = dutyInfo ? routes.find(r => r.id === dutyInfo.inst.routeId) : null;
+  const isLate = dutyInfo ? instanceStatus(dutyInfo.inst, nowMs()).status === 'late' : false;
 
   const pos = cp ? await getGuardPosition() : null;
   if (cp && pos) distance = distMeters(pos.lat, pos.lng, cp.lat, cp.lng);
@@ -2290,6 +2405,7 @@ async function processScan(qrId){
     result,
     distance_m: distance,
     is_mock: false,
+    is_late: result === 'ACCEPTED' && isLate,
     expected_qr_id: result === 'REJECTED_OUT_OF_ORDER' ? expectedQrId : null
   };
 
