@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>OnPatrol</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qr-scanner@1.4.2/qr-scanner.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -848,6 +848,9 @@
 // ============================================================
 // OnPatrol — Supabase-backed client
 // ============================================================
+// (qr-scanner auto-loads its Web Worker file from the same CDN path it was loaded
+// from — no manual WORKER_PATH needed as of this version.)
+
 const SUPABASE_URL = 'https://apesgglcqczyohykelup.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_BqKUmCs6Eu-AbP6uKXZh0w_lsBDgJnT';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -2662,9 +2665,10 @@ document.getElementById('manualScanBtn').addEventListener('click', async () => {
   decodeLocked = true; // hold off the background auto-scan loop while we handle this tap
   let qrId = null;
   try {
-    qrId = await decodeCurrentFrame();
+    const result = await QrScanner.scanImage(video, { returnDetailedScanResult: true });
+    qrId = result && result.data ? result.data.trim() : null;
   } catch (err){
-    console.error('QR frame capture error:', err);
+    qrId = null; // "No QR code found" rejects the promise — that's the expected empty case
   }
   if (!qrId){
     statusEl.textContent = 'No tag detected — point the camera at a QR tag and try again.';
@@ -2686,116 +2690,73 @@ document.getElementById('manualScanBtn').addEventListener('click', async () => {
 });
 
 // ---------------- Real camera + QR decode ----------------
-let stream = null, scanning = false;
+// qr-scanner (nimiq): decodes in a Web Worker, prefers the native BarcodeDetector when
+// genuinely available and falls back to its own bundled decoder otherwise — unlike our
+// old hand-rolled fallback, it doesn't get stuck silently returning "nothing found"
+// when the native detector exists but has no working backend.
+let scanning = false;
 const video = document.getElementById('video');
-const canvasEl = document.getElementById('canvas');
 const camPlaceholder = document.getElementById('camPlaceholder');
 const scanFrame = document.getElementById('scanFrame');
 const camToggleBtn = document.getElementById('camToggleBtn');
 
-// Prefer the browser/OS's native barcode engine (the same one behind Google Lens and
-// most camera apps) — it's far more tolerant of blur, low light, and skewed angles
-// than a pure-JS decoder like jsQR. Fall back to jsQR wherever it isn't available.
-let barcodeDetector = null;
-if ('BarcodeDetector' in window){
-  try { barcodeDetector = new BarcodeDetector({ formats: ['qr_code'] }); }
-  catch(e){ barcodeDetector = null; }
+let lastDecoded = null, lastDecodedAt = 0, decodeLocked = false;
+
+function handleDecoded(qrId){
+  if (decodeLocked) return;
+  const now = Date.now();
+  if (qrId === lastDecoded && now - lastDecodedAt <= 4000) return;
+  lastDecoded = qrId; lastDecodedAt = now;
+  decodeLocked = true;
+  SOUND.tagScan();
+  processScan(qrId).then(record => {
+    SOUND[record.result === 'ACCEPTED' ? 'tagAccepted' : 'tagRejected']();
+    showResult(record);
+    renderGuardPatrolCard();
+    decodeLocked = false;
+  }).catch(err => {
+    console.error('processScan error:', err);
+    decodeLocked = false;
+  });
 }
 
-async function decodeCurrentFrame(){
-  if (barcodeDetector){
-    try {
-      const codes = await barcodeDetector.detect(video);
-      if (codes && codes.length && codes[0].rawValue) return codes[0].rawValue.trim();
-      return null; // native detector ran cleanly, just found nothing this frame
-    } catch(err){
-      console.error('Native BarcodeDetector failed, falling back to jsQR:', err);
-    }
+const qrScanner = new QrScanner(
+  video,
+  result => handleDecoded(result.data.trim()),
+  {
+    onDecodeError: () => {}, // fires on every frame with no code in view — expected, not a bug
+    highlightScanRegion: false,
+    highlightCodeOutline: false,
+    preferredCamera: 'environment',
+    maxScansPerSecond: 10
   }
-  if (!(video.videoWidth > 0 && video.videoHeight > 0)) return null;
-  canvasEl.width = video.videoWidth;
-  canvasEl.height = video.videoHeight;
-  const ctx = canvasEl.getContext('2d');
-  ctx.drawImage(video, 0, 0, canvasEl.width, canvasEl.height);
-  const imageData = ctx.getImageData(0, 0, canvasEl.width, canvasEl.height);
-  const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
-  return code && code.data ? code.data.trim() : null;
-}
+);
 
 camToggleBtn.addEventListener('click', async () => {
   if (scanning){ stopCamera(); return; }
   try{
-    // Ask for a high-res feed with continuous autofocus — without this, many phones
-    // default to a low-res, fixed-focus stream that *looks* fine on screen but is too
-    // soft/low-detail for the decoder to actually read a close-up tag from.
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: 'environment',
-        width: { ideal: 1920 },
-        height: { ideal: 1080 },
-        advanced: [{ focusMode: 'continuous' }]
-      }
-    });
-    const track = stream.getVideoTracks()[0];
-    if (track && track.getCapabilities){
-      try {
-        const caps = track.getCapabilities();
-        if (caps.focusMode && caps.focusMode.includes('continuous')){
-          await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
-        }
-      } catch(e){ /* focus control not supported on this device — ignore */ }
-    }
-    video.srcObject = stream;
     video.style.display = 'block';
     camPlaceholder.style.display = 'none';
     scanFrame.style.display = 'block';
-    await video.play();
+    await qrScanner.start();
     scanning = true;
     camToggleBtn.textContent = 'Stop camera';
-    requestAnimationFrame(tickScan);
   } catch(err){
-    camPlaceholder.textContent = 'Camera unavailable in this environment (' + err.name + '). Pick the checkpoint from the list below instead.';
+    video.style.display = 'none';
+    scanFrame.style.display = 'none';
+    camPlaceholder.style.display = 'block';
+    camPlaceholder.textContent = 'Camera unavailable in this environment (' + (err && (err.message || err.name) || err) + '). Pick the checkpoint from the list below instead.';
   }
 });
 
 function stopCamera(){
   scanning = false;
-  if (stream) stream.getTracks().forEach(t => t.stop());
+  qrScanner.stop();
   video.style.display = 'none';
   scanFrame.style.display = 'none';
   camPlaceholder.style.display = 'block';
   camPlaceholder.textContent = 'Camera off. Tap "Start camera", then "Scan checkpoint" to read a QR tag.';
   camToggleBtn.textContent = 'Start camera';
-}
-
-let lastDecoded = null, lastDecodedAt = 0, decodeLocked = false;
-function tickScan(){
-  if (!scanning) return;
-  if (!decodeLocked && video.readyState === video.HAVE_ENOUGH_DATA){
-    decodeLocked = true; // pause this loop while a detection is in flight
-    decodeCurrentFrame().then(decoded => {
-      if (!decoded){ decodeLocked = false; return; }
-      const now = Date.now();
-      if (decoded === lastDecoded && now - lastDecodedAt <= 4000){ decodeLocked = false; return; }
-      lastDecoded = decoded; lastDecodedAt = now;
-      SOUND.tagScan();
-      processScan(decoded).then(record => {
-        SOUND[record.result === 'ACCEPTED' ? 'tagAccepted' : 'tagRejected']();
-        showResult(record);
-        renderGuardPatrolCard();
-        decodeLocked = false;
-      }).catch(err => {
-        console.error('processScan error:', err);
-        decodeLocked = false;
-      });
-    }).catch(err => {
-      // A single bad frame must never stop the loop — log it and keep scanning.
-      console.error('QR scan frame error:', err);
-      decodeLocked = false;
-    });
-  }
-  // Always reschedule, even if the try block above threw.
-  requestAnimationFrame(tickScan);
 }
 
 // ---------------- Admin view interactions ----------------
