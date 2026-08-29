@@ -2505,7 +2505,10 @@ function getGuardPosition(){
 }
 
 async function processScan(qrId){
-  const cp = checkpoints.find(c => c.qrId === qrId);
+  // Only checkpoints belonging to the guard's own site count as "known" tags.
+  const cp = checkpoints.find(c => c.qrId === qrId && c.siteId === guardSiteId);
+  // A tag that's real but belongs to a different site — reported distinctly from "unknown".
+  const cpElsewhere = !cp ? checkpoints.find(c => c.qrId === qrId) : null;
   let result, distance = null, expectedQrId = null;
 
   const dutyInfo = currentDutyRouteNextInstance();
@@ -2516,7 +2519,7 @@ async function processScan(qrId){
   if (cp && pos) distance = distMeters(pos.lat, pos.lng, cp.lat, cp.lng);
 
   if (!cp){
-    result = 'REJECTED_UNKNOWN_QR';
+    result = cpElsewhere ? 'REJECTED_WRONG_SITE' : 'REJECTED_UNKNOWN_QR';
   } else if (!pos){
     result = 'REJECTED_NO_LOCATION';
   } else if (distance > cp.radius){
@@ -2576,7 +2579,8 @@ function showResult(record){
   } else {
     const expectedCp = record.expectedQrId ? checkpoints.find(c => c.qrId === record.expectedQrId) : null;
     const reasons = {
-      REJECTED_UNKNOWN_QR: 'Unknown checkpoint code',
+      REJECTED_UNKNOWN_QR: 'No tag found — this code doesn\'t match any checkpoint',
+      REJECTED_WRONG_SITE: 'This tag isn\'t one of your site\'s checkpoints',
       REJECTED_NO_LOCATION: 'Could not confirm your location — enable location services and try again',
       REJECTED_OUT_OF_RANGE: 'Guard is outside the checkpoint radius',
       REJECTED_OUT_OF_ORDER: `Wrong checkpoint — this route requires checkpoints in order, expected ${expectedCp ? expectedCp.name : record.expectedQrId} next`
@@ -2591,7 +2595,10 @@ function showResult(record){
 document.getElementById('manualScanBtn').addEventListener('click', async () => {
   const qrId = document.getElementById('cpSelect').value;
   const statusEl = document.getElementById('manualScanStatus');
-  if (!qrId) return;
+  if (!qrId){
+    statusEl.textContent = 'No tag selected — choose a checkpoint from the list first.';
+    return;
+  }
   statusEl.textContent = 'Getting your location…';
   const btn = document.getElementById('manualScanBtn');
   btn.disabled = true;
@@ -2650,13 +2657,14 @@ function tickScan(){
     ctx.drawImage(video, 0, 0, canvasEl.width, canvasEl.height);
     const imageData = ctx.getImageData(0, 0, canvasEl.width, canvasEl.height);
     const code = jsQR(imageData.data, imageData.width, imageData.height);
-    if (code && code.data){
+    const decoded = code && code.data ? code.data.trim() : '';
+    if (decoded){
       const now = Date.now();
-      if (code.data !== lastDecoded || now - lastDecodedAt > 4000){
-        lastDecoded = code.data; lastDecodedAt = now;
+      if (decoded !== lastDecoded || now - lastDecodedAt > 4000){
+        lastDecoded = decoded; lastDecodedAt = now;
         decodeLocked = true; // pause decoding while we resolve location + save this scan
         SOUND.tagScan();
-        processScan(code.data).then(record => {
+        processScan(decoded).then(record => {
           SOUND[record.result === 'ACCEPTED' ? 'tagAccepted' : 'tagRejected']();
           showResult(record);
           advanceCpSelectAfterScan(record);
