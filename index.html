@@ -245,7 +245,7 @@
           <div id="guardSiteName" style="font-family:var(--mono); font-size:13px; padding:2px 0 10px; font-weight:600;">—</div>
 
           <div class="cam-box" id="camBox">
-            <div class="cam-placeholder" id="camPlaceholder">Camera off.<br>Tap "Start camera" to auto-scan a QR,<br>or use manual scan below.</div>
+            <div class="cam-placeholder" id="camPlaceholder">Camera off.<br>Tap "Start camera", then "Scan checkpoint" to read a QR tag.</div>
             <video id="video" playsinline style="display:none;"></video>
             <canvas id="canvas" style="display:none;"></canvas>
             <div class="scan-frame" id="scanFrame" style="display:none;"></div>
@@ -266,10 +266,10 @@
             <div class="cp-progress" id="guardPatrolCps"></div>
           </div>
 
-          <div class="field-label">Manual checkpoint scan (if camera can't read the code)</div>
-          <select id="cpSelect"></select>
+          <div class="field-label">Scan checkpoint</div>
+          <div class="result-meta" style="margin:-2px 0 6px;">Point the camera at the tag — it scans automatically. If it doesn't pick it up, tap "Scan now" to read the current frame.</div>
           <div class="btn-row">
-            <button class="btn btn-primary" id="manualScanBtn">Manual scan</button>
+            <button class="btn btn-primary" id="manualScanBtn">Scan now</button>
           </div>
           <div class="result-meta" id="manualScanStatus" style="margin-top:8px;"></div>
 
@@ -1659,14 +1659,6 @@ function subscribeRealtime(){
 }
 
 // ---------------- Rendering ----------------
-function renderCpSelect(){
-  const sel = document.getElementById('cpSelect');
-  if (!sel) return;
-  const scoped = checkpoints.filter(c => c.siteId === guardSiteId);
-  sel.innerHTML = scoped.map(c => `<option value="${c.qrId}">${c.name}</option>`).join('')
-    || '<option value="">No checkpoints at this site</option>';
-}
-
 function renderCpTable(){
   const body = document.getElementById('cpTableBody');
   const scoped = checkpoints.filter(c => c.siteId === activeSiteId);
@@ -2475,7 +2467,6 @@ function renderAll(){
   renderSiteTable();
   renderControllerSiteTable();
   renderGuardSiteName();
-  renderCpSelect();
   renderCpTable();
   renderStats();
   renderLog();
@@ -2557,16 +2548,6 @@ async function processScan(qrId){
   return record;
 }
 
-function advanceCpSelectAfterScan(record){
-  if (record.result !== 'ACCEPTED') return;
-  const dutyInfo = currentDutyRouteNextInstance();
-  if (!dutyInfo) return;
-  const next = nextExpectedCheckpoint(dutyInfo.inst);
-  if (!next) return;
-  const sel = document.getElementById('cpSelect');
-  if (sel && Array.from(sel.options).some(o => o.value === next)) sel.value = next;
-}
-
 function showResult(record){
   const card = document.getElementById('resultCard');
   const title = document.getElementById('resultTitle');
@@ -2593,22 +2574,49 @@ function showResult(record){
 
 // ---------------- Guard view interactions ----------------
 document.getElementById('manualScanBtn').addEventListener('click', async () => {
-  const qrId = document.getElementById('cpSelect').value;
   const statusEl = document.getElementById('manualScanStatus');
-  if (!qrId){
-    statusEl.textContent = 'No tag selected — choose a checkpoint from the list first.';
+  const btn = document.getElementById('manualScanBtn');
+  statusEl.textContent = '';
+
+  if (!scanning){
+    statusEl.textContent = 'Start the camera first, then point it at the tag.';
     return;
   }
-  statusEl.textContent = 'Getting your location…';
-  const btn = document.getElementById('manualScanBtn');
+  if (!(video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth > 0 && video.videoHeight > 0)){
+    statusEl.textContent = 'Camera is still starting up — try again in a moment.';
+    return;
+  }
+
   btn.disabled = true;
+  decodeLocked = true; // hold off the background auto-scan loop while we handle this tap
+  let qrId = null;
+  try {
+    canvasEl.width = video.videoWidth;
+    canvasEl.height = video.videoHeight;
+    const ctx = canvasEl.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvasEl.width, canvasEl.height);
+    const imageData = ctx.getImageData(0, 0, canvasEl.width, canvasEl.height);
+    const code = jsQR(imageData.data, imageData.width, imageData.height);
+    qrId = code && code.data ? code.data.trim() : null;
+  } catch (err){
+    console.error('QR frame capture error:', err);
+  }
+  if (!qrId){
+    statusEl.textContent = 'No tag detected — point the camera at a QR tag and try again.';
+    btn.disabled = false;
+    decodeLocked = false;
+    return;
+  }
+
+  statusEl.textContent = 'Getting your location…';
   SOUND.tagScan();
   const record = await processScan(qrId);
+  lastDecoded = qrId; lastDecodedAt = Date.now();
+  decodeLocked = false;
   btn.disabled = false;
   statusEl.textContent = '';
   SOUND[record.result === 'ACCEPTED' ? 'tagAccepted' : 'tagRejected']();
   showResult(record);
-  advanceCpSelectAfterScan(record);
   renderGuardPatrolCard();
 });
 
@@ -2633,7 +2641,7 @@ camToggleBtn.addEventListener('click', async () => {
     camToggleBtn.textContent = 'Stop camera';
     requestAnimationFrame(tickScan);
   } catch(err){
-    camPlaceholder.textContent = 'Camera unavailable in this environment (' + err.name + '). Use manual scan below instead.';
+    camPlaceholder.textContent = 'Camera unavailable in this environment (' + err.name + '). Pick the checkpoint from the list below instead.';
   }
 });
 
@@ -2643,37 +2651,46 @@ function stopCamera(){
   video.style.display = 'none';
   scanFrame.style.display = 'none';
   camPlaceholder.style.display = 'block';
-  camPlaceholder.textContent = 'Camera off. Tap "Start camera" to auto-scan a QR, or use manual scan below.';
+  camPlaceholder.textContent = 'Camera off. Tap "Start camera", then "Scan checkpoint" to read a QR tag.';
   camToggleBtn.textContent = 'Start camera';
 }
 
 let lastDecoded = null, lastDecodedAt = 0, decodeLocked = false;
 function tickScan(){
   if (!scanning) return;
-  if (video.readyState === video.HAVE_ENOUGH_DATA && !decodeLocked){
-    canvasEl.width = video.videoWidth;
-    canvasEl.height = video.videoHeight;
-    const ctx = canvasEl.getContext('2d');
-    ctx.drawImage(video, 0, 0, canvasEl.width, canvasEl.height);
-    const imageData = ctx.getImageData(0, 0, canvasEl.width, canvasEl.height);
-    const code = jsQR(imageData.data, imageData.width, imageData.height);
-    const decoded = code && code.data ? code.data.trim() : '';
-    if (decoded){
-      const now = Date.now();
-      if (decoded !== lastDecoded || now - lastDecodedAt > 4000){
-        lastDecoded = decoded; lastDecodedAt = now;
-        decodeLocked = true; // pause decoding while we resolve location + save this scan
-        SOUND.tagScan();
-        processScan(decoded).then(record => {
-          SOUND[record.result === 'ACCEPTED' ? 'tagAccepted' : 'tagRejected']();
-          showResult(record);
-          advanceCpSelectAfterScan(record);
-          renderGuardPatrolCard();
-          decodeLocked = false;
-        });
+  try {
+    if (video.readyState === video.HAVE_ENOUGH_DATA && !decodeLocked && video.videoWidth > 0 && video.videoHeight > 0){
+      canvasEl.width = video.videoWidth;
+      canvasEl.height = video.videoHeight;
+      const ctx = canvasEl.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvasEl.width, canvasEl.height);
+      const imageData = ctx.getImageData(0, 0, canvasEl.width, canvasEl.height);
+      const code = jsQR(imageData.data, imageData.width, imageData.height);
+      const decoded = code && code.data ? code.data.trim() : '';
+      if (decoded){
+        const now = Date.now();
+        if (decoded !== lastDecoded || now - lastDecodedAt > 4000){
+          lastDecoded = decoded; lastDecodedAt = now;
+          decodeLocked = true; // pause decoding while we resolve location + save this scan
+          SOUND.tagScan();
+          processScan(decoded).then(record => {
+            SOUND[record.result === 'ACCEPTED' ? 'tagAccepted' : 'tagRejected']();
+            showResult(record);
+            renderGuardPatrolCard();
+            decodeLocked = false;
+          }).catch(err => {
+            console.error('processScan error:', err);
+            decodeLocked = false;
+          });
+        }
       }
     }
+  } catch (err){
+    // A single bad frame (e.g. a 0x0 read right as the stream starts) must never
+    // stop the loop — log it and keep scanning on the next frame.
+    console.error('QR scan frame error:', err);
   }
+  // Always reschedule, even if the try block above threw.
   requestAnimationFrame(tickScan);
 }
 
