@@ -342,7 +342,10 @@
       </div>
     <div class="grid-2">
       <div class="panel">
-        <h2>Checkpoints</h2>
+        <h2 style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+          <span>Checkpoints</span>
+          <button class="btn" id="printCpTagsBtn" style="width:auto; padding:6px 12px; font-size:11px; text-transform:none; letter-spacing:normal;">🖨️ Print tags</button>
+        </h2>
         <div class="cp-row">
           <input type="text" id="newCpName" placeholder="Checkpoint name">
         </div>
@@ -1713,6 +1716,74 @@ function openQrModal(qrId){
   document.getElementById('qrModalLabel').textContent = `${qrId} — ${cp ? cp.name : ''}`;
   document.getElementById('qrModalBg').classList.add('show');
 }
+
+function escapeHtmlForPrint(str){
+  return String(str).replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
+}
+
+function printSiteTags(){
+  const site = sites.find(s => s.id === activeSiteId);
+  const scoped = checkpoints.filter(c => c.siteId === activeSiteId);
+  if (!scoped.length){
+    showToast('No checkpoints to print', 'Add checkpoints to this site first.', 'warn');
+    return;
+  }
+
+  const tagsHtml = scoped.map(c => {
+    const canvas = document.createElement('canvas');
+    new QRious({ element: canvas, value: c.qrId, size: 600, background: '#ffffff', foreground: '#000000' });
+    const dataUrl = canvas.toDataURL('image/png');
+    return `
+      <div class="tag">
+        <img src="${dataUrl}" alt="${escapeHtmlForPrint(c.qrId)}">
+        <div class="tag-name">${escapeHtmlForPrint(c.name)}</div>
+        <div class="tag-code">${escapeHtmlForPrint(c.qrId)}</div>
+      </div>`;
+  }).join('');
+
+  const win = window.open('', '_blank');
+  if (!win){
+    showToast('Could not open print window', 'Your browser may have blocked the popup — allow popups for this site and try again.', 'danger');
+    return;
+  }
+
+  win.document.write(`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>${escapeHtmlForPrint(site ? site.name : 'Site')} — checkpoint tags</title>
+<style>
+  @page { size: A4; margin: 1cm; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin:0; padding:0; background:#fff; color:#111; }
+  .sheet-title { font-size:13px; color:#555; padding:6px 0 14px; text-align:center; }
+  .grid { display:flex; flex-wrap:wrap; gap:0.3cm; }
+  .tag {
+    width:5cm; height:5cm; border:1px dashed #999; border-radius:3mm;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:0.2cm; page-break-inside:avoid; overflow:hidden;
+  }
+  .tag img { width:3.5cm; height:3.5cm; image-rendering:pixelated; }
+  .tag-name { font-size:9px; font-weight:700; margin-top:3px; text-align:center; max-width:4.6cm; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tag-code { font-size:8px; color:#666; font-family:ui-monospace, "SF Mono", Menlo, Consolas, monospace; margin-top:1px; }
+  @media print {
+    .sheet-title { display:none; }
+    .tag { border:1px dashed #bbb; }
+  }
+</style>
+</head>
+<body>
+  <div class="sheet-title">${escapeHtmlForPrint(site ? site.name : 'Site')} — checkpoint tags (${scoped.length})</div>
+  <div class="grid">${tagsHtml}</div>
+  <script>
+    window.onload = function(){ setTimeout(function(){ window.print(); }, 300); };
+  <\/script>
+</body>
+</html>`);
+  win.document.close();
+}
+
+document.getElementById('printCpTagsBtn').addEventListener('click', printSiteTags);
 
 function setTextIf(id, val){
   const el = document.getElementById(id);
