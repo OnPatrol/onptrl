@@ -305,13 +305,9 @@
 
     <div class="admin-view active" id="admin-notifications">
       <div class="panel">
-        <h2>Active alerts</h2>
-        <div class="result-meta" style="margin-bottom:10px;">Red = missed or late. Orange = position, order, or declined-tag issues. Comment to resolve — this also clears it for the control room. Green successes clear on their own after an hour.</div>
-        <div id="adminNotifActive" style="display:flex; flex-direction:column; gap:10px;"><div class="empty">No alerts right now.</div></div>
-      </div>
-      <div class="panel" style="margin-top:16px;">
         <h2>Recently resolved</h2>
-        <div id="adminNotifResolved" style="display:flex; flex-direction:column; gap:8px;"><div class="empty">Nothing resolved yet.</div></div>
+        <div class="result-meta" style="margin-bottom:10px;">Alerts the control room has commented on and cleared, from the last 24 hours. Live monitoring and clearing happens on the Controller dashboard — the full permanent history is in Reports → Controller Comments.</div>
+        <div id="adminNotifResolved" style="display:flex; flex-direction:column; gap:8px;"><div class="empty">Nothing resolved in the last 24 hours.</div></div>
       </div>
     </div>
 
@@ -602,6 +598,15 @@
             <tbody id="reportByRouteBody"><tr><td colspan="7" style="font-family:var(--sans); color:var(--muted);">Run a report to see results.</td></tr></tbody>
           </table>
         </div>
+
+        <div class="field-label" style="margin-top:22px;">Controller comments</div>
+        <div class="result-meta" style="margin:-4px 0 8px;">Every alert a controller resolved, with their comment — uses the same site/date filters above. This is the permanent record; the live dashboards only keep the last 24 hours.</div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>When</th><th>Site</th><th>Alert</th><th>Comment</th><th>Controller</th></tr></thead>
+            <tbody id="controllerCommentsBody"><tr><td colspan="5" style="font-family:var(--sans); color:var(--muted);">Run a report to see results.</td></tr></tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
@@ -610,11 +615,12 @@
 
 <!-- CONTROLLER VIEW -->
 <div class="view" id="view-controller">
+  <div class="result-meta" id="ctrlShiftLabel" style="margin-bottom:8px;"></div>
   <div class="stat-grid">
-    <div class="stat-card"><div class="stat-label">Total scans</div><div class="stat-val" id="ctrlStatTotal">0</div></div>
-    <div class="stat-card"><div class="stat-label">Accepted</div><div class="stat-val success" id="ctrlStatAccepted">0</div></div>
-    <div class="stat-card"><div class="stat-label">Rejected</div><div class="stat-val danger" id="ctrlStatRejected">0</div></div>
-    <div class="stat-card"><div class="stat-label">Position alerts</div><div class="stat-val warn" id="ctrlStatAlerts">0</div></div>
+    <div class="stat-card"><div class="stat-label">Scans this shift</div><div class="stat-val" id="ctrlStatTotal">0</div></div>
+    <div class="stat-card"><div class="stat-label">Accepted this shift</div><div class="stat-val success" id="ctrlStatAccepted">0</div></div>
+    <div class="stat-card"><div class="stat-label">Active rejected</div><div class="stat-val danger" id="ctrlStatRejected">0</div></div>
+    <div class="stat-card"><div class="stat-label">Active position alerts</div><div class="stat-val warn" id="ctrlStatAlerts">0</div></div>
   </div>
 
   <div class="tabs" style="margin-bottom:16px; display:inline-flex;">
@@ -629,10 +635,6 @@
       <h2>Active alerts</h2>
       <div class="result-meta" style="margin-bottom:10px;">Red = missed or late. Orange = position, order, or declined-tag issues. Comment to resolve — it'll clear here and update the admin. Green successes clear on their own after an hour.</div>
       <div id="ctrlNotifActive" style="display:flex; flex-direction:column; gap:10px;"><div class="empty">No alerts right now.</div></div>
-    </div>
-    <div class="panel" style="margin-top:16px;">
-      <h2>Recently resolved</h2>
-      <div id="ctrlNotifResolved" style="display:flex; flex-direction:column; gap:8px;"><div class="empty">Nothing resolved yet.</div></div>
     </div>
   </div>
 
@@ -1797,10 +1799,60 @@ function renderStats(){
   const accepted = scans.filter(s => s.result === 'ACCEPTED').length;
   const rejected = total - accepted;
   const alerts = scans.filter(s => s.result === 'REJECTED_OUT_OF_RANGE' || s.result === 'REJECTED_NO_LOCATION').length;
-  setTextIf('statTotal', total); setTextIf('ctrlStatTotal', total);
-  setTextIf('statAccepted', accepted); setTextIf('ctrlStatAccepted', accepted);
-  setTextIf('statRejected', rejected); setTextIf('ctrlStatRejected', rejected);
-  setTextIf('statAlerts', alerts); setTextIf('ctrlStatAlerts', alerts);
+  setTextIf('statTotal', total);
+  setTextIf('statAccepted', accepted);
+  setTextIf('statRejected', rejected);
+  setTextIf('statAlerts', alerts);
+}
+
+// Day shift 06:00–18:00, Night shift 18:00–06:00, in the browser's local time.
+function isDayShift(atMs){
+  const h = new Date(atMs).getHours();
+  return h >= 6 && h < 18;
+}
+function currentShiftStart(atMs){
+  const d = new Date(atMs);
+  const start = new Date(d);
+  start.setSeconds(0, 0);
+  if (isDayShift(atMs)){
+    start.setHours(6, 0);
+  } else if (d.getHours() >= 18){
+    start.setHours(18, 0);
+  } else {
+    start.setDate(start.getDate() - 1);
+    start.setHours(18, 0);
+  }
+  return start.getTime();
+}
+
+// Controller's tiles reset at each shift boundary, and the alert-related ones count
+// down in real time as the controller clears them — separate from the admin's
+// lifetime scan tiles in renderStats() above.
+function renderControllerStats(){
+  const totalEl = document.getElementById('ctrlStatTotal');
+  if (!totalEl) return;
+  const now = nowMs();
+  const shiftStart = currentShiftStart(now);
+  const shiftScans = scans.filter(s => s.timestamp >= shiftStart);
+  const total = shiftScans.length;
+  const accepted = shiftScans.filter(s => s.result === 'ACCEPTED').length;
+  const activeRejected = notifications.filter(n =>
+    !n.cleared_at && (n.severity === 'red' || n.severity === 'orange') && new Date(n.occurred_at).getTime() >= shiftStart
+  ).length;
+  const activeAlerts = notifications.filter(n =>
+    !n.cleared_at && n.kind === 'radius_alert' && new Date(n.occurred_at).getTime() >= shiftStart
+  ).length;
+  setTextIf('ctrlStatTotal', total);
+  setTextIf('ctrlStatAccepted', accepted);
+  setTextIf('ctrlStatRejected', activeRejected);
+  setTextIf('ctrlStatAlerts', activeAlerts);
+
+  const label = document.getElementById('ctrlShiftLabel');
+  if (label){
+    const shiftName = isDayShift(now) ? 'Day shift' : 'Night shift';
+    const resetsAt = isDayShift(now) ? '18:00' : '06:00';
+    label.textContent = `${shiftName} (resets ${resetsAt}) — counters cover this shift only`;
+  }
 }
 
 function renderLog(){
@@ -2134,12 +2186,15 @@ function timeAgo(iso){
 
 async function loadNotifications(){
   if (!profile || (profile.role !== 'admin' && profile.role !== 'controller')){ notifications = []; return; }
+  // Active (uncleared) alerts never expire on their own here — they must be resolved.
+  // Resolved ones only stay in this working set for 24h; the full history lives in
+  // Admin → Reports → Controller Comments, queried separately with its own date range.
   const cutoff = new Date(nowMs() - 24*60*60*1000).toISOString();
   const { data, error } = await sb.from('patrol_notifications')
     .select('*, notification_comments(id, body, created_at, author_id, profiles(full_name))')
-    .gte('occurred_at', cutoff)
+    .or(`cleared_at.is.null,cleared_at.gte.${cutoff}`)
     .order('occurred_at', { ascending: false })
-    .limit(200);
+    .limit(300);
   if (error){ showToast('Could not load notifications', error.message, 'danger'); return; }
   notifications = data || [];
 }
@@ -2227,8 +2282,9 @@ async function submitNotificationComment(notifId, containerEl){
 }
 
 function renderNotifications(){
-  renderNotificationsInto('adminNotifActive', 'adminNotifResolved');
-  renderNotificationsInto('ctrlNotifActive', 'ctrlNotifResolved');
+  renderNotificationsInto(null, 'adminNotifResolved');
+  renderNotificationsInto('ctrlNotifActive', null);
+  renderControllerStats();
 }
 
 // Detect newly-resolved whole-patrol instances (missed / late / on-time) and record them.
@@ -2578,13 +2634,18 @@ async function processScan(qrId){
 
   const dutyInfo = currentDutyRouteNextInstance();
   const dutyRoute = dutyInfo ? routes.find(r => r.id === dutyInfo.inst.routeId) : null;
-  const isLate = dutyInfo ? instanceStatus(dutyInfo.inst, nowMs()).status === 'late' : false;
+  const instSt = dutyInfo ? instanceStatus(dutyInfo.inst, nowMs()) : null;
+  const isLate = instSt ? instSt.status === 'late' : false;
+  // Already checked in on this tag for the current patrol — don't let it be scanned again.
+  const alreadyScanned = !!(cp && dutyRoute && dutyRoute.cpIds.includes(qrId) && instSt.doneCps.includes(qrId));
 
-  const pos = cp ? await getGuardPosition() : null;
+  const pos = (cp && !alreadyScanned) ? await getGuardPosition() : null;
   if (cp && pos) distance = distMeters(pos.lat, pos.lng, cp.lat, cp.lng);
 
   if (!cp){
     result = cpElsewhere ? 'REJECTED_WRONG_SITE' : 'REJECTED_UNKNOWN_QR';
+  } else if (alreadyScanned){
+    result = 'REJECTED_ALREADY_SCANNED';
   } else if (!pos){
     result = 'REJECTED_NO_LOCATION';
   } else if (distance > cp.radius){
@@ -2638,7 +2699,8 @@ function showResult(record){
       REJECTED_WRONG_SITE: 'This tag isn\'t one of your site\'s checkpoints',
       REJECTED_NO_LOCATION: 'Could not confirm your location — enable location services and try again',
       REJECTED_OUT_OF_RANGE: 'Guard is outside the checkpoint radius',
-      REJECTED_OUT_OF_ORDER: `Wrong checkpoint — this route requires checkpoints in order, expected ${expectedCp ? expectedCp.name : record.expectedQrId} next`
+      REJECTED_OUT_OF_ORDER: `Wrong checkpoint — this route requires checkpoints in order, expected ${expectedCp ? expectedCp.name : record.expectedQrId} next`,
+      REJECTED_ALREADY_SCANNED: 'Already checked in on this tag for the current patrol'
     };
     title.textContent = `Rejected — ${reasons[record.result] || (record.saveFailed ? 'Could not save scan' : record.result)}`;
   }
@@ -3034,9 +3096,62 @@ function renderReport(){
   }).join('') : '<tr><td colspan="7" style="font-family:var(--sans); color:var(--muted);">No resolved patrols in this range.</td></tr>';
 }
 
-document.getElementById('runReportBtn').addEventListener('click', () => {
+document.getElementById('runReportBtn').addEventListener('click', async () => {
   if (computeReport()) renderReport();
+  await loadAndRenderControllerComments();
 });
+
+async function loadAndRenderControllerComments(){
+  const siteFilter = document.getElementById('reportSiteSelect').value || null;
+  const fromVal = document.getElementById('reportFrom').value;
+  const toVal = document.getElementById('reportTo').value;
+  const body = document.getElementById('controllerCommentsBody');
+  if (!fromVal || !toVal) return;
+  const winStart = new Date(fromVal + 'T00:00:00').toISOString();
+  const winEnd = new Date(toVal + 'T23:59:59').toISOString();
+
+  let query = sb.from('patrol_notifications')
+    .select('id, site_id, title, severity, occurred_at, cleared_at, notification_comments!inner(body, created_at, profiles(full_name))')
+    .gte('occurred_at', winStart)
+    .lte('occurred_at', winEnd)
+    .order('occurred_at', { ascending: false })
+    .limit(300);
+  if (siteFilter) query = query.eq('site_id', siteFilter);
+
+  const { data, error } = await query;
+  if (error){ showToast('Could not load controller comments', error.message, 'danger'); return; }
+
+  if (!data || !data.length){
+    body.innerHTML = '<tr><td colspan="5" style="font-family:var(--sans); color:var(--muted);">No commented alerts in this range.</td></tr>';
+    return;
+  }
+
+  const rows = [];
+  data.forEach(n => {
+    const site = sites.find(s => s.id === n.site_id);
+    (n.notification_comments || []).forEach(c => {
+      rows.push({
+        when: c.created_at,
+        site: site ? site.name : '—',
+        title: n.title,
+        severity: n.severity,
+        body: c.body,
+        author: (c.profiles && c.profiles.full_name) || 'Someone'
+      });
+    });
+  });
+  rows.sort((a,b) => new Date(b.when) - new Date(a.when));
+
+  body.innerHTML = rows.map(r => `
+    <tr>
+      <td>${new Date(r.when).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</td>
+      <td style="font-family:var(--sans);">${r.site}</td>
+      <td style="font-family:var(--sans);"><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${severityColor(r.severity)}; margin-right:6px;"></span>${r.title}</td>
+      <td style="font-family:var(--sans);">${r.body}</td>
+      <td style="font-family:var(--sans);">${r.author}</td>
+    </tr>
+  `).join('');
+}
 
 document.getElementById('downloadReportBtn').addEventListener('click', () => {
   if (!computeReport()){ return; }
