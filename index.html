@@ -267,7 +267,7 @@
           </div>
 
           <div class="field-label">Scan checkpoint</div>
-          <div class="result-meta" style="margin:-2px 0 6px;">Point the camera at the tag — it scans automatically. If it doesn't pick it up, tap "Scan now" to read the current frame.</div>
+          <div class="result-meta" style="margin:-2px 0 6px;">Hold the tag about 15–20cm from the camera and keep it steady — it scans automatically. If it doesn't pick it up, tap "Scan now" to read the current frame.</div>
           <div class="btn-row">
             <button class="btn btn-primary" id="manualScanBtn">Scan now</button>
           </div>
@@ -2667,7 +2667,7 @@ document.getElementById('manualScanBtn').addEventListener('click', async () => {
     const ctx = canvasEl.getContext('2d');
     ctx.drawImage(video, 0, 0, canvasEl.width, canvasEl.height);
     const imageData = ctx.getImageData(0, 0, canvasEl.width, canvasEl.height);
-    const code = jsQR(imageData.data, imageData.width, imageData.height);
+    const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
     qrId = code && code.data ? code.data.trim() : null;
   } catch (err){
     console.error('QR frame capture error:', err);
@@ -2702,7 +2702,26 @@ const camToggleBtn = document.getElementById('camToggleBtn');
 camToggleBtn.addEventListener('click', async () => {
   if (scanning){ stopCamera(); return; }
   try{
-    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    // Ask for a high-res feed with continuous autofocus — without this, many phones
+    // default to a low-res, fixed-focus stream that *looks* fine on screen but is too
+    // soft/low-detail for jsQR to actually decode a close-up tag from.
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: 'environment',
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+        advanced: [{ focusMode: 'continuous' }]
+      }
+    });
+    const track = stream.getVideoTracks()[0];
+    if (track && track.getCapabilities){
+      try {
+        const caps = track.getCapabilities();
+        if (caps.focusMode && caps.focusMode.includes('continuous')){
+          await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+        }
+      } catch(e){ /* focus control not supported on this device — ignore */ }
+    }
     video.srcObject = stream;
     video.style.display = 'block';
     camPlaceholder.style.display = 'none';
@@ -2736,7 +2755,7 @@ function tickScan(){
       const ctx = canvasEl.getContext('2d');
       ctx.drawImage(video, 0, 0, canvasEl.width, canvasEl.height);
       const imageData = ctx.getImageData(0, 0, canvasEl.width, canvasEl.height);
-      const code = jsQR(imageData.data, imageData.width, imageData.height);
+      const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
       const decoded = code && code.data ? code.data.trim() : '';
       if (decoded){
         const now = Date.now();
