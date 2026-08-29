@@ -2662,13 +2662,7 @@ document.getElementById('manualScanBtn').addEventListener('click', async () => {
   decodeLocked = true; // hold off the background auto-scan loop while we handle this tap
   let qrId = null;
   try {
-    canvasEl.width = video.videoWidth;
-    canvasEl.height = video.videoHeight;
-    const ctx = canvasEl.getContext('2d');
-    ctx.drawImage(video, 0, 0, canvasEl.width, canvasEl.height);
-    const imageData = ctx.getImageData(0, 0, canvasEl.width, canvasEl.height);
-    const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
-    qrId = code && code.data ? code.data.trim() : null;
+    qrId = await decodeCurrentFrame();
   } catch (err){
     console.error('QR frame capture error:', err);
   }
@@ -2699,12 +2693,41 @@ const camPlaceholder = document.getElementById('camPlaceholder');
 const scanFrame = document.getElementById('scanFrame');
 const camToggleBtn = document.getElementById('camToggleBtn');
 
+// Prefer the browser/OS's native barcode engine (the same one behind Google Lens and
+// most camera apps) — it's far more tolerant of blur, low light, and skewed angles
+// than a pure-JS decoder like jsQR. Fall back to jsQR wherever it isn't available.
+let barcodeDetector = null;
+if ('BarcodeDetector' in window){
+  try { barcodeDetector = new BarcodeDetector({ formats: ['qr_code'] }); }
+  catch(e){ barcodeDetector = null; }
+}
+
+async function decodeCurrentFrame(){
+  if (barcodeDetector){
+    try {
+      const codes = await barcodeDetector.detect(video);
+      if (codes && codes.length && codes[0].rawValue) return codes[0].rawValue.trim();
+      return null; // native detector ran cleanly, just found nothing this frame
+    } catch(err){
+      console.error('Native BarcodeDetector failed, falling back to jsQR:', err);
+    }
+  }
+  if (!(video.videoWidth > 0 && video.videoHeight > 0)) return null;
+  canvasEl.width = video.videoWidth;
+  canvasEl.height = video.videoHeight;
+  const ctx = canvasEl.getContext('2d');
+  ctx.drawImage(video, 0, 0, canvasEl.width, canvasEl.height);
+  const imageData = ctx.getImageData(0, 0, canvasEl.width, canvasEl.height);
+  const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
+  return code && code.data ? code.data.trim() : null;
+}
+
 camToggleBtn.addEventListener('click', async () => {
   if (scanning){ stopCamera(); return; }
   try{
     // Ask for a high-res feed with continuous autofocus — without this, many phones
     // default to a low-res, fixed-focus stream that *looks* fine on screen but is too
-    // soft/low-detail for jsQR to actually decode a close-up tag from.
+    // soft/low-detail for the decoder to actually read a close-up tag from.
     stream = await navigator.mediaDevices.getUserMedia({
       video: {
         facingMode: 'environment',
@@ -2748,37 +2771,28 @@ function stopCamera(){
 let lastDecoded = null, lastDecodedAt = 0, decodeLocked = false;
 function tickScan(){
   if (!scanning) return;
-  try {
-    if (video.readyState === video.HAVE_ENOUGH_DATA && !decodeLocked && video.videoWidth > 0 && video.videoHeight > 0){
-      canvasEl.width = video.videoWidth;
-      canvasEl.height = video.videoHeight;
-      const ctx = canvasEl.getContext('2d');
-      ctx.drawImage(video, 0, 0, canvasEl.width, canvasEl.height);
-      const imageData = ctx.getImageData(0, 0, canvasEl.width, canvasEl.height);
-      const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
-      const decoded = code && code.data ? code.data.trim() : '';
-      if (decoded){
-        const now = Date.now();
-        if (decoded !== lastDecoded || now - lastDecodedAt > 4000){
-          lastDecoded = decoded; lastDecodedAt = now;
-          decodeLocked = true; // pause decoding while we resolve location + save this scan
-          SOUND.tagScan();
-          processScan(decoded).then(record => {
-            SOUND[record.result === 'ACCEPTED' ? 'tagAccepted' : 'tagRejected']();
-            showResult(record);
-            renderGuardPatrolCard();
-            decodeLocked = false;
-          }).catch(err => {
-            console.error('processScan error:', err);
-            decodeLocked = false;
-          });
-        }
-      }
-    }
-  } catch (err){
-    // A single bad frame (e.g. a 0x0 read right as the stream starts) must never
-    // stop the loop — log it and keep scanning on the next frame.
-    console.error('QR scan frame error:', err);
+  if (!decodeLocked && video.readyState === video.HAVE_ENOUGH_DATA){
+    decodeLocked = true; // pause this loop while a detection is in flight
+    decodeCurrentFrame().then(decoded => {
+      if (!decoded){ decodeLocked = false; return; }
+      const now = Date.now();
+      if (decoded === lastDecoded && now - lastDecodedAt <= 4000){ decodeLocked = false; return; }
+      lastDecoded = decoded; lastDecodedAt = now;
+      SOUND.tagScan();
+      processScan(decoded).then(record => {
+        SOUND[record.result === 'ACCEPTED' ? 'tagAccepted' : 'tagRejected']();
+        showResult(record);
+        renderGuardPatrolCard();
+        decodeLocked = false;
+      }).catch(err => {
+        console.error('processScan error:', err);
+        decodeLocked = false;
+      });
+    }).catch(err => {
+      // A single bad frame must never stop the loop — log it and keep scanning.
+      console.error('QR scan frame error:', err);
+      decodeLocked = false;
+    });
   }
   // Always reschedule, even if the try block above threw.
   requestAnimationFrame(tickScan);
