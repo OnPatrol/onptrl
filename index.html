@@ -9,9 +9,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
   :root{
     --bg:#0D1117;
@@ -69,7 +66,7 @@
     border:1px solid var(--border); display:flex; align-items:center; justify-content:center;
   }
   .cam-box video, .cam-box canvas{width:100%; height:100%; object-fit:cover; position:absolute; top:0; left:0;}
-  .cam-placeholder{color:var(--muted); font-size:12px; text-align:center; padding:20px; z-index:1;}
+  .cam-placeholder{position:absolute; inset:0; background:#000; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:12px; text-align:center; padding:20px; z-index:1;}
   .scan-frame{
     position:absolute; inset:15%; border:2px solid var(--accent); border-radius:12px; z-index:2;
     box-shadow:0 0 0 2000px rgba(0,0,0,0.35);
@@ -281,7 +278,7 @@
 
           <div class="cam-box" id="camBox">
             <div class="cam-placeholder" id="camPlaceholder">Camera off.<br>Tap "Start camera", then "Scan checkpoint" to read a QR tag.</div>
-            <video id="video" playsinline style="display:none;"></video>
+            <video id="video" playsinline></video>
             <canvas id="canvas" style="display:none;"></canvas>
             <div class="scan-frame" id="scanFrame" style="display:none;"></div>
             <div class="result-card" id="resultCard">
@@ -322,11 +319,12 @@
   <!-- ADMIN VIEW -->
   <div class="view" id="view-admin">
     <div class="stat-grid">
-      <div class="stat-card"><div class="stat-label">Total scans</div><div class="stat-val" id="statTotal">0</div></div>
-      <div class="stat-card"><div class="stat-label">Accepted</div><div class="stat-val success" id="statAccepted">0</div></div>
-      <div class="stat-card"><div class="stat-label">Rejected</div><div class="stat-val danger" id="statRejected">0</div></div>
-      <div class="stat-card"><div class="stat-label">Position alerts</div><div class="stat-val warn" id="statAlerts">0</div></div>
+      <div class="stat-card"><div class="stat-label">Scans (last 48h)</div><div class="stat-val" id="statTotal">0</div></div>
+      <div class="stat-card"><div class="stat-label">Accepted (last 48h)</div><div class="stat-val success" id="statAccepted">0</div></div>
+      <div class="stat-card"><div class="stat-label">Rejected (last 48h)</div><div class="stat-val danger" id="statRejected">0</div></div>
+      <div class="stat-card"><div class="stat-label">Position alerts (last 48h)</div><div class="stat-val warn" id="statAlerts">0</div></div>
     </div>
+    <div class="result-meta" style="margin:-8px 0 16px;">These four update live and only cover the last 48 hours. For totals over a longer or specific date range, use <b>Patrol reports</b> below — it queries full history, not this rolling window.</div>
 
     <div class="tabs" style="margin-bottom:16px; display:inline-flex;">
       <button class="tab-btn active" data-admin-view="notifications">Notifications</button>
@@ -535,13 +533,15 @@
       <div class="panel" style="max-width:480px;">
         <h2>Alert routing</h2>
         <div class="field-label">Notify on rejected scans via</div>
-        <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:16px;">
+        <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:8px;">
           <label style="display:flex; align-items:center; gap:8px; font-size:13px;"><input type="checkbox" id="notifyDashboard" checked> Control room dashboard</label>
           <label style="display:flex; align-items:center; gap:8px; font-size:13px;"><input type="checkbox" id="notifySms"> SMS to supervisor</label>
           <label style="display:flex; align-items:center; gap:8px; font-size:13px;"><input type="checkbox" id="notifyEmail"> Email to site manager</label>
         </div>
+        <div class="result-meta error-text" style="margin-bottom:16px;">SMS and email delivery aren't connected yet — these two checkboxes save your preference for when that's built, but no texts or emails go out either way. The dashboard alert always fires regardless of these boxes.</div>
         <div class="field-label">Escalate after this many rejections from one guard in a shift</div>
         <input type="text" id="escalationThreshold" value="3" style="max-width:120px;">
+        <div class="result-meta" style="margin:6px 0 0;">When a guard hits this many location-related rejections in one shift, the alert is marked <b>escalated</b> (raised to red) instead of the usual orange — so it stands out on the dashboard.</div>
         <div class="btn-row">
           <button class="btn btn-primary" id="saveAlertsBtn">Save settings</button>
         </div>
@@ -619,7 +619,7 @@
         <div class="btn-row" style="margin-top:10px;">
           <button class="btn btn-primary" id="runReportBtn">Run report</button>
           <button class="btn" id="downloadReportBtn" style="width:auto; padding:9px 14px;">⬇ Download CSV</button>
-          <button class="btn" id="downloadPdfReportBtn" style="width:auto; padding:9px 14px;">⬇ Download branded PDF</button>
+          <button class="btn" id="printPdfReportBtn" style="width:auto; padding:9px 14px;">🖨 Print / Save PDF</button>
         </div>
         <div class="result-meta" id="reportRunStatus" style="margin-top:6px;"></div>
 
@@ -634,11 +634,11 @@
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:14px 0;">
           <div class="panel" style="padding:12px;">
             <div class="field-label" style="margin-top:0;">On-time vs late vs missed, by route</div>
-            <canvas id="reportBarChart" height="220"></canvas>
+            <div id="reportBarChart"></div>
           </div>
-          <div class="panel" style="padding:12px;">
-            <div class="field-label" style="margin-top:0;">Overall outcome mix</div>
-            <canvas id="reportDonutChart" height="220"></canvas>
+          <div class="panel" style="padding:12px; display:flex; flex-direction:column; align-items:center;">
+            <div class="field-label" style="margin-top:0; align-self:flex-start;">Overall outcome mix</div>
+            <div id="reportDonutChart" style="width:200px;"></div>
           </div>
         </div>
 
@@ -2829,16 +2829,30 @@ async function processScan(qrId){
   // best-effort and never blocks the scan itself if it fails to save.
   if (result === 'REJECTED_OUT_OF_RANGE' || result === 'REJECTED_NO_LOCATION'){
     const patrolTime = fmtClock(dutyInfo.inst.expectedTime);
-    const detail = result === 'REJECTED_OUT_OF_RANGE'
+    const baseDetail = result === 'REJECTED_OUT_OF_RANGE'
       ? `${patrolTime} patrol · Guard ${Math.round(distance)}m from ${cp.name}`
       : `${patrolTime} patrol · Guard's location wasn't available while scanning ${cp.name}`;
+
+    // Alert Settings' escalation threshold, made real: count this guard's
+    // location-related rejections at this site since the shift began (the
+    // in-memory `scans` cache covers this — it only drops rows after 48h, and a
+    // single shift is always well inside that). At or above the configured
+    // number, raise this alert to red instead of the usual orange so it actually
+    // stands out, rather than the threshold sitting unused.
+    const shiftStart = currentShiftStart(nowMs());
+    const priorRejections = scans.filter(s => s.siteId === siteId && s.guardId === session.user.id &&
+      (s.result === 'REJECTED_OUT_OF_RANGE' || s.result === 'REJECTED_NO_LOCATION') && s.timestamp >= shiftStart).length;
+    const rejectionCount = priorRejections + 1;
+    const threshold = Math.max(1, alertSettings.escalation || 3);
+    const escalated = rejectionCount >= threshold;
+
     sb.from('patrol_notifications').insert({
       site_id: siteId,
       route_id: dutyInfo.inst.routeId,
       kind: 'radius_alert',
-      severity: 'orange',
-      title: result === 'REJECTED_OUT_OF_RANGE' ? 'Guard outside checkpoint radius' : 'Guard location unavailable',
-      detail,
+      severity: escalated ? 'red' : 'orange',
+      title: (escalated ? 'Escalated — ' : '') + (result === 'REJECTED_OUT_OF_RANGE' ? 'Guard outside checkpoint radius' : 'Guard location unavailable'),
+      detail: escalated ? `${baseDetail} · ${rejectionCount} rejections this shift, reached the escalation threshold` : baseDetail,
       occurred_at: new Date().toISOString(),
       auto_clear: false
     }).then(({ error: alertErr }) => { if (alertErr) console.warn('radius_alert not saved', alertErr); });
@@ -3066,7 +3080,6 @@ function stopTorchAutoSensing(){
 camToggleBtn.addEventListener('click', async () => {
   if (scanning){ stopCamera(); return; }
   try{
-    video.style.display = 'block';
     camPlaceholder.style.display = 'none';
     camPlaceholder.classList.remove('error-text');
     scanFrame.style.display = 'block';
@@ -3075,9 +3088,8 @@ camToggleBtn.addEventListener('click', async () => {
     camToggleBtn.textContent = 'Stop camera';
     startTorchAutoSensing();
   } catch(err){
-    video.style.display = 'none';
     scanFrame.style.display = 'none';
-    camPlaceholder.style.display = 'block';
+    camPlaceholder.style.display = 'flex';
     camPlaceholder.classList.add('error-text');
     camPlaceholder.textContent = 'Camera unavailable in this environment (' + (err && (err.message || err.name) || err) + '). Pick the checkpoint from the list below instead.';
   }
@@ -3087,9 +3099,8 @@ function stopCamera(){
   scanning = false;
   qrScanner.stop();
   stopTorchAutoSensing();
-  video.style.display = 'none';
   scanFrame.style.display = 'none';
-  camPlaceholder.style.display = 'block';
+  camPlaceholder.style.display = 'flex';
   camPlaceholder.classList.remove('error-text');
   camPlaceholder.textContent = 'Camera off. Tap "Start camera", then "Scan checkpoint" to read a QR tag.';
   camToggleBtn.textContent = 'Start camera';
@@ -3308,8 +3319,68 @@ let lastReportRows = [];
 let lastReportSummary = null;
 let lastReportDetail = [];
 let lastReportComments = [];
-let reportBarChartInstance = null;
-let reportDonutChartInstance = null;
+
+// Hand-built SVG charts instead of a canvas library: no external script to fail
+// to load, and no "screenshot the canvas before it's finished animating" timing
+// problem — the markup below is the final chart the instant it's inserted, so
+// what's on screen is exactly what goes into the printed report too.
+function svgStackedBarChart(rows){
+  const w = 480, h = 220, padL = 30, padB = 30, padT = 10, padR = 10;
+  const plotW = w - padL - padR, plotH = h - padT - padB;
+  const successColor = '#3FB878', warnColor = '#F0A020', dangerColor = '#E5484D', gridColor = '#3a4451', textColor = '#8B96A5';
+  if (!rows.length){
+    return `<svg viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto;"><text x="${w/2}" y="${h/2}" text-anchor="middle" font-size="12" fill="${textColor}" font-family="sans-serif">No resolved patrols in this range</text></svg>`;
+  }
+  const maxTotal = Math.max(1, ...rows.map(r => r.onTime + r.late + r.missed));
+  const gap = plotW / rows.length;
+  const barW = Math.max(6, Math.min(46, gap * 0.55));
+  let grid = '';
+  [0, 0.25, 0.5, 0.75, 1].forEach(f => {
+    const y = padT + plotH - f * plotH;
+    grid += `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${(w-padR).toFixed(1)}" y2="${y.toFixed(1)}" stroke="${gridColor}" stroke-width="1"/>`;
+  });
+  let bars = '';
+  rows.forEach((r, i) => {
+    const x = padL + gap * i + (gap - barW) / 2;
+    let yCursor = padT + plotH;
+    [[r.onTime, successColor], [r.late, warnColor], [r.missed, dangerColor]].forEach(([val, color]) => {
+      const segH = (val / maxTotal) * plotH;
+      if (segH > 0){
+        yCursor -= segH;
+        bars += `<rect x="${x.toFixed(1)}" y="${yCursor.toFixed(1)}" width="${barW.toFixed(1)}" height="${segH.toFixed(1)}" fill="${color}" rx="2"/>`;
+      }
+    });
+    const label = r.routeName.length > 11 ? r.routeName.slice(0, 10) + '…' : r.routeName;
+    bars += `<text x="${(x+barW/2).toFixed(1)}" y="${(padT+plotH+16).toFixed(1)}" font-size="9" fill="${textColor}" text-anchor="middle" font-family="sans-serif">${escapeHtmlForPrint(label)}</text>`;
+  });
+  return `<svg viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto;">${grid}${bars}</svg>`;
+}
+
+function svgDonutChart(onTime, late, missed){
+  const size = 200, r = 74, cx = size/2, cy = size/2, strokeW = 26;
+  const successColor = '#3FB878', warnColor = '#F0A020', dangerColor = '#E5484D', mutedColor = '#8B96A5', textColor = '#E6EDF3';
+  const total = onTime + late + missed;
+  if (!total){
+    return `<svg viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg" style="width:100%; max-width:200px;">
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#2A313C" stroke-width="${strokeW}"/>
+      <text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="middle" font-size="11" fill="${mutedColor}" font-family="sans-serif">No data</text>
+    </svg>`;
+  }
+  const circumference = 2 * Math.PI * r;
+  let offset = 0, circles = '';
+  [[onTime, successColor], [late, warnColor], [missed, dangerColor]].forEach(([val, color]) => {
+    if (!val) return;
+    const dash = (val / total) * circumference;
+    circles += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="${strokeW}" stroke-dasharray="${dash.toFixed(2)} ${(circumference-dash).toFixed(2)}" stroke-dashoffset="${(-offset).toFixed(2)}" transform="rotate(-90 ${cx} ${cy})"/>`;
+    offset += dash;
+  });
+  const pct = Math.round((onTime/total)*100);
+  return `<svg viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg" style="width:100%; max-width:200px;">
+    ${circles}
+    <text x="${cx}" y="${cy-4}" text-anchor="middle" font-size="22" font-weight="700" fill="${textColor}" font-family="sans-serif">${pct}%</text>
+    <text x="${cx}" y="${cy+15}" text-anchor="middle" font-size="10" fill="${mutedColor}" font-family="sans-serif">on time</text>
+  </svg>`;
+}
 
 // Scans older than ~48h have already fallen out of the in-memory `scans` cache
 // (loadScans() only keeps a rolling 48h window for the live dashboards), so a
@@ -3417,10 +3488,6 @@ async function computeReport(){
   return true;
 }
 
-function statusLabel(st){
-  return { completed: 'On time', completed_late: 'Completed late', late: 'Late', missed: 'Missed' }[st] || st;
-}
-
 function renderReport(){
   const summary = lastReportSummary;
   document.getElementById('repScheduled').textContent = summary.scheduled;
@@ -3446,50 +3513,12 @@ function renderReport(){
 }
 
 function renderReportCharts(){
-  const barCtx = document.getElementById('reportBarChart');
-  const donutCtx = document.getElementById('reportDonutChart');
-  if (!barCtx || !donutCtx || typeof Chart === 'undefined') return;
-  if (reportBarChartInstance) reportBarChartInstance.destroy();
-  if (reportDonutChartInstance) reportDonutChartInstance.destroy();
-
-  const rows = lastReportRows;
-  const successColor = getComputedStyle(document.documentElement).getPropertyValue('--success').trim() || '#3FB878';
-  const warnColor = getComputedStyle(document.documentElement).getPropertyValue('--warn').trim() || '#F0A020';
-  const dangerColor = getComputedStyle(document.documentElement).getPropertyValue('--danger').trim() || '#E5484D';
-  const mutedColor = getComputedStyle(document.documentElement).getPropertyValue('--muted').trim() || '#8B96A5';
-
-  reportBarChartInstance = new Chart(barCtx, {
-    type: 'bar',
-    data: {
-      labels: rows.map(r => r.routeName),
-      datasets: [
-        { label: 'On time', data: rows.map(r => r.onTime), backgroundColor: successColor, stack: 's' },
-        { label: 'Late', data: rows.map(r => r.late), backgroundColor: warnColor, stack: 's' },
-        { label: 'Missed', data: rows.map(r => r.missed), backgroundColor: dangerColor, stack: 's' }
-      ]
-    },
-    options: {
-      responsive: true,
-      scales: {
-        x: { stacked: true, ticks: { color: mutedColor }, grid: { display: false } },
-        y: { stacked: true, beginAtZero: true, ticks: { color: mutedColor, precision: 0 }, grid: { color: 'rgba(255,255,255,0.06)' } }
-      },
-      plugins: { legend: { labels: { color: mutedColor } } }
-    }
-  });
-
+  const barEl = document.getElementById('reportBarChart');
+  const donutEl = document.getElementById('reportDonutChart');
+  if (!barEl || !donutEl) return;
+  barEl.innerHTML = svgStackedBarChart(lastReportRows);
   const s = lastReportSummary;
-  reportDonutChartInstance = new Chart(donutCtx, {
-    type: 'doughnut',
-    data: {
-      labels: ['On time', 'Late', 'Missed'],
-      datasets: [{ data: [s.onTime, s.late, s.missed], backgroundColor: [successColor, warnColor, dangerColor] }]
-    },
-    options: {
-      responsive: true,
-      plugins: { legend: { position: 'bottom', labels: { color: mutedColor } } }
-    }
-  });
+  donutEl.innerHTML = svgDonutChart(s.onTime, s.late, s.missed);
 }
 
 document.getElementById('runReportBtn').addEventListener('click', async () => {
@@ -3583,144 +3612,121 @@ document.getElementById('downloadReportBtn').addEventListener('click', async () 
   showToast('Report downloaded', '', 'success');
 });
 
-document.getElementById('downloadPdfReportBtn').addEventListener('click', async () => {
-  const btn = document.getElementById('downloadPdfReportBtn');
-  if (typeof window.jspdf === 'undefined'){ showToast('PDF library did not load', 'Check your connection and try again.', 'danger'); return; }
+document.getElementById('printPdfReportBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('printPdfReportBtn');
   btn.disabled = true;
   const statusEl = document.getElementById('reportRunStatus');
   try {
     if (!(await computeReport())){ return; }
     renderReport();
     await loadAndRenderControllerComments();
-    if (statusEl) statusEl.textContent = 'Building PDF…';
 
-    const siteFilter = document.getElementById('reportSiteSelect').value || null;
     const siteLabel = document.getElementById('reportSiteSelect').selectedOptions[0].textContent;
     const from = document.getElementById('reportFrom').value;
     const to = document.getElementById('reportTo').value;
     const logoEl = document.querySelector('.brand-logo');
-    const logoDataUrl = logoEl ? logoEl.getAttribute('src') : null;
-
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ unit: 'pt', format: 'letter' });
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const margin = 40;
-
-    // ---- Cover / header ----
-    let y = 50;
-    if (logoDataUrl){
-      try { doc.addImage(logoDataUrl, 'PNG', margin, y - 24, 34, 34); } catch(e) {}
-    }
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.setTextColor(20,20,20);
-    doc.text('OnPatrol Patrol Report', margin + (logoDataUrl ? 44 : 0), y);
-    y += 26;
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(70,70,70);
-    doc.text(`Site: ${siteLabel}`, margin, y); y += 16;
-    doc.text(`Date range: ${from} to ${to}`, margin, y); y += 16;
-    doc.text(`Generated: ${new Date().toLocaleString()}`, margin, y); y += 24;
-
-    // ---- Summary ----
+    const logoSrc = logoEl ? logoEl.getAttribute('src') : null;
     const s = lastReportSummary;
     const pct = s.scheduled ? Math.round((s.onTime / s.scheduled) * 100) : 0;
-    doc.autoTable({
-      startY: y,
-      head: [['Scheduled', 'On time', 'Late', 'Missed', 'On-time %']],
-      body: [[String(s.scheduled), String(s.onTime), String(s.late), String(s.missed), `${pct}%`]],
-      theme: 'grid',
-      margin: { left: margin, right: margin },
-      styles: { fontSize: 10, halign: 'center' },
-      headStyles: { fillColor: [30, 58, 92] }
-    });
-    y = doc.lastAutoTable.finalY + 20;
 
-    // ---- Charts (rendered on-screen already; captured as images) ----
-    if (lastReportRows.length){
-      const barImg = document.getElementById('reportBarChart').toDataURL('image/png', 1.0);
-      const donutImg = document.getElementById('reportDonutChart').toDataURL('image/png', 1.0);
-      const chartW = (pageWidth - margin*2 - 16) / 2;
-      const chartH = chartW * 0.62;
-      if (y + chartH > doc.internal.pageSize.getHeight() - 60){ doc.addPage(); y = 50; }
-      try {
-        doc.addImage(barImg, 'PNG', margin, y, chartW, chartH);
-        doc.addImage(donutImg, 'PNG', margin + chartW + 16, y, chartW, chartH);
-      } catch(e) {}
-      y += chartH + 24;
+    const byRouteRows = lastReportRows.map(r => {
+      const rp = r.scheduled ? Math.round((r.onTime / r.scheduled) * 100) : 0;
+      return `<tr><td>${escapeHtmlForPrint(r.siteName)}</td><td>${escapeHtmlForPrint(r.routeName)}</td><td>${r.scheduled}</td><td>${r.onTime}</td><td>${r.late}</td><td>${r.missed}</td><td>${rp}%</td></tr>`;
+    }).join('') || '<tr><td colspan="7" class="empty-row">No resolved patrols in this range.</td></tr>';
+
+    const detailRows = lastReportDetail.map(d => {
+      const cpText = d.checkpoints.map(cp => `${escapeHtmlForPrint(cp.name)} — ${cp.scannedAt != null ? new Date(cp.scannedAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : 'not scanned'}`).join('<br>');
+      return `<tr><td>${escapeHtmlForPrint(d.siteName)}</td><td>${escapeHtmlForPrint(d.routeName)}</td><td>${new Date(d.expectedTime).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</td><td>${statusLabel(d.status)}</td><td>${cpText}</td></tr>`;
+    }).join('') || '<tr><td colspan="5" class="empty-row">No resolved patrols in this range.</td></tr>';
+
+    const commentRows = lastReportComments.map(c => `
+      <tr><td>${new Date(c.when).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</td><td>${escapeHtmlForPrint(c.site)}</td><td>${escapeHtmlForPrint(c.title)}</td><td>${escapeHtmlForPrint(c.body)}</td><td>${escapeHtmlForPrint(c.author)}</td></tr>
+    `).join('') || '<tr><td colspan="5" class="empty-row">No commented alerts in this range.</td></tr>';
+
+    const win = window.open('', '_blank');
+    if (!win){
+      showToast('Could not open print window', 'Your browser may have blocked the popup — allow popups for this site and try again.', 'danger');
+      return;
     }
 
-    // ---- By route table ----
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(20,20,20);
-    if (y > doc.internal.pageSize.getHeight() - 80){ doc.addPage(); y = 50; }
-    doc.text('By patrol / route', margin, y); y += 8;
-    doc.autoTable({
-      startY: y,
-      head: [['Site', 'Route', 'Scheduled', 'On time', 'Late', 'Missed', 'On-time %']],
-      body: lastReportRows.map(r => {
-        const rp = r.scheduled ? Math.round((r.onTime / r.scheduled) * 100) : 0;
-        return [r.siteName, r.routeName, String(r.scheduled), String(r.onTime), String(r.late), String(r.missed), `${rp}%`];
-      }),
-      theme: 'striped',
-      margin: { left: margin, right: margin },
-      styles: { fontSize: 9 },
-      headStyles: { fillColor: [30, 58, 92] }
-    });
-    y = doc.lastAutoTable.finalY + 24;
+    win.document.write(`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>OnPatrol report — ${escapeHtmlForPrint(siteLabel)} — ${from} to ${to}</title>
+<style>
+  @page { size: A4; margin: 1.4cm; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin:0; padding:0; background:#fff; color:#111; }
+  h1 { font-size:20px; margin:0; }
+  h2 { font-size:14px; margin:26px 0 8px; border-bottom:1px solid #ddd; padding-bottom:4px; }
+  .header { display:flex; align-items:center; gap:12px; border-bottom:2px solid #14314f; padding-bottom:12px; }
+  .header img { height:36px; width:auto; }
+  .meta { color:#555; font-size:12px; margin-top:4px; }
+  .summary { display:flex; gap:10px; margin-top:16px; }
+  .summary .card { flex:1; border:1px solid #ddd; border-radius:8px; padding:10px; text-align:center; }
+  .summary .card .label { font-size:10px; color:#666; text-transform:uppercase; letter-spacing:0.4px; }
+  .summary .card .val { font-size:20px; font-weight:700; margin-top:2px; }
+  .charts { display:flex; gap:20px; align-items:center; margin-top:18px; }
+  .charts > div:first-child { flex:1.4; }
+  .charts > div:last-child { flex:1; display:flex; justify-content:center; }
+  table { width:100%; border-collapse:collapse; font-size:10.5px; margin-top:6px; }
+  th, td { border:1px solid #ddd; padding:5px 7px; text-align:left; vertical-align:top; }
+  th { background:#14314f; color:#fff; font-weight:600; }
+  tr:nth-child(even) td { background:#f7f9fb; }
+  .empty-row { color:#888; text-align:center; }
+  footer { position:fixed; bottom:-0.6cm; left:0; right:0; font-size:9px; color:#999; display:flex; justify-content:space-between; border-top:1px solid #eee; padding-top:4px; }
+  @media print { .no-print { display:none; } table { page-break-inside:auto; } tr { page-break-inside:avoid; } }
+</style>
+</head>
+<body>
+  <div class="header">
+    ${logoSrc ? `<img src="${logoSrc}" alt="OnPatrol">` : ''}
+    <div>
+      <h1>Patrol Report</h1>
+      <div class="meta">Site: ${escapeHtmlForPrint(siteLabel)} &nbsp;•&nbsp; ${from} to ${to} &nbsp;•&nbsp; Generated ${new Date().toLocaleString()}</div>
+    </div>
+  </div>
 
-    // ---- Patrol-by-patrol detail, with every tag and when it was scanned ----
-    if (y > doc.internal.pageSize.getHeight() - 80){ doc.addPage(); y = 50; }
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
-    doc.text('Patrol-by-patrol detail', margin, y); y += 8;
-    doc.autoTable({
-      startY: y,
-      head: [['Site', 'Route', 'Expected', 'Status', 'Checkpoints (tag — time scanned)']],
-      body: lastReportDetail.map(d => [
-        d.siteName,
-        d.routeName,
-        new Date(d.expectedTime).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-        statusLabel(d.status),
-        d.checkpoints.map(cp => `${cp.name} — ${cp.scannedAt != null ? new Date(cp.scannedAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : 'not scanned'}`).join('\n')
-      ]),
-      theme: 'striped',
-      margin: { left: margin, right: margin },
-      styles: { fontSize: 8, valign: 'top' },
-      headStyles: { fillColor: [30, 58, 92] },
-      columnStyles: { 4: { cellWidth: 220 } }
-    });
-    y = doc.lastAutoTable.finalY + 24;
+  <div class="summary">
+    <div class="card"><div class="label">Scheduled</div><div class="val">${s.scheduled}</div></div>
+    <div class="card"><div class="label">On time</div><div class="val" style="color:#1f8a4c;">${s.onTime}</div></div>
+    <div class="card"><div class="label">Late</div><div class="val" style="color:#b5760a;">${s.late}</div></div>
+    <div class="card"><div class="label">Missed</div><div class="val" style="color:#c92a2a;">${s.missed}</div></div>
+    <div class="card"><div class="label">On-time %</div><div class="val">${pct}%</div></div>
+  </div>
 
-    // ---- Controller comments ----
-    if (lastReportComments.length){
-      if (y > doc.internal.pageSize.getHeight() - 80){ doc.addPage(); y = 50; }
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
-      doc.text('Controller comments', margin, y); y += 8;
-      doc.autoTable({
-        startY: y,
-        head: [['When', 'Site', 'Alert', 'Comment', 'Controller']],
-        body: lastReportComments.map(c => [
-          new Date(c.when).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-          c.site, c.title, c.body, c.author
-        ]),
-        theme: 'striped',
-        margin: { left: margin, right: margin },
-        styles: { fontSize: 8, valign: 'top' },
-        headStyles: { fillColor: [30, 58, 92] }
-      });
-    }
+  <div class="charts">
+    <div>${svgStackedBarChart(lastReportRows).replace(/fill="#8B96A5"/g, 'fill="#555"').replace(/stroke="#3a4451"/g, 'stroke="#ddd"')}</div>
+    <div>${svgDonutChart(s.onTime, s.late, s.missed).replace(/fill="#E6EDF3"/g, 'fill="#111"').replace(/fill="#8B96A5"/g, 'fill="#555"')}</div>
+  </div>
 
-    // ---- Branding footer + page numbers on every page ----
-    const pageCount = doc.internal.getNumberOfPages();
-    for (let i = 1; i <= pageCount; i++){
-      doc.setPage(i);
-      const h = doc.internal.pageSize.getHeight();
-      doc.setDrawColor(220,220,220);
-      doc.line(margin, h - 34, pageWidth - margin, h - 34);
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(140,140,140);
-      doc.text('Powered by OnPatrol', margin, h - 20);
-      doc.text(`Page ${i} of ${pageCount}`, pageWidth - margin, h - 20, { align: 'right' });
-    }
+  <h2>By patrol / route</h2>
+  <table>
+    <thead><tr><th>Site</th><th>Route</th><th>Scheduled</th><th>On time</th><th>Late</th><th>Missed</th><th>On-time %</th></tr></thead>
+    <tbody>${byRouteRows}</tbody>
+  </table>
 
-    const fname = `onpatrol-report_${(siteLabel || 'all-sites').toLowerCase().replace(/[^a-z0-9]+/g,'-')}_${from}_to_${to}.pdf`;
-    doc.save(fname);
-    showToast('PDF report downloaded', '', 'success');
+  <h2>Patrol-by-patrol detail</h2>
+  <table>
+    <thead><tr><th>Site</th><th>Route</th><th>Expected</th><th>Status</th><th>Checkpoints (tag — time scanned)</th></tr></thead>
+    <tbody>${detailRows}</tbody>
+  </table>
+
+  <h2>Controller comments</h2>
+  <table>
+    <thead><tr><th>When</th><th>Site</th><th>Alert</th><th>Comment</th><th>Controller</th></tr></thead>
+    <tbody>${commentRows}</tbody>
+  </table>
+
+  <footer><span>Powered by OnPatrol</span><span>${escapeHtmlForPrint(siteLabel)} · ${from} to ${to}</span></footer>
+
+  <script>
+    window.onload = function(){ setTimeout(function(){ window.print(); }, 300); };
+  <\/script>
+</body>
+</html>`);
+    win.document.close();
   } finally {
     btn.disabled = false;
     if (statusEl) statusEl.textContent = '';
