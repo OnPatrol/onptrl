@@ -393,6 +393,7 @@
 
       <div class="panel">
         <h2>Live activity log</h2>
+        <div class="result-meta" style="margin-bottom:10px;">This shift only, most recent first.</div>
         <div class="log-wrap" id="logWrap">
           <div class="empty">No scans yet — try the guard view.</div>
         </div>
@@ -670,7 +671,7 @@
   <div class="ctrl-view" id="ctrl-log">
     <div class="panel">
       <h2>Live activity log</h2>
-      <div class="result-meta" style="margin-bottom:10px;">Every scan across every site, most recent first.</div>
+      <div class="result-meta" style="margin-bottom:10px;">Every scan across every site, this shift only, most recent first.</div>
       <div class="log-wrap" id="ctrlLogWrap"><div class="empty">No scans yet.</div></div>
     </div>
   </div>
@@ -1648,6 +1649,7 @@ async function loadProfileAndApp(){
       sweepPatrolInstanceNotifications();
       sweepAutoClearGreens();
       renderNotifications();
+      renderLog(); // re-filters to the current shift, in case the shift boundary just passed
     }, 30000);
   }
 }
@@ -1838,6 +1840,9 @@ function isDayShift(atMs){
   const h = new Date(atMs).getHours();
   return h >= 6 && h < 18;
 }
+function fmtClock(atMs){
+  return new Date(atMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
 function currentShiftStart(atMs){
   const d = new Date(atMs);
   const start = new Date(d);
@@ -1884,9 +1889,13 @@ function renderControllerStats(){
 }
 
 function renderLog(){
-  const html = scans.length === 0
-    ? '<div class="empty">No scans yet — try the guard view.</div>'
-    : scans.slice().reverse().slice(0, 200).map(s => {
+  // Shift-scoped, same as the controller's counter tiles — day shift 06:00–18:00,
+  // night shift 18:00–06:00 — so the feed only ever shows the shift underway.
+  const shiftStart = currentShiftStart(nowMs());
+  const shiftScans = scans.filter(s => s.timestamp >= shiftStart);
+  const html = shiftScans.length === 0
+    ? '<div class="empty">No scans yet this shift.</div>'
+    : shiftScans.slice().reverse().slice(0, 200).map(s => {
       const ok = s.result === 'ACCEPTED';
       const time = new Date(s.timestamp).toLocaleTimeString();
       const site = sites.find(x => x.id === s.siteId);
@@ -2231,6 +2240,16 @@ function isGreenExpired(n){
   return n.severity === 'green' && (nowMs() - new Date(n.occurred_at).getTime()) > 60*60*1000;
 }
 
+// Combines the site name with the notification's specific reason so an alert reads
+// as e.g. "Head Office · 20:30 patrol · Guard 20m from checkpoint" instead of just
+// a bare title — the site alone was crowding out the actual reason before.
+function notifContextLine(n, site){
+  const parts = [];
+  if (site) parts.push(site.name);
+  if (n.detail) parts.push(n.detail);
+  return parts.join(' · ');
+}
+
 function renderNotificationsInto(activeId, resolvedId){
   const activeEl = document.getElementById(activeId);
   const resolvedEl = document.getElementById(resolvedId);
@@ -2254,7 +2273,7 @@ function renderNotificationsInto(activeId, resolvedId){
               <div style="font-family:var(--sans); font-weight:600; font-size:12.5px;">${n.title}</div>
               <span class="result-meta">${timeAgo(n.occurred_at)}</span>
             </div>
-            <div class="result-meta">${site ? site.name : (n.detail || '')}</div>
+            <div class="result-meta">${notifContextLine(n, site)}</div>
             <div class="result-meta" style="margin-top:6px;">Clears automatically in ${remainMin}m</div>
           </div>
         `;
@@ -2265,7 +2284,7 @@ function renderNotificationsInto(activeId, resolvedId){
             <div style="font-family:var(--sans); font-weight:600; font-size:12.5px;">${n.title}</div>
             <span class="result-meta">${timeAgo(n.occurred_at)}</span>
           </div>
-          <div class="result-meta">${site ? site.name : (n.detail || '')}</div>
+          <div class="result-meta">${notifContextLine(n, site)}</div>
           <div class="cp-row" style="margin-top:8px;">
             <input type="text" placeholder="Comment to resolve…" data-notif-comment="${n.id}">
             <button class="btn" data-notif-submit="${n.id}" style="flex:0 0 auto; width:auto; padding:8px 12px;">Post & clear</button>
@@ -2282,11 +2301,12 @@ function renderNotificationsInto(activeId, resolvedId){
   if (resolvedEl){
     resolvedEl.innerHTML = resolved.length ? resolved.map(n => {
       const site = sites.find(s => s.id === n.site_id);
+      const context = notifContextLine(n, site);
       const comment = (n.notification_comments || []).slice().sort((a,b) => new Date(b.created_at) - new Date(a.created_at))[0];
       return `
         <div class="comment-item">
           <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${severityColor(n.severity)}; margin-right:6px;"></span>
-          <b>${n.title}</b> · <span class="result-meta">${site ? site.name : ''} · ${timeAgo(n.cleared_at || n.occurred_at)}</span>
+          <b>${n.title}</b> · <span class="result-meta">${context ? context + ' · ' : ''}${timeAgo(n.cleared_at || n.occurred_at)}</span>
           ${comment ? `<br><span class="result-meta">"${comment.body}" — ${(comment.profiles && comment.profiles.full_name) || 'Someone'}</span>` : (n.severity === 'green' ? '<br><span class="result-meta">Auto-cleared</span>' : '')}
         </div>
       `;
@@ -2328,12 +2348,13 @@ async function sweepPatrolInstanceNotifications(){
       const st = instanceStatus(inst, now).status;
       const r = routes.find(rt => rt.id === inst.routeId);
       if (!r) return;
+      const time = fmtClock(inst.expectedTime);
       if (st === 'missed'){
-        rows.push({ site_id: r.siteId, route_id: r.id, kind: 'missed_patrol', severity: 'red', title: `${r.name} patrol missed`, detail: 'No valid scans in the patrol window.', occurred_at: new Date(inst.expectedTime).toISOString(), auto_clear: false });
+        rows.push({ site_id: r.siteId, route_id: r.id, kind: 'missed_patrol', severity: 'red', title: `${r.name} patrol missed`, detail: `${time} patrol · No checkpoint scans were logged in the patrol window.`, occurred_at: new Date(inst.expectedTime).toISOString(), auto_clear: false });
       } else if (st === 'completed_late'){
-        rows.push({ site_id: r.siteId, route_id: r.id, kind: 'late_patrol', severity: 'red', title: `${r.name} patrol finished late`, detail: 'Completed after the expected window.', occurred_at: new Date(inst.expectedTime).toISOString(), auto_clear: false });
+        rows.push({ site_id: r.siteId, route_id: r.id, kind: 'late_patrol', severity: 'red', title: `${r.name} patrol finished late`, detail: `${time} patrol · Checkpoints were completed after the expected window.`, occurred_at: new Date(inst.expectedTime).toISOString(), auto_clear: false });
       } else if (st === 'completed'){
-        rows.push({ site_id: r.siteId, route_id: r.id, kind: 'success_patrol', severity: 'green', title: `${r.name} patrol completed on time`, detail: null, occurred_at: new Date(inst.expectedTime).toISOString(), auto_clear: true });
+        rows.push({ site_id: r.siteId, route_id: r.id, kind: 'success_patrol', severity: 'green', title: `${r.name} patrol completed on time`, detail: `${time} patrol · All checkpoints completed on time.`, occurred_at: new Date(inst.expectedTime).toISOString(), auto_clear: true });
       }
     });
   });
@@ -2736,6 +2757,27 @@ async function processScan(qrId){
     showToast('Scan could not be saved', error.message, 'danger');
     return { qrId, cpName: cp ? cp.name : null, distance, result, siteId, expectedQrId, timestamp: Date.now(), saveFailed: true };
   }
+
+  // Flag location-related rejections to the controller/admin alert feed, with the
+  // specific reason spelled out (site, scheduled patrol time, and distance/cause) —
+  // best-effort and never blocks the scan itself if it fails to save.
+  if (result === 'REJECTED_OUT_OF_RANGE' || result === 'REJECTED_NO_LOCATION'){
+    const patrolTime = fmtClock(dutyInfo.inst.expectedTime);
+    const detail = result === 'REJECTED_OUT_OF_RANGE'
+      ? `${patrolTime} patrol · Guard ${Math.round(distance)}m from ${cp.name}`
+      : `${patrolTime} patrol · Guard's location wasn't available while scanning ${cp.name}`;
+    sb.from('patrol_notifications').insert({
+      site_id: siteId,
+      route_id: dutyInfo.inst.routeId,
+      kind: 'radius_alert',
+      severity: 'orange',
+      title: result === 'REJECTED_OUT_OF_RANGE' ? 'Guard outside checkpoint radius' : 'Guard location unavailable',
+      detail,
+      occurred_at: new Date().toISOString(),
+      auto_clear: false
+    }).then(({ error: alertErr }) => { if (alertErr) console.warn('radius_alert not saved', alertErr); });
+  }
+
   const record = rowToScan(row);
   if (!scans.some(s => s.id === record.id)) scans.push(record);
   renderStats();
