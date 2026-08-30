@@ -1596,6 +1596,7 @@ async function loadProfileAndApp(){
   const claimAdminBtn = document.getElementById('claimAdminBtn');
   const claimControllerBtn = document.getElementById('claimControllerBtn');
   const joinSiteBtn = document.getElementById('joinSiteBtn');
+  const signOutBtn = document.getElementById('signOutBtn');
 
   if (profile.role === 'admin'){
     guardTabBtn.style.display = '';
@@ -1604,6 +1605,7 @@ async function loadProfileAndApp(){
     claimAdminBtn.style.display = 'none';
     claimControllerBtn.style.display = 'none';
     joinSiteBtn.style.display = 'none';
+    signOutBtn.style.display = '';
   } else if (profile.role === 'controller'){
     guardTabBtn.style.display = 'none';
     adminTabBtn.style.display = 'none';
@@ -1611,14 +1613,18 @@ async function loadProfileAndApp(){
     claimAdminBtn.style.display = 'none';
     claimControllerBtn.style.display = 'none';
     joinSiteBtn.style.display = 'none';
+    signOutBtn.style.display = '';
     controllerTabBtn.click();
   } else {
     guardTabBtn.style.display = '';
     adminTabBtn.style.display = 'none';
     controllerTabBtn.style.display = 'none';
-    claimAdminBtn.style.display = '';
-    claimControllerBtn.style.display = '';
+    // Guards work off a shared/kiosk-style device — no self-service admin/controller
+    // claim codes and no sign-out control in their UI.
+    claimAdminBtn.style.display = 'none';
+    claimControllerBtn.style.display = 'none';
     joinSiteBtn.style.display = guardSiteId ? 'none' : '';
+    signOutBtn.style.display = 'none';
     guardTabBtn.click();
   }
 
@@ -2590,6 +2596,10 @@ function renderGuardPatrolCard(){
 }
 
 function checkGuardNotifications(){
+  // Patrol countdown/start/late sounds are a guard-only cue — controllers and admins
+  // get their alerts through the notifications panel, not audio (until the panic
+  // button ships), so bail out immediately for any other role.
+  if (!profile || profile.role !== 'guard') return;
   const found = currentDutyRouteNextInstance();
   if (!found) return;
   const { inst } = found;
@@ -2862,13 +2872,17 @@ const qrScanner = new QrScanner(
 // ---------------- Auto flashlight ----------------
 // Samples the live video for average brightness and toggles the rear camera's torch
 // on/off automatically — the guard never has to reach for a switch in a dark stairwell.
-// Two thresholds (with a gap between them) avoid flicker right at the boundary.
+// Two thresholds (with a gap between them) avoid flicker right at the boundary, and a
+// minimum hold time keeps it from flapping: the torch itself brightens the frame, so
+// without a hold time it would see its own light and immediately shut back off.
 const torchIndicator = document.getElementById('torchIndicator');
 const sampleCanvas = document.getElementById('canvas');
 let torchSampleInterval = null;
 let torchOn = false;
-const TORCH_DARK_THRESHOLD = 60;   // 0-255 average luma — below this, turn the torch on
-const TORCH_BRIGHT_THRESHOLD = 95; // above this, turn it back off
+let torchOnSince = 0;
+const TORCH_DARK_THRESHOLD = 60;    // 0-255 average luma — below this, turn the torch on
+const TORCH_BRIGHT_THRESHOLD = 95;  // above this, allow it to turn back off
+const TORCH_MIN_HOLD_MS = 5000;     // once on, stays on at least this long before it can turn off
 
 function sampleVideoBrightness(){
   if (!video.videoWidth || !video.videoHeight) return null;
@@ -2896,6 +2910,7 @@ async function setTorch(on){
     if (on && !torchOn){
       await qrScanner.turnFlashOn();
       torchOn = true;
+      torchOnSince = Date.now();
       if (torchIndicator) torchIndicator.classList.add('on');
     } else if (!on && torchOn){
       await qrScanner.turnFlashOff();
@@ -2910,8 +2925,11 @@ function startTorchAutoSensing(){
   torchSampleInterval = setInterval(() => {
     const brightness = sampleVideoBrightness();
     if (brightness == null) return;
-    if (brightness < TORCH_DARK_THRESHOLD) setTorch(true);
-    else if (brightness > TORCH_BRIGHT_THRESHOLD) setTorch(false);
+    if (!torchOn){
+      if (brightness < TORCH_DARK_THRESHOLD) setTorch(true);
+    } else if (brightness > TORCH_BRIGHT_THRESHOLD && Date.now() - torchOnSince >= TORCH_MIN_HOLD_MS){
+      setTorch(false);
+    }
   }, 1200);
 }
 
