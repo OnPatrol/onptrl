@@ -996,6 +996,17 @@ function scansForInstance(inst){
   const winEnd = inst.expectedTime + inst.intervalMinutes*60000;
   return scans.filter(s => cpIds.includes(s.qrId) && s.result === 'ACCEPTED' && s.timestamp >= winStart && s.timestamp < winEnd);
 }
+// The moment a patrol's last required checkpoint was actually scanned — i.e. when
+// the guard finished, not "now". Returns null if not every checkpoint has a scan yet.
+function patrolCompletionTime(found, cpIds){
+  const firstScanAt = {};
+  found.forEach(s => {
+    if (!(s.qrId in firstScanAt) || s.timestamp < firstScanAt[s.qrId]) firstScanAt[s.qrId] = s.timestamp;
+  });
+  const times = cpIds.map(id => firstScanAt[id]);
+  if (times.some(t => t === undefined)) return null;
+  return Math.max(...times);
+}
 function instanceStatus(inst, at){
   const cpIds = routeCheckpoints(inst.routeId);
   const found = scansForInstance(inst);
@@ -1007,7 +1018,13 @@ function instanceStatus(inst, at){
 
   let status;
   if (complete){
-    status = at <= lateAt ? 'completed' : 'completed_late';
+    // Fixed once complete: based on when the guard actually finished, so a patrol
+    // that finished on time never later flips to "late" just because it's being
+    // re-checked after the threshold has since passed. This also means the guard's
+    // countdown stops the instant the last tag is scanned, instead of continuing
+    // to tick toward "late".
+    const finishedAt = patrolCompletionTime(found, cpIds);
+    status = finishedAt <= lateAt ? 'completed' : 'completed_late';
   } else if (at < inst.expectedTime - 5*60000){
     status = 'upcoming';
   } else if (at < inst.expectedTime){
@@ -2255,7 +2272,13 @@ function renderNotificationsInto(activeId, resolvedId){
   const resolvedEl = document.getElementById(resolvedId);
   if (!activeEl && !resolvedEl) return;
 
-  const active = notifications.filter(n => !n.cleared_at && !isGreenExpired(n));
+  // Active alerts are scoped to the shift under way, same as the counter tiles in
+  // renderControllerStats() and the feed in renderLog() — an unresolved alert from
+  // a shift that's already ended shouldn't keep showing up as "active" here; it
+  // still exists in the DB (and in admin → reports) for follow-up, it just isn't
+  // surfaced as a live alert for the current shift anymore.
+  const shiftStart = currentShiftStart(nowMs());
+  const active = notifications.filter(n => !n.cleared_at && !isGreenExpired(n) && new Date(n.occurred_at).getTime() >= shiftStart);
   const resolved = notifications
     .filter(n => n.cleared_at || isGreenExpired(n))
     .sort((a,b) => new Date(b.cleared_at || b.occurred_at) - new Date(a.cleared_at || a.occurred_at))
