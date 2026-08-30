@@ -76,6 +76,8 @@
     padding:11px 16px; font-size:13px; font-weight:600; cursor:pointer; font-family:var(--sans); width:100%;
   }
   .btn:hover{border-color:var(--accent);}
+  .btn:disabled{opacity:0.5; cursor:not-allowed;}
+  .btn:disabled:hover{border-color:var(--border);}
   .btn-primary{background:var(--accent); border-color:var(--accent); color:#04121F;}
   .btn-primary:hover{opacity:0.9;}
   .btn-row{display:flex; gap:8px; margin-top:10px;}
@@ -105,7 +107,18 @@
   .result-card.accepted{border-color:var(--success); background:var(--success-dim);}
   .result-card.rejected{border-color:var(--danger); background:var(--danger-dim);}
   .result-title{font-weight:700; margin-bottom:4px;}
+  .result-card.rejected .result-title{color:var(--danger); font-size:17px;}
   .result-meta{color:var(--muted); font-family:var(--mono); font-size:11px; line-height:1.6;}
+  /* Guard-facing error text: red and larger than normal status copy, per patrol safety requirements */
+  .error-text{color:var(--danger) !important; font-weight:700; font-size:14px;}
+  .cam-placeholder.error-text{font-size:13px;}
+
+  .torch-indicator{
+    display:none; align-items:center; gap:6px; margin-top:8px; padding:6px 10px;
+    border-radius:8px; background:var(--warn-dim); border:1px solid var(--warn);
+    color:var(--warn); font-family:var(--mono); font-size:11px; font-weight:600;
+  }
+  .torch-indicator.on{display:flex;}
 
   /* ---- Admin view ---- */
   .stat-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:20px;}
@@ -251,6 +264,8 @@
             <div class="scan-frame" id="scanFrame" style="display:none;"></div>
           </div>
 
+          <div class="torch-indicator" id="torchIndicator">🔦 Auto-flash on — low light detected</div>
+
           <div class="top-row">
             <button class="btn" id="camToggleBtn" style="flex:1;">Start camera</button>
             <button class="icon-btn on" id="soundToggleBtn" title="Sound notifications">🔊</button>
@@ -268,6 +283,7 @@
 
           <div class="field-label">Scan checkpoint</div>
           <div class="result-meta" style="margin:-2px 0 6px;">Hold the tag about 15–20cm from the camera and keep it steady — it scans automatically. If it doesn't pick it up, tap "Scan now" to read the current frame.</div>
+          <div class="result-meta error-text" id="guardScanBlockedNotice" style="display:none; margin:-2px 0 6px;">No patrol in progress — checkpoint scanning is disabled until your patrol starts.</div>
           <div class="btn-row">
             <button class="btn btn-primary" id="manualScanBtn">Scan now</button>
           </div>
@@ -923,7 +939,13 @@ const SOUND = {
   patrolStart:    () => ring([{freq:520,duration:150},{freq:820,duration:250}], 15000),
   tagScan:        () => playTone([{freq:1000,duration:60}]),
   tagAccepted:    () => playTone([{freq:880,duration:110},{freq:1180,duration:170}]),
-  tagRejected:    () => playTone([{freq:320,duration:220},{freq:220,duration:260}]),
+  // Declined tag: a harsher low buzz, distinct from the accept chime, plus a haptic
+  // buzz on devices that support it — makes a rejection unmistakable even if the
+  // guard isn't looking at the screen.
+  tagRejected:    () => {
+    playTone([{freq:300,duration:160},{freq:180,duration:160},{freq:180,duration:220}]);
+    if (navigator.vibrate) navigator.vibrate([120,70,120]);
+  },
   lateReminder:   () => ring([{freq:420,duration:200},{freq:420,duration:200},{freq:420,duration:200}], 30000)
 };
 
@@ -2531,7 +2553,16 @@ function currentDutyRouteNextInstance(){
 function renderGuardPatrolCard(){
   const card = document.getElementById('guardPatrolCard');
   if (!card) return;
-  const found = currentDutyRouteNextInstance();
+
+  const gate = guardPatrolGate();
+  const blockedNotice = document.getElementById('guardScanBlockedNotice');
+  const scanBtn = document.getElementById('manualScanBtn');
+  if (blockedNotice && scanBtn){
+    blockedNotice.style.display = gate.inProgress ? 'none' : 'block';
+    scanBtn.disabled = !gate.inProgress;
+  }
+
+  const found = gate.dutyInfo;
   if (!found){ card.style.display = 'none'; return; }
   const { inst } = found;
   const now = nowMs();
@@ -2625,27 +2656,46 @@ function getGuardPosition(){
   });
 }
 
+// Whether the guard currently has a patrol actually under way (not just upcoming/due-soon),
+// and the duty-route context that goes with it. Shared by the scan gate and the UI banner
+// so both agree on the same definition of "in progress".
+function guardPatrolGate(){
+  const dutyInfo = currentDutyRouteNextInstance();
+  const dutyRoute = dutyInfo ? routes.find(r => r.id === dutyInfo.inst.routeId) : null;
+  const instSt = dutyInfo ? instanceStatus(dutyInfo.inst, nowMs()) : null;
+  const inProgress = !!(instSt && ['active','late'].includes(instSt.status));
+  return { dutyInfo, dutyRoute, instSt, inProgress };
+}
+
 async function processScan(qrId){
   // Only checkpoints belonging to the guard's own site count as "known" tags.
   const cp = checkpoints.find(c => c.qrId === qrId && c.siteId === guardSiteId);
   // A tag that's real but belongs to a different site — reported distinctly from "unknown".
   const cpElsewhere = !cp ? checkpoints.find(c => c.qrId === qrId) : null;
-  let result, distance = null, expectedQrId = null;
 
-  const dutyInfo = currentDutyRouteNextInstance();
-  const dutyRoute = dutyInfo ? routes.find(r => r.id === dutyInfo.inst.routeId) : null;
-  const instSt = dutyInfo ? instanceStatus(dutyInfo.inst, nowMs()) : null;
-  const isLate = instSt ? instSt.status === 'late' : false;
-  // Already checked in on this tag for the current patrol — don't let it be scanned again.
+  const { dutyInfo, dutyRoute, instSt, inProgress } = guardPatrolGate();
+
+  // Hard gate: nothing is accepted or even evaluated unless a patrol is actually in
+  // progress. Rejected entirely locally — no DB write, so no activity reaches the
+  // controller or admin feeds.
+  if (!inProgress){
+    return { qrId, cpName: cp ? cp.name : null, distance: null, result: 'REJECTED_NO_PATROL', siteId: cp ? cp.siteId : guardSiteId, expectedQrId: null, timestamp: Date.now(), localOnly: true };
+  }
+
+  const isLate = instSt.status === 'late';
+  // Already checked in on this tag for the current patrol — reject locally without
+  // touching the DB, so re-scanning a completed checkpoint never creates a new activity.
   const alreadyScanned = !!(cp && dutyRoute && dutyRoute.cpIds.includes(qrId) && instSt.doneCps.includes(qrId));
+  if (alreadyScanned){
+    return { qrId, cpName: cp.name, distance: null, result: 'REJECTED_ALREADY_SCANNED', siteId: cp.siteId, expectedQrId: null, timestamp: Date.now(), localOnly: true };
+  }
 
-  const pos = (cp && !alreadyScanned) ? await getGuardPosition() : null;
+  let result, distance = null, expectedQrId = null;
+  const pos = cp ? await getGuardPosition() : null;
   if (cp && pos) distance = distMeters(pos.lat, pos.lng, cp.lat, cp.lng);
 
   if (!cp){
     result = cpElsewhere ? 'REJECTED_WRONG_SITE' : 'REJECTED_UNKNOWN_QR';
-  } else if (alreadyScanned){
-    result = 'REJECTED_ALREADY_SCANNED';
   } else if (!pos){
     result = 'REJECTED_NO_LOCATION';
   } else if (distance > cp.radius){
@@ -2700,7 +2750,8 @@ function showResult(record){
       REJECTED_NO_LOCATION: 'Could not confirm your location — enable location services and try again',
       REJECTED_OUT_OF_RANGE: 'Guard is outside the checkpoint radius',
       REJECTED_OUT_OF_ORDER: `Wrong checkpoint — this route requires checkpoints in order, expected ${expectedCp ? expectedCp.name : record.expectedQrId} next`,
-      REJECTED_ALREADY_SCANNED: 'Already checked in on this tag for the current patrol'
+      REJECTED_ALREADY_SCANNED: 'Tag already scanned — already checked in on this tag for the current patrol',
+      REJECTED_NO_PATROL: 'No patrol in progress — scanning is disabled until your patrol starts'
     };
     title.textContent = `Rejected — ${reasons[record.result] || (record.saveFailed ? 'Could not save scan' : record.result)}`;
   }
@@ -2709,17 +2760,31 @@ function showResult(record){
 }
 
 // ---------------- Guard view interactions ----------------
-document.getElementById('manualScanBtn').addEventListener('click', async () => {
+function setManualScanStatus(text, isError){
   const statusEl = document.getElementById('manualScanStatus');
+  statusEl.textContent = text;
+  statusEl.classList.toggle('error-text', !!isError);
+}
+
+document.getElementById('manualScanBtn').addEventListener('click', async () => {
   const btn = document.getElementById('manualScanBtn');
-  statusEl.textContent = '';
+  setManualScanStatus('', false);
 
   if (!scanning){
-    statusEl.textContent = 'Start the camera first, then point it at the tag.';
+    setManualScanStatus('Start the camera first, then point it at the tag.', true);
     return;
   }
   if (!(video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth > 0 && video.videoHeight > 0)){
-    statusEl.textContent = 'Camera is still starting up — try again in a moment.';
+    setManualScanStatus('Camera is still starting up — try again in a moment.', true);
+    return;
+  }
+  // Don't even attempt to read a tag if there's no patrol in progress — surface the
+  // same rejection feedback (message, red text, sound) without touching the camera decode.
+  const gate = guardPatrolGate();
+  if (!gate.inProgress){
+    setManualScanStatus('No patrol in progress — scanning is disabled until your patrol starts.', true);
+    SOUND.tagRejected();
+    showResult({ qrId: '', cpName: null, distance: null, result: 'REJECTED_NO_PATROL', siteId: guardSiteId, expectedQrId: null, timestamp: Date.now() });
     return;
   }
 
@@ -2733,19 +2798,19 @@ document.getElementById('manualScanBtn').addEventListener('click', async () => {
     qrId = null; // "No QR code found" rejects the promise — that's the expected empty case
   }
   if (!qrId){
-    statusEl.textContent = 'No tag detected — point the camera at a QR tag and try again.';
+    setManualScanStatus('No tag detected — point the camera at a QR tag and try again.', true);
     btn.disabled = false;
     decodeLocked = false;
     return;
   }
 
-  statusEl.textContent = 'Getting your location…';
+  setManualScanStatus('Getting your location…', false);
   SOUND.tagScan();
   const record = await processScan(qrId);
   lastDecoded = qrId; lastDecodedAt = Date.now();
   decodeLocked = false;
   btn.disabled = false;
-  statusEl.textContent = '';
+  setManualScanStatus('', false);
   SOUND[record.result === 'ACCEPTED' ? 'tagAccepted' : 'tagRejected']();
   showResult(record);
   renderGuardPatrolCard();
@@ -2794,19 +2859,83 @@ const qrScanner = new QrScanner(
   }
 );
 
+// ---------------- Auto flashlight ----------------
+// Samples the live video for average brightness and toggles the rear camera's torch
+// on/off automatically — the guard never has to reach for a switch in a dark stairwell.
+// Two thresholds (with a gap between them) avoid flicker right at the boundary.
+const torchIndicator = document.getElementById('torchIndicator');
+const sampleCanvas = document.getElementById('canvas');
+let torchSampleInterval = null;
+let torchOn = false;
+const TORCH_DARK_THRESHOLD = 60;   // 0-255 average luma — below this, turn the torch on
+const TORCH_BRIGHT_THRESHOLD = 95; // above this, turn it back off
+
+function sampleVideoBrightness(){
+  if (!video.videoWidth || !video.videoHeight) return null;
+  const w = 24, h = 24; // tiny sample is plenty for an average-brightness read and keeps this cheap
+  sampleCanvas.width = w; sampleCanvas.height = h;
+  try{
+    const ctx = sampleCanvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(video, 0, 0, w, h);
+    const { data } = ctx.getImageData(0, 0, w, h);
+    let sum = 0;
+    for (let i = 0; i < data.length; i += 4){
+      sum += 0.299*data[i] + 0.587*data[i+1] + 0.114*data[i+2]; // perceived luminance
+    }
+    return sum / (data.length / 4);
+  } catch(e){
+    return null; // camera frame not readable this tick — just skip, try again next tick
+  }
+}
+
+async function setTorch(on){
+  if (typeof qrScanner.hasFlash !== 'function') return;
+  try{
+    const has = await qrScanner.hasFlash();
+    if (!has) return; // this camera/device has no controllable torch — nothing to do
+    if (on && !torchOn){
+      await qrScanner.turnFlashOn();
+      torchOn = true;
+      if (torchIndicator) torchIndicator.classList.add('on');
+    } else if (!on && torchOn){
+      await qrScanner.turnFlashOff();
+      torchOn = false;
+      if (torchIndicator) torchIndicator.classList.remove('on');
+    }
+  } catch(e){ /* flash unsupported or blocked — fail silently, scanning still works without it */ }
+}
+
+function startTorchAutoSensing(){
+  if (torchSampleInterval) return;
+  torchSampleInterval = setInterval(() => {
+    const brightness = sampleVideoBrightness();
+    if (brightness == null) return;
+    if (brightness < TORCH_DARK_THRESHOLD) setTorch(true);
+    else if (brightness > TORCH_BRIGHT_THRESHOLD) setTorch(false);
+  }, 1200);
+}
+
+function stopTorchAutoSensing(){
+  if (torchSampleInterval){ clearInterval(torchSampleInterval); torchSampleInterval = null; }
+  setTorch(false);
+}
+
 camToggleBtn.addEventListener('click', async () => {
   if (scanning){ stopCamera(); return; }
   try{
     video.style.display = 'block';
     camPlaceholder.style.display = 'none';
+    camPlaceholder.classList.remove('error-text');
     scanFrame.style.display = 'block';
     await qrScanner.start();
     scanning = true;
     camToggleBtn.textContent = 'Stop camera';
+    startTorchAutoSensing();
   } catch(err){
     video.style.display = 'none';
     scanFrame.style.display = 'none';
     camPlaceholder.style.display = 'block';
+    camPlaceholder.classList.add('error-text');
     camPlaceholder.textContent = 'Camera unavailable in this environment (' + (err && (err.message || err.name) || err) + '). Pick the checkpoint from the list below instead.';
   }
 });
@@ -2814,9 +2943,11 @@ camToggleBtn.addEventListener('click', async () => {
 function stopCamera(){
   scanning = false;
   qrScanner.stop();
+  stopTorchAutoSensing();
   video.style.display = 'none';
   scanFrame.style.display = 'none';
   camPlaceholder.style.display = 'block';
+  camPlaceholder.classList.remove('error-text');
   camPlaceholder.textContent = 'Camera off. Tap "Start camera", then "Scan checkpoint" to read a QR tag.';
   camToggleBtn.textContent = 'Start camera';
 }
