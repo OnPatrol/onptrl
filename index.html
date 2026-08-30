@@ -659,6 +659,15 @@
           </table>
         </div>
 
+        <div class="field-label" style="margin-top:22px;">Position alerts</div>
+        <div class="result-meta" style="margin:-4px 0 8px;">Every time a guard scanned outside the checkpoint's radius or without a usable location, with the distance and checkpoint — uses the same site/date filters above.</div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>When</th><th>Site</th><th>Alert</th><th>Detail</th></tr></thead>
+            <tbody id="positionAlertsBody"><tr><td colspan="4" style="font-family:var(--sans); color:var(--muted);">Run a report to see results.</td></tr></tbody>
+          </table>
+        </div>
+
         <div class="field-label" style="margin-top:22px;">Controller comments</div>
         <div class="result-meta" style="margin:-4px 0 8px;">Every alert a controller resolved, with their comment — uses the same site/date filters above. This is the permanent record; the live dashboards only keep the last 24 hours.</div>
         <div class="table-scroll">
@@ -1403,9 +1412,9 @@ function setAuthSignupRole(role){
   document.getElementById('authRoleGuardBtn').classList.toggle('active', role === 'guard');
   document.getElementById('authRoleAdminBtn').classList.toggle('active', role === 'admin');
   document.getElementById('authRoleControllerBtn').classList.toggle('active', role === 'controller');
-  document.getElementById('authInviteWrap').style.display = role === 'admin' ? 'block' : 'none';
-  document.getElementById('authControllerCodeWrap').style.display = role === 'controller' ? 'block' : 'none';
-  document.getElementById('authSiteCodeWrap').style.display = role === 'guard' ? 'block' : 'none';
+  document.getElementById('authInviteWrap').style.display = (authMode === 'signup' && role === 'admin') ? 'block' : 'none';
+  document.getElementById('authControllerCodeWrap').style.display = (authMode === 'signup' && role === 'controller') ? 'block' : 'none';
+  document.getElementById('authSiteCodeWrap').style.display = (authMode === 'signup' && role === 'guard') ? 'block' : 'none';
   if (role !== 'admin') document.getElementById('authInviteCode').value = '';
   if (role !== 'controller') document.getElementById('authControllerCode').value = '';
   if (role !== 'guard') document.getElementById('authSiteCode').value = '';
@@ -2830,7 +2839,7 @@ async function processScan(qrId){
   if (result === 'REJECTED_OUT_OF_RANGE' || result === 'REJECTED_NO_LOCATION'){
     const patrolTime = fmtClock(dutyInfo.inst.expectedTime);
     const baseDetail = result === 'REJECTED_OUT_OF_RANGE'
-      ? `${patrolTime} patrol · Guard ${Math.round(distance)}m from ${cp.name}`
+      ? `${patrolTime} patrol · Scanned ${Math.round(distance)}m away from ${cp.name}'s assigned position (outside its ${cp.radius}m radius)`
       : `${patrolTime} patrol · Guard's location wasn't available while scanning ${cp.name}`;
 
     // Alert Settings' escalation threshold, made real: count this guard's
@@ -3319,6 +3328,7 @@ let lastReportRows = [];
 let lastReportSummary = null;
 let lastReportDetail = [];
 let lastReportComments = [];
+let lastReportPositionAlerts = [];
 
 // Hand-built SVG charts instead of a canvas library: no external script to fail
 // to load, and no "screenshot the canvas before it's finished animating" timing
@@ -3524,8 +3534,53 @@ function renderReportCharts(){
 document.getElementById('runReportBtn').addEventListener('click', async () => {
   const ok = await computeReport();
   if (ok) renderReport();
+  await loadAndRenderPositionAlerts();
   await loadAndRenderControllerComments();
 });
+
+async function loadAndRenderPositionAlerts(){
+  const siteFilter = document.getElementById('reportSiteSelect').value || null;
+  const fromVal = document.getElementById('reportFrom').value;
+  const toVal = document.getElementById('reportTo').value;
+  const body = document.getElementById('positionAlertsBody');
+  if (!fromVal || !toVal) return;
+  const winStart = new Date(fromVal + 'T00:00:00').toISOString();
+  const winEnd = new Date(toVal + 'T23:59:59').toISOString();
+
+  let query = sb.from('patrol_notifications')
+    .select('id, site_id, title, detail, severity, occurred_at')
+    .eq('kind', 'radius_alert')
+    .gte('occurred_at', winStart)
+    .lte('occurred_at', winEnd)
+    .order('occurred_at', { ascending: false })
+    .limit(300);
+  if (siteFilter) query = query.eq('site_id', siteFilter);
+
+  const { data, error } = await query;
+  if (error){ showToast('Could not load position alerts', error.message, 'danger'); return; }
+
+  const rows = (data || []).map(n => ({
+    when: n.occurred_at,
+    site: (sites.find(s => s.id === n.site_id) || {}).name || '—',
+    title: n.title,
+    // The distance/reason is already spelled out here — e.g. "04:45 AM patrol ·
+    // Guard 20m from Lobby Door" — this is what actually answers "how far off,
+    // and from which checkpoint," not just that an alert fired.
+    detail: n.detail || '—',
+    severity: n.severity
+  }));
+  lastReportPositionAlerts = rows;
+
+  if (!body) return;
+  body.innerHTML = rows.length ? rows.map(r => `
+    <tr>
+      <td>${new Date(r.when).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</td>
+      <td style="font-family:var(--sans);">${escapeHtmlForPrint(r.site)}</td>
+      <td style="font-family:var(--sans);"><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${severityColor(r.severity)}; margin-right:6px;"></span>${escapeHtmlForPrint(r.title)}</td>
+      <td style="font-family:var(--sans);">${escapeHtmlForPrint(r.detail)}</td>
+    </tr>
+  `).join('') : '<tr><td colspan="4" style="font-family:var(--sans); color:var(--muted);">No position alerts in this range.</td></tr>';
+}
 
 async function loadAndRenderControllerComments(){
   const siteFilter = document.getElementById('reportSiteSelect').value || null;
@@ -3619,6 +3674,7 @@ document.getElementById('printPdfReportBtn').addEventListener('click', async () 
   try {
     if (!(await computeReport())){ return; }
     renderReport();
+    await loadAndRenderPositionAlerts();
     await loadAndRenderControllerComments();
 
     const siteLabel = document.getElementById('reportSiteSelect').selectedOptions[0].textContent;
@@ -3638,6 +3694,10 @@ document.getElementById('printPdfReportBtn').addEventListener('click', async () 
       const cpText = d.checkpoints.map(cp => `${escapeHtmlForPrint(cp.name)} — ${cp.scannedAt != null ? new Date(cp.scannedAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : 'not scanned'}`).join('<br>');
       return `<tr><td>${escapeHtmlForPrint(d.siteName)}</td><td>${escapeHtmlForPrint(d.routeName)}</td><td>${new Date(d.expectedTime).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</td><td>${statusLabel(d.status)}</td><td>${cpText}</td></tr>`;
     }).join('') || '<tr><td colspan="5" class="empty-row">No resolved patrols in this range.</td></tr>';
+
+    const positionAlertRows = lastReportPositionAlerts.map(a => `
+      <tr><td>${new Date(a.when).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</td><td>${escapeHtmlForPrint(a.site)}</td><td>${escapeHtmlForPrint(a.title)}</td><td>${escapeHtmlForPrint(a.detail)}</td></tr>
+    `).join('') || '<tr><td colspan="4" class="empty-row">No position alerts in this range.</td></tr>';
 
     const commentRows = lastReportComments.map(c => `
       <tr><td>${new Date(c.when).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</td><td>${escapeHtmlForPrint(c.site)}</td><td>${escapeHtmlForPrint(c.title)}</td><td>${escapeHtmlForPrint(c.body)}</td><td>${escapeHtmlForPrint(c.author)}</td></tr>
@@ -3660,9 +3720,10 @@ document.getElementById('printPdfReportBtn').addEventListener('click', async () 
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin:0; padding:0; background:#fff; color:#111; }
   h1 { font-size:20px; margin:0; }
   h2 { font-size:14px; margin:26px 0 8px; border-bottom:1px solid #ddd; padding-bottom:4px; }
-  .header { display:flex; align-items:center; gap:12px; border-bottom:2px solid #14314f; padding-bottom:12px; }
-  .header img { height:36px; width:auto; }
-  .meta { color:#555; font-size:12px; margin-top:4px; }
+  .header { display:flex; align-items:center; gap:14px; background:#0b0f14; padding:16px 18px; border-radius:10px; }
+  .header img { height:38px; width:auto; }
+  .header h1 { color:#fff; }
+  .header .meta { color:#b9c2cc; }
   .summary { display:flex; gap:10px; margin-top:16px; }
   .summary .card { flex:1; border:1px solid #ddd; border-radius:8px; padding:10px; text-align:center; }
   .summary .card .label { font-size:10px; color:#666; text-transform:uppercase; letter-spacing:0.4px; }
@@ -3711,6 +3772,12 @@ document.getElementById('printPdfReportBtn').addEventListener('click', async () 
   <table>
     <thead><tr><th>Site</th><th>Route</th><th>Expected</th><th>Status</th><th>Checkpoints (tag — time scanned)</th></tr></thead>
     <tbody>${detailRows}</tbody>
+  </table>
+
+  <h2>Position alerts</h2>
+  <table>
+    <thead><tr><th>When</th><th>Site</th><th>Alert</th><th>Detail</th></tr></thead>
+    <tbody>${positionAlertRows}</tbody>
   </table>
 
   <h2>Controller comments</h2>
