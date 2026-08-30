@@ -82,6 +82,7 @@
   .btn-primary:hover{opacity:0.9;}
   .btn-row{display:flex; gap:8px; margin-top:10px;}
   .btn-row .btn{flex:1;}
+  #manualScanBtn{padding:20px 16px; font-size:17px; font-weight:800; border-radius:12px; letter-spacing:0.3px;}
   .field-label{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; margin:16px 0 6px;}
   select, input[type=text], input[type=password], input[type=email]{
     width:100%; background:var(--panel-2); border:1px solid var(--border); color:var(--text);
@@ -109,6 +110,13 @@
   .result-title{font-weight:700; margin-bottom:4px;}
   .result-card.rejected .result-title{color:var(--danger); font-size:17px;}
   .result-meta{color:var(--muted); font-family:var(--mono); font-size:11px; line-height:1.6;}
+  /* Hovers over the camera feed instead of sitting in the page flow below the
+     button, so a rejection is impossible to miss without pushing everything else
+     down; showResult() auto-dismisses it after 30s. */
+  .cam-box .result-card{
+    position:absolute; left:8px; right:8px; top:8px; z-index:6; margin-top:0;
+    box-shadow:0 6px 18px rgba(0,0,0,0.5); backdrop-filter:blur(2px);
+  }
   /* Guard-facing error text: red and larger than normal status copy, per patrol safety requirements */
   .error-text{color:var(--danger) !important; font-weight:700; font-size:14px;}
   .cam-placeholder.error-text{font-size:13px;}
@@ -262,6 +270,10 @@
             <video id="video" playsinline style="display:none;"></video>
             <canvas id="canvas" style="display:none;"></canvas>
             <div class="scan-frame" id="scanFrame" style="display:none;"></div>
+            <div class="result-card" id="resultCard">
+              <div class="result-title" id="resultTitle"></div>
+              <div class="result-meta" id="resultMeta"></div>
+            </div>
           </div>
 
           <div class="torch-indicator" id="torchIndicator">🔦 Auto-flash on — low light detected</div>
@@ -288,11 +300,6 @@
             <button class="btn btn-primary" id="manualScanBtn">Scan now</button>
           </div>
           <div class="result-meta" id="manualScanStatus" style="margin-top:8px;"></div>
-
-          <div class="result-card" id="resultCard">
-            <div class="result-title" id="resultTitle"></div>
-            <div class="result-meta" id="resultMeta"></div>
-          </div>
         </div>
       </div>
     </div>
@@ -2808,12 +2815,18 @@ async function processScan(qrId){
   return record;
 }
 
+let resultCardHideTimer = null;
 function showResult(record){
   const card = document.getElementById('resultCard');
   const title = document.getElementById('resultTitle');
   const meta = document.getElementById('resultMeta');
   card.classList.remove('accepted','rejected');
   card.classList.add('show', record.result === 'ACCEPTED' ? 'accepted' : 'rejected');
+
+  // Hovering on top of the camera feed, it needs to get out of the way on its own —
+  // otherwise it'd sit there blocking the next scan until something else replaces it.
+  if (resultCardHideTimer) clearTimeout(resultCardHideTimer);
+  resultCardHideTimer = setTimeout(() => { card.classList.remove('show'); resultCardHideTimer = null; }, 30000);
 
   if (record.result === 'ACCEPTED'){
     title.textContent = `Verified — ${record.cpName}`;
