@@ -9,6 +9,9 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
   :root{
     --bg:#0D1117;
@@ -117,6 +120,17 @@
     position:absolute; left:8px; right:8px; top:8px; z-index:6; margin-top:0;
     box-shadow:0 6px 18px rgba(0,0,0,0.5); backdrop-filter:blur(2px);
   }
+  /* The "can't scan yet" guidance (camera off / no patrol in progress / no tag
+     found) — hovers at the bottom of the camera so it's seen right where the
+     guard is looking, and only appears while there's something to say. */
+  .cam-box #manualScanStatus{
+    display:none; position:absolute; left:8px; right:8px; bottom:8px; z-index:6;
+    padding:10px 12px; border-radius:10px; border:1px solid var(--border);
+    background:var(--panel-2); font-family:var(--sans); font-size:12.5px; line-height:1.4;
+    box-shadow:0 6px 18px rgba(0,0,0,0.5); backdrop-filter:blur(2px); color:var(--text);
+  }
+  .cam-box #manualScanStatus.show{display:block;}
+  .cam-box #manualScanStatus.error-text{border-color:var(--danger); background:var(--danger-dim); color:var(--danger) !important; font-size:13px;}
   /* Guard-facing error text: red and larger than normal status copy, per patrol safety requirements */
   .error-text{color:var(--danger) !important; font-weight:700; font-size:14px;}
   .cam-placeholder.error-text{font-size:13px;}
@@ -274,6 +288,7 @@
               <div class="result-title" id="resultTitle"></div>
               <div class="result-meta" id="resultMeta"></div>
             </div>
+            <div class="result-meta" id="manualScanStatus"></div>
           </div>
 
           <div class="torch-indicator" id="torchIndicator">🔦 Auto-flash on — low light detected</div>
@@ -299,7 +314,6 @@
           <div class="btn-row">
             <button class="btn btn-primary" id="manualScanBtn">Scan now</button>
           </div>
-          <div class="result-meta" id="manualScanStatus" style="margin-top:8px;"></div>
         </div>
       </div>
     </div>
@@ -605,7 +619,9 @@
         <div class="btn-row" style="margin-top:10px;">
           <button class="btn btn-primary" id="runReportBtn">Run report</button>
           <button class="btn" id="downloadReportBtn" style="width:auto; padding:9px 14px;">⬇ Download CSV</button>
+          <button class="btn" id="downloadPdfReportBtn" style="width:auto; padding:9px 14px;">⬇ Download branded PDF</button>
         </div>
+        <div class="result-meta" id="reportRunStatus" style="margin-top:6px;"></div>
 
         <div class="stat-grid" style="margin-top:18px;" id="reportSummaryGrid">
           <div class="stat-card"><div class="stat-label">Patrols scheduled</div><div class="stat-val" id="repScheduled">—</div></div>
@@ -615,11 +631,31 @@
         </div>
         <div class="result-meta" id="repOnTimePct" style="margin:-8px 0 14px;"></div>
 
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:14px 0;">
+          <div class="panel" style="padding:12px;">
+            <div class="field-label" style="margin-top:0;">On-time vs late vs missed, by route</div>
+            <canvas id="reportBarChart" height="220"></canvas>
+          </div>
+          <div class="panel" style="padding:12px;">
+            <div class="field-label" style="margin-top:0;">Overall outcome mix</div>
+            <canvas id="reportDonutChart" height="220"></canvas>
+          </div>
+        </div>
+
         <div class="field-label">By patrol / route</div>
         <div class="table-scroll">
           <table>
             <thead><tr><th>Site</th><th>Route</th><th>Scheduled</th><th>On time</th><th>Late</th><th>Missed</th><th>On-time %</th></tr></thead>
             <tbody id="reportByRouteBody"><tr><td colspan="7" style="font-family:var(--sans); color:var(--muted);">Run a report to see results.</td></tr></tbody>
+          </table>
+        </div>
+
+        <div class="field-label" style="margin-top:22px;">Patrol-by-patrol detail</div>
+        <div class="result-meta" style="margin:-4px 0 8px;">Every scheduled patrol in range, every checkpoint tag it covers, and the time each one was actually scanned — this is also what goes into the PDF.</div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Site</th><th>Route</th><th>Expected</th><th>Status</th><th>Checkpoints (tag — time scanned)</th></tr></thead>
+            <tbody id="reportDetailBody"><tr><td colspan="5" style="font-family:var(--sans); color:var(--muted);">Run a report to see results.</td></tr></tbody>
           </table>
         </div>
 
@@ -2848,10 +2884,22 @@ function showResult(record){
 }
 
 // ---------------- Guard view interactions ----------------
+let manualStatusHideTimer = null;
 function setManualScanStatus(text, isError){
   const statusEl = document.getElementById('manualScanStatus');
   statusEl.textContent = text;
   statusEl.classList.toggle('error-text', !!isError);
+  statusEl.classList.toggle('show', !!text);
+  if (manualStatusHideTimer){ clearTimeout(manualStatusHideTimer); manualStatusHideTimer = null; }
+  // These sit over the camera where the guard is already looking, so — like the
+  // scan-result card — they get out of the way on their own after 30s instead of
+  // sitting there until the next tap.
+  if (text){
+    manualStatusHideTimer = setTimeout(() => {
+      statusEl.classList.remove('show');
+      manualStatusHideTimer = null;
+    }, 30000);
+  }
 }
 
 document.getElementById('manualScanBtn').addEventListener('click', async () => {
@@ -2872,7 +2920,6 @@ document.getElementById('manualScanBtn').addEventListener('click', async () => {
   if (!gate.inProgress){
     setManualScanStatus('No patrol in progress — scanning is disabled until your patrol starts.', true);
     SOUND.tagRejected();
-    showResult({ qrId: '', cpName: null, distance: null, result: 'REJECTED_NO_PATROL', siteId: guardSiteId, expectedQrId: null, timestamp: Date.now() });
     return;
   }
 
@@ -3259,8 +3306,31 @@ function defaultReportDates(){
 
 let lastReportRows = [];
 let lastReportSummary = null;
+let lastReportDetail = [];
+let lastReportComments = [];
+let reportBarChartInstance = null;
+let reportDonutChartInstance = null;
 
-function computeReport(){
+// Scans older than ~48h have already fallen out of the in-memory `scans` cache
+// (loadScans() only keeps a rolling 48h window for the live dashboards), so a
+// report over any longer range was silently working off missing data — that's
+// why it looked like reports "didn't generate" for anything but the last couple
+// of days. Reports now pull exactly the scans they need, straight from the DB.
+async function fetchScansForReportRange(winStartMs, winEndMs, siteFilter){
+  const since = new Date(winStartMs - 6*60*60*1000).toISOString(); // small lookback pad for patrol windows that start just before winStart
+  const until = new Date(winEndMs).toISOString();
+  let query = sb.from('scans').select('*')
+    .gte('created_at', since)
+    .lte('created_at', until)
+    .order('created_at', { ascending: true })
+    .limit(20000);
+  if (siteFilter) query = query.eq('site_id', siteFilter);
+  const { data, error } = await query;
+  if (error){ showToast('Could not load scan history for report', error.message, 'danger'); return null; }
+  return (data || []).map(rowToScan);
+}
+
+async function computeReport(){
   const siteFilter = document.getElementById('reportSiteSelect').value || null;
   const fromVal = document.getElementById('reportFrom').value;
   const toVal = document.getElementById('reportTo').value;
@@ -3272,29 +3342,65 @@ function computeReport(){
   const winEnd = new Date(toVal + 'T23:59:59').getTime();
   const now = nowMs();
 
+  const statusEl = document.getElementById('reportRunStatus');
+  if (statusEl) statusEl.textContent = 'Fetching scan history for this range…';
+
+  const rangeScans = await fetchScansForReportRange(winStart, winEnd, siteFilter);
+  if (rangeScans === null){ if (statusEl) statusEl.textContent = ''; return false; }
+
   const relevantRoutes = routes.filter(r => !siteFilter || r.siteId === siteFilter);
   const routeIds = new Set(relevantRoutes.map(r => r.id));
   const relevantScheds = schedules.filter(s => routeIds.has(s.routeId));
 
+  // instanceStatus()/scansForInstance() read the module-level `scans` array, so
+  // swap in the range-scoped data for this computation and put the live
+  // dashboard's cache back immediately after — nothing else should ever see
+  // this substitution.
+  const savedScans = scans;
+  scans = rangeScans;
   const byRoute = {};
-  relevantScheds.forEach(sched => {
-    const insts = generateInstances(sched, winStart, winEnd);
-    insts.forEach(inst => {
-      const st = instanceStatus(inst, now).status;
-      if (!['completed','completed_late','late','missed'].includes(st)) return; // not yet resolved
-      const r = routes.find(rt => rt.id === inst.routeId);
-      if (!r) return;
-      const key = r.id;
-      if (!byRoute[key]){
+  const detail = [];
+  try {
+    relevantScheds.forEach(sched => {
+      const insts = generateInstances(sched, winStart, winEnd);
+      insts.forEach(inst => {
+        const st = instanceStatus(inst, now).status;
+        if (!['completed','completed_late','late','missed'].includes(st)) return; // not yet resolved
+        const r = routes.find(rt => rt.id === inst.routeId);
+        if (!r) return;
         const site = sites.find(s => s.id === r.siteId);
-        byRoute[key] = { routeId: r.id, routeName: r.name, siteName: site ? site.name : '—', scheduled: 0, onTime: 0, late: 0, missed: 0 };
-      }
-      byRoute[key].scheduled++;
-      if (st === 'completed') byRoute[key].onTime++;
-      else if (st === 'completed_late' || st === 'late') byRoute[key].late++;
-      else if (st === 'missed') byRoute[key].missed++;
+        const key = r.id;
+        if (!byRoute[key]){
+          byRoute[key] = { routeId: r.id, routeName: r.name, siteName: site ? site.name : '—', scheduled: 0, onTime: 0, late: 0, missed: 0 };
+        }
+        byRoute[key].scheduled++;
+        if (st === 'completed') byRoute[key].onTime++;
+        else if (st === 'completed_late' || st === 'late') byRoute[key].late++;
+        else if (st === 'missed') byRoute[key].missed++;
+
+        // Tag-level detail: every checkpoint the route requires, and when (if
+        // ever) it was actually scanned during this patrol's window.
+        const cpIds = routeCheckpoints(inst.routeId);
+        const found = scansForInstance(inst);
+        const firstScanAt = {};
+        found.forEach(s => { if (!(s.qrId in firstScanAt) || s.timestamp < firstScanAt[s.qrId]) firstScanAt[s.qrId] = s.timestamp; });
+        const cpDetail = cpIds.map(id => {
+          const cp = checkpoints.find(c => c.qrId === id);
+          const t = firstScanAt[id];
+          return { name: cp ? cp.name : id, qrId: id, scannedAt: t != null ? t : null };
+        });
+        detail.push({
+          siteName: site ? site.name : '—',
+          routeName: r.name,
+          expectedTime: inst.expectedTime,
+          status: st,
+          checkpoints: cpDetail
+        });
+      });
     });
-  });
+  } finally {
+    scans = savedScans;
+  }
 
   const rows = Object.values(byRoute).sort((a,b) => a.siteName.localeCompare(b.siteName) || a.routeName.localeCompare(b.routeName));
   const summary = rows.reduce((acc, r) => {
@@ -3302,9 +3408,17 @@ function computeReport(){
     return acc;
   }, { scheduled: 0, onTime: 0, late: 0, missed: 0 });
 
+  detail.sort((a,b) => a.expectedTime - b.expectedTime);
+
   lastReportRows = rows;
   lastReportSummary = summary;
+  lastReportDetail = detail;
+  if (statusEl) statusEl.textContent = '';
   return true;
+}
+
+function statusLabel(st){
+  return { completed: 'On time', completed_late: 'Completed late', late: 'Late', missed: 'Missed' }[st] || st;
 }
 
 function renderReport(){
@@ -3319,12 +3433,68 @@ function renderReport(){
   const body = document.getElementById('reportByRouteBody');
   body.innerHTML = lastReportRows.length ? lastReportRows.map(r => {
     const rp = r.scheduled ? Math.round((r.onTime / r.scheduled) * 100) : 0;
-    return `<tr><td style="font-family:var(--sans);">${r.siteName}</td><td style="font-family:var(--sans);">${r.routeName}</td><td>${r.scheduled}</td><td>${r.onTime}</td><td>${r.late}</td><td>${r.missed}</td><td>${rp}%</td></tr>`;
+    return `<tr><td style="font-family:var(--sans);">${escapeHtmlForPrint(r.siteName)}</td><td style="font-family:var(--sans);">${escapeHtmlForPrint(r.routeName)}</td><td>${r.scheduled}</td><td>${r.onTime}</td><td>${r.late}</td><td>${r.missed}</td><td>${rp}%</td></tr>`;
   }).join('') : '<tr><td colspan="7" style="font-family:var(--sans); color:var(--muted);">No resolved patrols in this range.</td></tr>';
+
+  const detailBody = document.getElementById('reportDetailBody');
+  detailBody.innerHTML = lastReportDetail.length ? lastReportDetail.map(d => {
+    const cpText = d.checkpoints.map(cp => `${escapeHtmlForPrint(cp.name)} — ${cp.scannedAt != null ? new Date(cp.scannedAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : 'not scanned'}`).join('<br>');
+    return `<tr><td style="font-family:var(--sans);">${escapeHtmlForPrint(d.siteName)}</td><td style="font-family:var(--sans);">${escapeHtmlForPrint(d.routeName)}</td><td>${new Date(d.expectedTime).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</td><td>${statusLabel(d.status)}</td><td style="font-family:var(--sans);">${cpText}</td></tr>`;
+  }).join('') : '<tr><td colspan="5" style="font-family:var(--sans); color:var(--muted);">No resolved patrols in this range.</td></tr>';
+
+  renderReportCharts();
+}
+
+function renderReportCharts(){
+  const barCtx = document.getElementById('reportBarChart');
+  const donutCtx = document.getElementById('reportDonutChart');
+  if (!barCtx || !donutCtx || typeof Chart === 'undefined') return;
+  if (reportBarChartInstance) reportBarChartInstance.destroy();
+  if (reportDonutChartInstance) reportDonutChartInstance.destroy();
+
+  const rows = lastReportRows;
+  const successColor = getComputedStyle(document.documentElement).getPropertyValue('--success').trim() || '#3FB878';
+  const warnColor = getComputedStyle(document.documentElement).getPropertyValue('--warn').trim() || '#F0A020';
+  const dangerColor = getComputedStyle(document.documentElement).getPropertyValue('--danger').trim() || '#E5484D';
+  const mutedColor = getComputedStyle(document.documentElement).getPropertyValue('--muted').trim() || '#8B96A5';
+
+  reportBarChartInstance = new Chart(barCtx, {
+    type: 'bar',
+    data: {
+      labels: rows.map(r => r.routeName),
+      datasets: [
+        { label: 'On time', data: rows.map(r => r.onTime), backgroundColor: successColor, stack: 's' },
+        { label: 'Late', data: rows.map(r => r.late), backgroundColor: warnColor, stack: 's' },
+        { label: 'Missed', data: rows.map(r => r.missed), backgroundColor: dangerColor, stack: 's' }
+      ]
+    },
+    options: {
+      responsive: true,
+      scales: {
+        x: { stacked: true, ticks: { color: mutedColor }, grid: { display: false } },
+        y: { stacked: true, beginAtZero: true, ticks: { color: mutedColor, precision: 0 }, grid: { color: 'rgba(255,255,255,0.06)' } }
+      },
+      plugins: { legend: { labels: { color: mutedColor } } }
+    }
+  });
+
+  const s = lastReportSummary;
+  reportDonutChartInstance = new Chart(donutCtx, {
+    type: 'doughnut',
+    data: {
+      labels: ['On time', 'Late', 'Missed'],
+      datasets: [{ data: [s.onTime, s.late, s.missed], backgroundColor: [successColor, warnColor, dangerColor] }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: 'bottom', labels: { color: mutedColor } } }
+    }
+  });
 }
 
 document.getElementById('runReportBtn').addEventListener('click', async () => {
-  if (computeReport()) renderReport();
+  const ok = await computeReport();
+  if (ok) renderReport();
   await loadAndRenderControllerComments();
 });
 
@@ -3349,6 +3519,7 @@ async function loadAndRenderControllerComments(){
   if (error){ showToast('Could not load controller comments', error.message, 'danger'); return; }
 
   if (!data || !data.length){
+    lastReportComments = [];
     body.innerHTML = '<tr><td colspan="5" style="font-family:var(--sans); color:var(--muted);">No commented alerts in this range.</td></tr>';
     return;
   }
@@ -3368,20 +3539,23 @@ async function loadAndRenderControllerComments(){
     });
   });
   rows.sort((a,b) => new Date(b.when) - new Date(a.when));
+  lastReportComments = rows;
 
+  // Escaped defensively — a comment containing characters like < or & shouldn't
+  // ever be able to blank out or break the row that's supposed to show it.
   body.innerHTML = rows.map(r => `
     <tr>
       <td>${new Date(r.when).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</td>
-      <td style="font-family:var(--sans);">${r.site}</td>
-      <td style="font-family:var(--sans);"><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${severityColor(r.severity)}; margin-right:6px;"></span>${r.title}</td>
-      <td style="font-family:var(--sans);">${r.body}</td>
-      <td style="font-family:var(--sans);">${r.author}</td>
+      <td style="font-family:var(--sans);">${escapeHtmlForPrint(r.site)}</td>
+      <td style="font-family:var(--sans);"><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${severityColor(r.severity)}; margin-right:6px;"></span>${escapeHtmlForPrint(r.title)}</td>
+      <td style="font-family:var(--sans);">${escapeHtmlForPrint(r.body)}</td>
+      <td style="font-family:var(--sans);">${escapeHtmlForPrint(r.author)}</td>
     </tr>
   `).join('');
 }
 
-document.getElementById('downloadReportBtn').addEventListener('click', () => {
-  if (!computeReport()){ return; }
+document.getElementById('downloadReportBtn').addEventListener('click', async () => {
+  if (!(await computeReport())) return;
   renderReport();
   const siteLabel = document.getElementById('reportSiteSelect').selectedOptions[0].textContent;
   const from = document.getElementById('reportFrom').value;
@@ -3407,6 +3581,150 @@ document.getElementById('downloadReportBtn').addEventListener('click', () => {
   a.remove();
   URL.revokeObjectURL(url);
   showToast('Report downloaded', '', 'success');
+});
+
+document.getElementById('downloadPdfReportBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('downloadPdfReportBtn');
+  if (typeof window.jspdf === 'undefined'){ showToast('PDF library did not load', 'Check your connection and try again.', 'danger'); return; }
+  btn.disabled = true;
+  const statusEl = document.getElementById('reportRunStatus');
+  try {
+    if (!(await computeReport())){ return; }
+    renderReport();
+    await loadAndRenderControllerComments();
+    if (statusEl) statusEl.textContent = 'Building PDF…';
+
+    const siteFilter = document.getElementById('reportSiteSelect').value || null;
+    const siteLabel = document.getElementById('reportSiteSelect').selectedOptions[0].textContent;
+    const from = document.getElementById('reportFrom').value;
+    const to = document.getElementById('reportTo').value;
+    const logoEl = document.querySelector('.brand-logo');
+    const logoDataUrl = logoEl ? logoEl.getAttribute('src') : null;
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 40;
+
+    // ---- Cover / header ----
+    let y = 50;
+    if (logoDataUrl){
+      try { doc.addImage(logoDataUrl, 'PNG', margin, y - 24, 34, 34); } catch(e) {}
+    }
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.setTextColor(20,20,20);
+    doc.text('OnPatrol Patrol Report', margin + (logoDataUrl ? 44 : 0), y);
+    y += 26;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(70,70,70);
+    doc.text(`Site: ${siteLabel}`, margin, y); y += 16;
+    doc.text(`Date range: ${from} to ${to}`, margin, y); y += 16;
+    doc.text(`Generated: ${new Date().toLocaleString()}`, margin, y); y += 24;
+
+    // ---- Summary ----
+    const s = lastReportSummary;
+    const pct = s.scheduled ? Math.round((s.onTime / s.scheduled) * 100) : 0;
+    doc.autoTable({
+      startY: y,
+      head: [['Scheduled', 'On time', 'Late', 'Missed', 'On-time %']],
+      body: [[String(s.scheduled), String(s.onTime), String(s.late), String(s.missed), `${pct}%`]],
+      theme: 'grid',
+      margin: { left: margin, right: margin },
+      styles: { fontSize: 10, halign: 'center' },
+      headStyles: { fillColor: [30, 58, 92] }
+    });
+    y = doc.lastAutoTable.finalY + 20;
+
+    // ---- Charts (rendered on-screen already; captured as images) ----
+    if (lastReportRows.length){
+      const barImg = document.getElementById('reportBarChart').toDataURL('image/png', 1.0);
+      const donutImg = document.getElementById('reportDonutChart').toDataURL('image/png', 1.0);
+      const chartW = (pageWidth - margin*2 - 16) / 2;
+      const chartH = chartW * 0.62;
+      if (y + chartH > doc.internal.pageSize.getHeight() - 60){ doc.addPage(); y = 50; }
+      try {
+        doc.addImage(barImg, 'PNG', margin, y, chartW, chartH);
+        doc.addImage(donutImg, 'PNG', margin + chartW + 16, y, chartW, chartH);
+      } catch(e) {}
+      y += chartH + 24;
+    }
+
+    // ---- By route table ----
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(20,20,20);
+    if (y > doc.internal.pageSize.getHeight() - 80){ doc.addPage(); y = 50; }
+    doc.text('By patrol / route', margin, y); y += 8;
+    doc.autoTable({
+      startY: y,
+      head: [['Site', 'Route', 'Scheduled', 'On time', 'Late', 'Missed', 'On-time %']],
+      body: lastReportRows.map(r => {
+        const rp = r.scheduled ? Math.round((r.onTime / r.scheduled) * 100) : 0;
+        return [r.siteName, r.routeName, String(r.scheduled), String(r.onTime), String(r.late), String(r.missed), `${rp}%`];
+      }),
+      theme: 'striped',
+      margin: { left: margin, right: margin },
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [30, 58, 92] }
+    });
+    y = doc.lastAutoTable.finalY + 24;
+
+    // ---- Patrol-by-patrol detail, with every tag and when it was scanned ----
+    if (y > doc.internal.pageSize.getHeight() - 80){ doc.addPage(); y = 50; }
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
+    doc.text('Patrol-by-patrol detail', margin, y); y += 8;
+    doc.autoTable({
+      startY: y,
+      head: [['Site', 'Route', 'Expected', 'Status', 'Checkpoints (tag — time scanned)']],
+      body: lastReportDetail.map(d => [
+        d.siteName,
+        d.routeName,
+        new Date(d.expectedTime).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+        statusLabel(d.status),
+        d.checkpoints.map(cp => `${cp.name} — ${cp.scannedAt != null ? new Date(cp.scannedAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : 'not scanned'}`).join('\n')
+      ]),
+      theme: 'striped',
+      margin: { left: margin, right: margin },
+      styles: { fontSize: 8, valign: 'top' },
+      headStyles: { fillColor: [30, 58, 92] },
+      columnStyles: { 4: { cellWidth: 220 } }
+    });
+    y = doc.lastAutoTable.finalY + 24;
+
+    // ---- Controller comments ----
+    if (lastReportComments.length){
+      if (y > doc.internal.pageSize.getHeight() - 80){ doc.addPage(); y = 50; }
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
+      doc.text('Controller comments', margin, y); y += 8;
+      doc.autoTable({
+        startY: y,
+        head: [['When', 'Site', 'Alert', 'Comment', 'Controller']],
+        body: lastReportComments.map(c => [
+          new Date(c.when).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+          c.site, c.title, c.body, c.author
+        ]),
+        theme: 'striped',
+        margin: { left: margin, right: margin },
+        styles: { fontSize: 8, valign: 'top' },
+        headStyles: { fillColor: [30, 58, 92] }
+      });
+    }
+
+    // ---- Branding footer + page numbers on every page ----
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++){
+      doc.setPage(i);
+      const h = doc.internal.pageSize.getHeight();
+      doc.setDrawColor(220,220,220);
+      doc.line(margin, h - 34, pageWidth - margin, h - 34);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(140,140,140);
+      doc.text('Powered by OnPatrol', margin, h - 20);
+      doc.text(`Page ${i} of ${pageCount}`, pageWidth - margin, h - 20, { align: 'right' });
+    }
+
+    const fname = `onpatrol-report_${(siteLabel || 'all-sites').toLowerCase().replace(/[^a-z0-9]+/g,'-')}_${from}_to_${to}.pdf`;
+    doc.save(fname);
+    showToast('PDF report downloaded', '', 'success');
+  } finally {
+    btn.disabled = false;
+    if (statusEl) statusEl.textContent = '';
+  }
 });
 
 // ---------------- Inner admin tabs ----------------
