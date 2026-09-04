@@ -51,6 +51,10 @@
   .ctrl-view{display:none;}
   .ctrl-view.active{display:block;}
   .site-map-box{width:100%; height:260px; border-radius:10px; overflow:hidden; border:1px solid var(--border); background:var(--panel-2);}
+  .perimeter-vertex{width:12px; height:12px; border-radius:50%; background:var(--accent); border:2px solid #04121F; box-shadow:0 0 0 2px rgba(78,161,255,0.45); cursor:grab;}
+  .site-contact-row{display:flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid var(--border); border-radius:8px; background:var(--panel-2);}
+  .site-contact-name{font-family:var(--sans); font-weight:600; font-size:12.5px;}
+  .site-contact-role{color:var(--accent); font-weight:500; font-size:11px;}
   .comment-item{border-bottom:1px solid var(--border); padding:8px 0; font-size:12px;}
   .comment-item:last-child{border-bottom:none;}
 
@@ -231,6 +235,7 @@
   .status-pill.upcoming{background:var(--panel); color:var(--muted); border:1px solid var(--border);}
   .status-pill.due_soon{background:var(--warn-dim); color:var(--warn);}
   .status-pill.active{background:var(--accent-dim); color:var(--accent);}
+  .status-pill.grace{background:var(--warn-dim); color:var(--warn);}
   .status-pill.late{background:var(--danger-dim); color:var(--danger);}
   .status-pill.completed{background:var(--success-dim); color:var(--success);}
   .status-pill.completed_late{background:var(--warn-dim); color:var(--warn);}
@@ -490,10 +495,17 @@
           </div>
           <div class="result-meta" style="margin-top:4px;">End time earlier than start means the shift crosses midnight.</div>
 
-          <div class="field-label">Late / second reminder after</div>
+          <div class="field-label">Patrol duration</div>
           <div class="inline-fields">
-            <div class="f"><label>Minutes past due</label><input type="text" id="newSchedLate" value="10" style="width:80px;"></div>
+            <div class="f"><label>Expected length (min)</label><input type="text" id="newSchedDuration" value="20" style="width:80px;"></div>
           </div>
+          <div class="result-meta" style="margin-top:2px;">How long the round should take once it starts — e.g. a patrol starting at 02:00 with a 20 minute duration is expected done by 02:20.</div>
+
+          <div class="field-label">Grace period</div>
+          <div class="inline-fields">
+            <div class="f"><label>Extra minutes after duration</label><input type="text" id="newSchedGrace" value="10" style="width:80px;"></div>
+          </div>
+          <div class="result-meta" style="margin-top:2px;" id="newSchedConcludePreview">Scans up to 30 minutes after the patrol starts (20m duration + 10m grace) still count as on time. The round then concludes — any tag scanned after that is treated as late.</div>
 
           <div class="btn-row">
             <button class="btn btn-primary" id="addSchedBtn">Add schedule</button>
@@ -501,7 +513,7 @@
 
           <div class="table-scroll">
         <table style="margin-top:14px;">
-            <thead><tr><th>Route</th><th>Repeats</th><th>Shift</th><th>Late after</th><th></th></tr></thead>
+            <thead><tr><th>Route</th><th>Repeats</th><th>Shift</th><th>Duration</th><th>Grace</th><th></th></tr></thead>
             <tbody id="schedTableBody"></tbody>
           </table>
         </div>
@@ -781,7 +793,23 @@
       </div>
       <button class="btn" style="width:auto; padding:5px 10px; font-size:11px; flex:0 0 auto;" id="siteMapCloseBtn">Close</button>
     </div>
+
+    <div class="cp-row" id="siteMapModeRow" style="display:none; margin-top:12px;">
+      <button class="btn btn-primary" id="siteMapModePinBtn" style="width:auto; padding:7px 12px; font-size:11px;">📍 Move pin</button>
+      <button class="btn" id="siteMapModePerimeterBtn" style="width:auto; padding:7px 12px; font-size:11px;">⬠ Draw perimeter</button>
+    </div>
+
     <div id="siteMapBox" class="site-map-box" style="margin-top:12px;"></div>
+
+    <div class="result-meta" id="siteMapPinHint" style="margin-top:6px; display:none;">GPS can be a few metres off — drag the pin to the site's real entrance/position for accuracy.</div>
+
+    <div class="cp-row" id="sitePerimeterWrap" style="display:none; margin-top:8px;">
+      <button class="btn" id="sitePerimeterUndoBtn" style="width:auto; padding:7px 12px; font-size:11px;">Undo last point</button>
+      <button class="btn" id="sitePerimeterClearBtn" style="width:auto; padding:7px 12px; font-size:11px;">Clear</button>
+      <button class="btn btn-primary" id="sitePerimeterSaveBtn" style="width:auto; padding:7px 12px; font-size:11px;">Save perimeter</button>
+    </div>
+    <div class="result-meta" id="sitePerimeterStatus" style="margin-top:6px; display:none;"></div>
+
     <div id="siteMapNoLocation" class="result-meta" style="margin-top:10px; display:none;">This site doesn't have a location set yet.</div>
     <div id="siteMapEditWrap" style="margin-top:12px; display:none;">
       <div class="cp-row">
@@ -792,6 +820,29 @@
         <input type="text" id="siteMapLat" placeholder="Latitude">
         <input type="text" id="siteMapLng" placeholder="Longitude">
         <button class="btn btn-primary" id="siteMapSaveBtn" style="flex:0 0 auto; width:auto; padding:9px 14px;">Save location</button>
+      </div>
+    </div>
+
+    <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--border);">
+      <div class="field-label" style="margin:0 0 8px;">Site contacts</div>
+      <div id="siteContactsList" style="display:flex; flex-direction:column; gap:6px;"></div>
+      <div id="siteContactsAddWrap" style="display:none; margin-top:10px;">
+        <div class="cp-row">
+          <input type="text" id="newContactName" placeholder="Name">
+          <input type="text" id="newContactRole" placeholder="Role (e.g. Site Manager)" list="contactRoleSuggestions">
+        </div>
+        <datalist id="contactRoleSuggestions">
+          <option value="Site Manager">
+          <option value="Facilities Manager">
+          <option value="Security Supervisor">
+          <option value="Emergency Contact">
+          <option value="Building Owner">
+        </datalist>
+        <div class="cp-row" style="margin-top:8px;">
+          <input type="text" id="newContactPhone" placeholder="Phone">
+          <input type="text" id="newContactEmail" placeholder="Email">
+          <button class="btn btn-primary" id="addSiteContactBtn" style="flex:0 0 auto; width:auto; padding:9px 14px;">Add contact</button>
+        </div>
       </div>
     </div>
   </div>
@@ -1031,7 +1082,7 @@ function generateInstances(sched, winStart, winEnd){
     const stepMs = sched.intervalMinutes * 60000;
     for (let t = shiftStart; t < shiftEnd; t += stepMs){
       if (t >= winStart && t <= winEnd){
-        out.push({ id: sched.id + '-' + t, scheduleId: sched.id, routeId: sched.routeId, expectedTime: t, intervalMinutes: sched.intervalMinutes, lateThresholdMinutes: sched.lateThresholdMinutes });
+        out.push({ id: sched.id + '-' + t, scheduleId: sched.id, routeId: sched.routeId, expectedTime: t, intervalMinutes: sched.intervalMinutes, durationMinutes: sched.durationMinutes, graceMinutes: sched.graceMinutes });
       }
     }
   }
@@ -1065,37 +1116,48 @@ function instanceStatus(inst, at){
   const doneCps = [...new Set(found.map(s => s.qrId))];
   const totalCps = cpIds.length;
   const complete = totalCps > 0 && doneCps.length >= totalCps;
-  const lateAt = inst.expectedTime + inst.lateThresholdMinutes*60000;
+  // Expected finish (start + duration), then the grace buffer on top of that before
+  // the round is concluded/closed out. Everything up to concludeAt counts as on
+  // time; anything scanned after concludeAt is late.
+  const durationEnd = inst.expectedTime + inst.durationMinutes*60000;
+  const concludeAt = durationEnd + inst.graceMinutes*60000;
   const windowEnd = inst.expectedTime + inst.intervalMinutes*60000;
 
   let status;
   if (complete){
-    // Fixed once complete: based on when the guard actually finished, so a patrol
-    // that finished on time never later flips to "late" just because it's being
-    // re-checked after the threshold has since passed. This also means the guard's
-    // countdown stops the instant the last tag is scanned, instead of continuing
-    // to tick toward "late".
+    // Duration is the actual patrol window — finishing within it is on time. The
+    // grace period is a catch-up buffer on top: a guard delayed by something (an
+    // incident, etc.) can still complete the round during it, but that finish
+    // counts as late, not on time. Only after concludeAt does the round stop
+    // accepting scans altogether (see `scannable` below).
     const finishedAt = patrolCompletionTime(found, cpIds);
-    status = finishedAt <= lateAt ? 'completed' : 'completed_late';
+    status = finishedAt <= durationEnd ? 'completed' : 'completed_late';
   } else if (at < inst.expectedTime - 5*60000){
     status = 'upcoming';
   } else if (at < inst.expectedTime){
     status = 'due_soon';
-  } else if (at < lateAt){
+  } else if (at < durationEnd){
     status = 'active';
-  } else if (at < windowEnd){
-    status = 'late';
+  } else if (at < concludeAt){
+    status = 'grace';
   } else {
     status = doneCps.length > 0 ? 'completed_late' : 'missed';
   }
-  return { status, doneCps, totalCps, cpIds };
+  // Scanning itself stays open on a time basis, separate from the display status:
+  // from the patrol's start until the outer window closes (same cap used to
+  // attribute scans to this instance), as long as it isn't already complete. That
+  // means a guard who's past the grace period can still finish the round — those
+  // tags land as a late completion instead of being silently rejected. Once truly
+  // complete, or once windowEnd passes, scanning stops.
+  const scannable = !complete && at >= inst.expectedTime && at < windowEnd;
+  return { status, doneCps, totalCps, cpIds, durationEnd, concludeAt, windowEnd, scannable };
 }
 function nextExpectedCheckpoint(inst){
   const st = instanceStatus(inst, nowMs());
   return st.cpIds.find(id => !st.doneCps.includes(id)) || null;
 }
 function statusLabel(s){
-  return { upcoming:'Upcoming', due_soon:'Due soon', active:'In progress', late:'Late', completed:'Completed', completed_late:'Completed (late)', missed:'Missed' }[s] || s;
+  return { upcoming:'Upcoming', due_soon:'Due soon', active:'In progress', grace:'Grace period', late:'Late', completed:'Completed', completed_late:'Completed (late)', missed:'Missed' }[s] || s;
 }
 function fmtCountdown(ms){
   const sign = ms < 0 ? -1 : 1;
@@ -1132,14 +1194,15 @@ function rowToScan(row){
     result: row.result,
     expectedQrId: row.expected_qr_id,
     timestamp: new Date(row.created_at).getTime(),
-    guardId: row.guard_id
+    guardId: row.guard_id,
+    isLate: !!row.is_late
   };
 }
 
 async function loadSites(){
   const { data, error } = await sb.from('sites').select('*').order('created_at');
   if (error){ showToast('Could not load sites', error.message, 'danger'); return; }
-  sites = (data || []).map(s => ({ id: s.id, name: s.name, address: s.address || '—', siteCode: s.site_code, lat: s.lat, lng: s.lng }));
+  sites = (data || []).map(s => ({ id: s.id, name: s.name, address: s.address || '—', siteCode: s.site_code, lat: s.lat, lng: s.lng, perimeter: s.perimeter || null }));
   if (!activeSiteId || !sites.some(s => s.id === activeSiteId)){
     activeSiteId = sites[0] ? sites[0].id : null;
   }
@@ -1172,7 +1235,7 @@ async function loadSchedules(){
   schedules = (data || []).map(s => ({
     id: s.id, routeId: s.route_id, intervalMinutes: s.interval_minutes,
     shiftStart: (s.shift_start || '00:00:00').slice(0,5), shiftEnd: (s.shift_end || '00:00:00').slice(0,5),
-    lateThresholdMinutes: s.late_threshold_minutes, active: s.active
+    durationMinutes: s.duration_minutes, graceMinutes: s.grace_minutes, active: s.active
   }));
 }
 async function loadScans(){
@@ -2208,14 +2271,25 @@ function renderControllerSiteTable(){
 let siteMapInstance = null;
 let siteMapMarker = null;
 let siteMapCurrentSiteId = null;
+let siteMapMode = 'pin'; // 'pin' | 'perimeter'
+let sitePerimeterPoints = [];       // working copy of [{lat,lng}, ...] while the modal is open
+let sitePerimeterPolygon = null;
+let sitePerimeterVertexMarkers = [];
+let siteContacts = [];
 
-function openSiteMapModal(siteId){
+async function openSiteMapModal(siteId){
   const s = sites.find(x => x.id === siteId);
   if (!s) return;
+  const isAdmin = profile.role === 'admin';
   siteMapCurrentSiteId = siteId;
+  siteMapMode = 'pin';
+  sitePerimeterPoints = Array.isArray(s.perimeter) ? s.perimeter.map(p => ({ lat: p.lat, lng: p.lng })) : [];
+  sitePerimeterPolygon = null;
+  sitePerimeterVertexMarkers = [];
+
   document.getElementById('siteMapTitle').textContent = s.name;
   document.getElementById('siteMapSub').textContent = s.address || '';
-  document.getElementById('siteMapEditWrap').style.display = profile.role === 'admin' ? 'block' : 'none';
+  document.getElementById('siteMapEditWrap').style.display = isAdmin ? 'block' : 'none';
   document.getElementById('siteMapLat').value = s.lat != null ? s.lat : '';
   document.getElementById('siteMapLng').value = s.lng != null ? s.lng : '';
   document.getElementById('siteMapEditStatus').textContent = '';
@@ -2223,6 +2297,10 @@ function openSiteMapModal(siteId){
   const hasLoc = s.lat != null && s.lng != null;
   document.getElementById('siteMapNoLocation').style.display = hasLoc ? 'none' : 'block';
   document.getElementById('siteMapBox').style.display = hasLoc ? 'block' : 'none';
+  document.getElementById('siteMapModeRow').style.display = (hasLoc && isAdmin) ? 'flex' : 'none';
+  document.getElementById('siteMapPinHint').style.display = (hasLoc && isAdmin) ? 'block' : 'none';
+  document.getElementById('sitePerimeterWrap').style.display = 'none';
+  document.getElementById('sitePerimeterStatus').style.display = 'none';
   document.getElementById('siteMapModalBg').classList.add('show');
 
   if (hasLoc){
@@ -2232,14 +2310,106 @@ function openSiteMapModal(siteId){
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; OpenStreetMap contributors', maxZoom: 19
       }).addTo(siteMapInstance);
-      siteMapMarker = L.marker([s.lat, s.lng]).addTo(siteMapInstance).bindPopup(s.name);
+      siteMapMarker = L.marker([s.lat, s.lng], { draggable: isAdmin }).addTo(siteMapInstance).bindPopup(s.name);
+      siteMapMarker.on('dragend', () => {
+        const ll = siteMapMarker.getLatLng();
+        document.getElementById('siteMapLat').value = ll.lat.toFixed(6);
+        document.getElementById('siteMapLng').value = ll.lng.toFixed(6);
+        document.getElementById('siteMapEditStatus').textContent = 'Pin moved — GPS can be a few metres off, so drag it to the exact spot, then tap "Save location" to confirm.';
+      });
+      // Clicking the map only adds perimeter points while in "Draw perimeter" mode —
+      // it's a no-op in "Move pin" mode so a stray tap can't accidentally start a shape.
+      siteMapInstance.on('click', (e) => {
+        if (siteMapMode !== 'perimeter' || !isAdmin) return;
+        sitePerimeterPoints.push({ lat: e.latlng.lat, lng: e.latlng.lng });
+        redrawSitePerimeter();
+      });
+      redrawSitePerimeter();
+      setSiteMapMode('pin');
     }, 50);
   }
+
+  await loadSiteContactsFor(siteId);
+  renderSiteContacts();
 }
+
+// Redraws the perimeter polygon and its draggable vertex handles from
+// sitePerimeterPoints. Called after every add/undo/clear/drag so the shape and the
+// status line always reflect the current working points.
+function redrawSitePerimeter(){
+  if (!siteMapInstance) return;
+  if (sitePerimeterPolygon){ siteMapInstance.removeLayer(sitePerimeterPolygon); sitePerimeterPolygon = null; }
+  sitePerimeterVertexMarkers.forEach(m => siteMapInstance.removeLayer(m));
+  sitePerimeterVertexMarkers = [];
+
+  if (sitePerimeterPoints.length){
+    sitePerimeterPolygon = L.polygon(sitePerimeterPoints.map(p => [p.lat, p.lng]), {
+      color: '#4EA1FF', weight: 2, fillOpacity: 0.12
+    }).addTo(siteMapInstance);
+
+    sitePerimeterPoints.forEach((p, i) => {
+      const vm = L.marker([p.lat, p.lng], {
+        draggable: true,
+        icon: L.divIcon({ className: 'perimeter-vertex', iconSize: [12, 12], iconAnchor: [6, 6] })
+      }).addTo(siteMapInstance);
+      vm.on('drag', (e) => {
+        const ll = e.target.getLatLng();
+        sitePerimeterPoints[i] = { lat: ll.lat, lng: ll.lng };
+        if (sitePerimeterPolygon) sitePerimeterPolygon.setLatLngs(sitePerimeterPoints.map(pt => [pt.lat, pt.lng]));
+      });
+      sitePerimeterVertexMarkers.push(vm);
+    });
+  }
+
+  const statusEl = document.getElementById('sitePerimeterStatus');
+  statusEl.textContent = sitePerimeterPoints.length
+    ? `${sitePerimeterPoints.length} point${sitePerimeterPoints.length === 1 ? '' : 's'} — drag a point to adjust it, or tap the map to add more.`
+    : 'Tap the map to start drawing the perimeter.';
+}
+
+function setSiteMapMode(mode){
+  siteMapMode = mode;
+  document.getElementById('siteMapModePinBtn').classList.toggle('btn-primary', mode === 'pin');
+  document.getElementById('siteMapModePerimeterBtn').classList.toggle('btn-primary', mode === 'perimeter');
+  document.getElementById('sitePerimeterWrap').style.display = mode === 'perimeter' ? 'flex' : 'none';
+  document.getElementById('sitePerimeterStatus').style.display = mode === 'perimeter' ? 'block' : 'none';
+  if (siteMapMarker){
+    if (mode === 'pin') siteMapMarker.dragging.enable(); else siteMapMarker.dragging.disable();
+  }
+  if (mode === 'perimeter') redrawSitePerimeter();
+}
+
+document.getElementById('siteMapModePinBtn').addEventListener('click', () => setSiteMapMode('pin'));
+document.getElementById('siteMapModePerimeterBtn').addEventListener('click', () => setSiteMapMode('perimeter'));
+
+document.getElementById('sitePerimeterUndoBtn').addEventListener('click', () => {
+  sitePerimeterPoints.pop();
+  redrawSitePerimeter();
+});
+document.getElementById('sitePerimeterClearBtn').addEventListener('click', () => {
+  if (!sitePerimeterPoints.length) return;
+  if (!confirm('Clear all perimeter points?')) return;
+  sitePerimeterPoints = [];
+  redrawSitePerimeter();
+});
+document.getElementById('sitePerimeterSaveBtn').addEventListener('click', async () => {
+  if (sitePerimeterPoints.length < 3){
+    document.getElementById('sitePerimeterStatus').textContent = 'Add at least 3 points to form a perimeter.';
+    return;
+  }
+  const { error } = await sb.from('sites').update({ perimeter: sitePerimeterPoints }).eq('id', siteMapCurrentSiteId);
+  if (error){ showToast('Could not save perimeter', error.message, 'danger'); return; }
+  const s = sites.find(x => x.id === siteMapCurrentSiteId);
+  if (s) s.perimeter = sitePerimeterPoints;
+  showToast('Perimeter saved', '', 'success');
+});
 
 document.getElementById('siteMapCloseBtn').addEventListener('click', () => {
   document.getElementById('siteMapModalBg').classList.remove('show');
   if (siteMapInstance){ siteMapInstance.remove(); siteMapInstance = null; }
+  siteMapMarker = null;
+  sitePerimeterPolygon = null;
+  sitePerimeterVertexMarkers = [];
 });
 
 document.getElementById('siteMapUseLocBtn').addEventListener('click', () => {
@@ -2249,7 +2419,7 @@ document.getElementById('siteMapUseLocBtn').addEventListener('click', () => {
   navigator.geolocation.getCurrentPosition(pos => {
     document.getElementById('siteMapLat').value = pos.coords.latitude.toFixed(6);
     document.getElementById('siteMapLng').value = pos.coords.longitude.toFixed(6);
-    status.textContent = 'Location captured — tap "Save location" to confirm.';
+    status.textContent = 'Location captured — GPS can be a little off, so once saved you can fine-tune it by dragging the pin. Tap "Save location" to confirm.';
   }, err => {
     status.textContent = 'Could not get location — ' + err.message;
   }, { enableHighAccuracy: true, timeout: 10000 });
@@ -2272,6 +2442,59 @@ document.getElementById('siteMapSaveBtn').addEventListener('click', async () => 
   await loadSites();
   renderAll();
   openSiteMapModal(siteMapCurrentSiteId);
+});
+
+// ---------------- Site contacts (site management personnel) ----------------
+async function loadSiteContactsFor(siteId){
+  const { data, error } = await sb.from('site_contacts').select('*').eq('site_id', siteId).order('created_at');
+  if (error){ showToast('Could not load site contacts', error.message, 'danger'); siteContacts = []; return; }
+  siteContacts = (data || []).map(c => ({ id: c.id, name: c.name, role: c.role, phone: c.phone, email: c.email }));
+}
+
+function renderSiteContacts(){
+  const listEl = document.getElementById('siteContactsList');
+  const isAdmin = profile.role === 'admin';
+  document.getElementById('siteContactsAddWrap').style.display = isAdmin ? 'block' : 'none';
+
+  listEl.innerHTML = siteContacts.length ? siteContacts.map(c => `
+    <div class="site-contact-row">
+      <div style="flex:1; min-width:0;">
+        <div class="site-contact-name">${escapeHtmlForPrint(c.name)} <span class="site-contact-role">· ${escapeHtmlForPrint(c.role)}</span></div>
+        <div class="result-meta" style="margin-top:2px;">${[c.phone, c.email].filter(Boolean).map(escapeHtmlForPrint).join(' · ') || '—'}</div>
+      </div>
+      ${isAdmin ? `<button class="del-btn" data-del-contact="${c.id}" aria-label="Remove contact"><i>&times;</i></button>` : ''}
+    </div>
+  `).join('') : '<div class="result-meta">No contacts added yet.</div>';
+
+  listEl.querySelectorAll('[data-del-contact]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.delContact;
+      const c = siteContacts.find(x => x.id === id);
+      if (!confirm(`Remove ${c ? c.name : 'this contact'}?`)) return;
+      const { error } = await sb.from('site_contacts').delete().eq('id', id);
+      if (error){ showToast('Could not remove contact', error.message, 'danger'); return; }
+      await loadSiteContactsFor(siteMapCurrentSiteId);
+      renderSiteContacts();
+    });
+  });
+}
+
+document.getElementById('addSiteContactBtn').addEventListener('click', async () => {
+  const name = document.getElementById('newContactName').value.trim();
+  const role = document.getElementById('newContactRole').value.trim();
+  const phone = document.getElementById('newContactPhone').value.trim();
+  const email = document.getElementById('newContactEmail').value.trim();
+  if (!name || !role){ showToast('Name and role are required', '', 'warn'); return; }
+  const { error } = await sb.from('site_contacts').insert({
+    site_id: siteMapCurrentSiteId, name, role, phone: phone || null, email: email || null
+  });
+  if (error){ showToast('Could not add contact', error.message, 'danger'); return; }
+  document.getElementById('newContactName').value = '';
+  document.getElementById('newContactRole').value = '';
+  document.getElementById('newContactPhone').value = '';
+  document.getElementById('newContactEmail').value = '';
+  await loadSiteContactsFor(siteMapCurrentSiteId);
+  renderSiteContacts();
 });
 
 // ---------------- Patrol notifications dashboard ----------------
@@ -2467,7 +2690,7 @@ function renderSchedTable(){
     return r && r.siteId === activeSiteId;
   });
   if (scoped.length === 0){
-    body.innerHTML = '<tr><td colspan="5" style="font-family:var(--sans); color:var(--muted);">No schedules at this site yet.</td></tr>';
+    body.innerHTML = '<tr><td colspan="6" style="font-family:var(--sans); color:var(--muted);">No schedules at this site yet.</td></tr>';
     return;
   }
   body.innerHTML = scoped.map(s => {
@@ -2477,7 +2700,8 @@ function renderSchedTable(){
         <td style="font-family:var(--sans);">${r ? r.name : '—'}</td>
         <td>every ${s.intervalMinutes}m</td>
         <td>${s.shiftStart}–${s.shiftEnd}</td>
-        <td>${s.lateThresholdMinutes}m</td>
+        <td>${s.durationMinutes}m</td>
+        <td>${s.graceMinutes}m</td>
         <td><button class="del-btn" data-del-sched="${s.id}" aria-label="Delete schedule"><i>&times;</i></button></td>
       </tr>
     `;
@@ -2514,7 +2738,7 @@ function openPatrolDetail(instId){
   const r = routes.find(rt => rt.id === inst.routeId);
   const st = instanceStatus(inst, nowMs());
   const winStart = inst.expectedTime - 5*60000;
-  const winEnd = inst.expectedTime + inst.intervalMinutes*60000;
+  const winEnd = st.windowEnd;
   const attempts = scans
     .filter(s => st.cpIds.includes(s.qrId) && s.timestamp >= winStart && s.timestamp < winEnd)
     .sort((a,b) => a.timestamp - b.timestamp);
@@ -2523,7 +2747,7 @@ function openPatrolDetail(instId){
     `${r ? r.name : '—'} · ${new Date(inst.expectedTime).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}`;
   document.getElementById('patrolDetailSub').innerHTML =
     `<span class="status-pill ${st.status}">${statusLabel(st.status)}</span>
-     <span class="result-meta">${st.doneCps.length}/${st.totalCps} checkpoints · ${r && r.strictOrder ? 'strict order' : 'flexible order'} · late after ${inst.lateThresholdMinutes}m</span>`;
+     <span class="result-meta">${st.doneCps.length}/${st.totalCps} checkpoints · ${r && r.strictOrder ? 'strict order' : 'flexible order'} · ${inst.durationMinutes}m duration + ${inst.graceMinutes}m grace, concludes ${new Date(st.concludeAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>`;
 
   const sequenceHtml = st.cpIds.map((id, i) => {
     const done = st.doneCps.includes(id);
@@ -2532,7 +2756,7 @@ function openPatrolDetail(instId){
 
   const attemptsHtml = attempts.length ? attempts.map(s => {
     const ok = s.result === 'ACCEPTED';
-    const lateFlag = ok && s.timestamp > inst.expectedTime + inst.lateThresholdMinutes*60000
+    const lateFlag = ok && s.isLate
       ? ' <span style="color:var(--warn); font-family:var(--sans); font-size:10px;">(late)</span>' : '';
     const detailBits = [];
     if (s.distance != null) detailBits.push(`${s.distance.toFixed(0)}m from point`);
@@ -2567,7 +2791,7 @@ function renderPatrolLists(upWrapId, pastBodyId){
   const dayMs = 24*60*60*1000;
 
   const upcoming = allInstancesForSite(now, now + dayMs)
-    .filter(inst => ['upcoming','due_soon','active'].includes(instanceStatus(inst, now).status))
+    .filter(inst => ['upcoming','due_soon','active','grace'].includes(instanceStatus(inst, now).status))
     .slice(0, 20);
   const upWrap = document.getElementById(upWrapId);
   if (upWrap){
@@ -2590,7 +2814,7 @@ function renderPatrolLists(upWrapId, pastBodyId){
   }
 
   const past = allInstancesForSite(now - dayMs, now)
-    .filter(inst => ['completed','completed_late','late','missed'].includes(instanceStatus(inst, now).status))
+    .filter(inst => ['completed','completed_late','missed'].includes(instanceStatus(inst, now).status))
     .sort((a,b) => b.expectedTime - a.expectedTime)
     .slice(0, 30);
   const pastBody = document.getElementById(pastBodyId);
@@ -2624,7 +2848,7 @@ function renderPatrolsAdmin(){
 }
 
 // ---------------- Duty-route patrol notifications ----------------
-let notifiedFiveMin = new Set(), notifiedStart = new Set(), notifiedLate = new Set();
+let notifiedFiveMin = new Set(), notifiedStart = new Set(), notifiedLate = new Set(), notifiedMissed = new Set();
 
 function currentDutyRouteNextInstance(){
   if (!guardSiteId) return null;
@@ -2637,9 +2861,9 @@ function currentDutyRouteNextInstance(){
   let allInsts = [];
   siteScheds.forEach(sched => { allInsts = allInsts.concat(generateInstances(sched, now - dayMs, now + dayMs)); });
 
-  // Prefer whatever's happening right now (active/due soon/late), earliest first.
+  // Prefer whatever's happening right now (active/due soon/in grace), earliest first.
   const inProgress = allInsts
-    .filter(i => ['due_soon','active','late'].includes(instanceStatus(i, now).status))
+    .filter(i => ['due_soon','active','grace'].includes(instanceStatus(i, now).status))
     .sort((a,b) => a.expectedTime - b.expectedTime);
   if (inProgress[0]) return { inst: inProgress[0] };
 
@@ -2681,7 +2905,7 @@ function renderGuardPatrolCard(){
   countdownEl.textContent = diff > 0
     ? `Next patrol ${fmtCountdown(diff)} (${new Date(inst.expectedTime).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})})`
     : `Started ${fmtCountdown(diff)} ago`;
-  countdownEl.className = 'patrol-countdown ' + (st.status === 'late' ? 'danger' : st.status === 'due_soon' ? 'warn' : st.status === 'active' ? 'ok' : '');
+  countdownEl.className = 'patrol-countdown ' + (st.status === 'missed' ? 'danger' : st.status === 'grace' ? 'warn' : st.status === 'due_soon' ? 'warn' : st.status === 'active' ? 'ok' : '');
 
   const cpsEl = document.getElementById('guardPatrolCps');
   cpsEl.innerHTML = st.cpIds.map(id => {
@@ -2712,11 +2936,17 @@ function checkGuardNotifications(){
     SOUND.patrolStart();
     showToast('Patrol time — begin your round', '', 'success');
   }
-  const lateAt = inst.expectedTime + inst.lateThresholdMinutes*60000;
-  if (now >= lateAt && st.doneCps.length < st.totalCps && !notifiedLate.has(inst.id)){
+  const durationEnd = inst.expectedTime + inst.durationMinutes*60000;
+  const concludeAt = durationEnd + inst.graceMinutes*60000;
+  if (now >= durationEnd && st.doneCps.length < st.totalCps && !notifiedLate.has(inst.id)){
     notifiedLate.add(inst.id);
     SOUND.lateReminder();
-    showToast('Patrol overdue', `${st.doneCps.length}/${st.totalCps} checkpoints scanned`, 'danger');
+    showToast('Patrol running long', `${st.doneCps.length}/${st.totalCps} checkpoints scanned — ${inst.graceMinutes}m grace period left before this round is concluded`, 'warn');
+  }
+  if (now >= concludeAt && st.doneCps.length < st.totalCps && !notifiedMissed.has(inst.id)){
+    notifiedMissed.add(inst.id);
+    SOUND.lateReminder();
+    showToast('Patrol concluded — missed', `${st.doneCps.length}/${st.totalCps} checkpoints scanned. Any further tags for this round will be logged as late.`, 'danger');
   }
 }
 
@@ -2769,7 +2999,7 @@ function guardPatrolGate(){
   const dutyInfo = currentDutyRouteNextInstance();
   const dutyRoute = dutyInfo ? routes.find(r => r.id === dutyInfo.inst.routeId) : null;
   const instSt = dutyInfo ? instanceStatus(dutyInfo.inst, nowMs()) : null;
-  const inProgress = !!(instSt && ['active','late'].includes(instSt.status));
+  const inProgress = !!(instSt && instSt.scannable);
   return { dutyInfo, dutyRoute, instSt, inProgress };
 }
 
@@ -2788,7 +3018,10 @@ async function processScan(qrId){
     return { qrId, cpName: cp ? cp.name : null, distance: null, result: 'REJECTED_NO_PATROL', siteId: cp ? cp.siteId : guardSiteId, expectedQrId: null, timestamp: Date.now(), localOnly: true };
   }
 
-  const isLate = instSt.status === 'late';
+  // Duration is the real patrol window — a tag scanned within it is on time. One
+  // scanned during the grace period that follows is still accepted (the guard may
+  // have been delayed by something and is catching up), but it's logged as late.
+  const isLate = Date.now() >= instSt.durationEnd;
   // Already checked in on this tag for the current patrol — reject locally without
   // touching the DB, so re-scanning a completed checkpoint never creates a new activity.
   const alreadyScanned = !!(cp && dutyRoute && dutyRoute.cpIds.includes(qrId) && instSt.doneCps.includes(qrId));
@@ -3194,6 +3427,10 @@ document.getElementById('addSiteBtn').addEventListener('click', async () => {
   await loadSites();
   setActiveSite(data.id);
   renderAll();
+  // Straight into the map modal so the admin can set the pin (and drag it into
+  // place, since GPS/geocoding can be a few metres off), draw the perimeter, and
+  // add site contacts as part of creating the site, not as a separate step later.
+  openSiteMapModal(data.id);
 });
 
 document.getElementById('siteSearch').addEventListener('input', renderSiteTable);
@@ -3280,7 +3517,32 @@ document.getElementById('saveAlertsBtn').addEventListener('click', async () => {
 // ---------------- Patrol schedules ----------------
 document.getElementById('newSchedIntervalPreset').addEventListener('change', e => {
   document.getElementById('newSchedCustomWrap').style.display = e.target.value === 'custom' ? 'flex' : 'none';
+  updateSchedConcludePreview();
 });
+
+// Keeps the "concludes at" helper text in sync with duration/grace/interval as the
+// admin types, including a heads-up if duration+grace would run past the next
+// scheduled patrol — late scans can only be attributed to this instance up to the
+// repeat interval, so a longer window than that would silently lose late scans.
+function updateSchedConcludePreview(){
+  const el = document.getElementById('newSchedConcludePreview');
+  if (!el) return;
+  const duration = parseInt(document.getElementById('newSchedDuration').value) || 0;
+  const grace = parseInt(document.getElementById('newSchedGrace').value) || 0;
+  const preset = document.getElementById('newSchedIntervalPreset').value;
+  const interval = preset === 'custom'
+    ? (parseInt(document.getElementById('newSchedIntervalCustom').value) || 0)
+    : parseInt(preset);
+  const total = duration + grace;
+  let msg = `Scans up to ${total} minutes after the patrol starts (${duration}m duration + ${grace}m grace) still count as on time. The round then concludes — any tag scanned after that is treated as late.`;
+  if (interval && total > interval){
+    msg += ` Heads up: that's longer than the ${interval}m repeat interval, so a late tag scanned after the next patrol has already started won't count toward this one — keep duration + grace at or under the repeat interval.`;
+  }
+  el.textContent = msg;
+}
+document.getElementById('newSchedDuration').addEventListener('input', updateSchedConcludePreview);
+document.getElementById('newSchedGrace').addEventListener('input', updateSchedConcludePreview);
+document.getElementById('newSchedIntervalCustom').addEventListener('input', updateSchedConcludePreview);
 
 document.getElementById('addSchedBtn').addEventListener('click', async () => {
   const routeId = document.getElementById('newSchedRoute').value;
@@ -3291,11 +3553,12 @@ document.getElementById('addSchedBtn').addEventListener('click', async () => {
     : parseInt(preset);
   const shiftStart = document.getElementById('newSchedStart').value || '22:00';
   const shiftEnd = document.getElementById('newSchedEnd').value || '05:00';
-  const lateThresholdMinutes = parseInt(document.getElementById('newSchedLate').value) || 10;
+  const durationMinutes = parseInt(document.getElementById('newSchedDuration').value) || 20;
+  const graceMinutes = parseInt(document.getElementById('newSchedGrace').value) || 10;
 
   const { error } = await sb.from('schedules').insert({
     route_id: routeId, interval_minutes: intervalMinutes, shift_start: shiftStart,
-    shift_end: shiftEnd, late_threshold_minutes: lateThresholdMinutes, active: true
+    shift_end: shiftEnd, duration_minutes: durationMinutes, grace_minutes: graceMinutes, active: true
   });
   if (error){ showToast('Could not add schedule', error.message, 'danger'); return; }
   document.getElementById('newSchedIntervalCustom').value = '';
@@ -3446,7 +3709,7 @@ async function computeReport(){
       const insts = generateInstances(sched, winStart, winEnd);
       insts.forEach(inst => {
         const st = instanceStatus(inst, now).status;
-        if (!['completed','completed_late','late','missed'].includes(st)) return; // not yet resolved
+        if (!['completed','completed_late','missed'].includes(st)) return; // not yet resolved
         const r = routes.find(rt => rt.id === inst.routeId);
         if (!r) return;
         const site = sites.find(s => s.id === r.siteId);
@@ -3456,7 +3719,7 @@ async function computeReport(){
         }
         byRoute[key].scheduled++;
         if (st === 'completed') byRoute[key].onTime++;
-        else if (st === 'completed_late' || st === 'late') byRoute[key].late++;
+        else if (st === 'completed_late') byRoute[key].late++;
         else if (st === 'missed') byRoute[key].missed++;
 
         // Tag-level detail: every checkpoint the route requires, and when (if
@@ -3559,16 +3822,28 @@ async function loadAndRenderPositionAlerts(){
   const { data, error } = await query;
   if (error){ showToast('Could not load position alerts', error.message, 'danger'); return; }
 
-  const rows = (data || []).map(n => ({
-    when: n.occurred_at,
-    site: (sites.find(s => s.id === n.site_id) || {}).name || '—',
-    title: n.title,
-    // The distance/reason is already spelled out here — e.g. "04:45 AM patrol ·
-    // Guard 20m from Lobby Door" — this is what actually answers "how far off,
-    // and from which checkpoint," not just that an alert fired.
-    detail: n.detail || '—',
-    severity: n.severity
-  }));
+  const rows = (data || []).map(n => {
+    const siteName = (sites.find(s => s.id === n.site_id) || {}).name || '—';
+    const rawDetail = (n.detail || '').trim();
+    // Some alerts in this table were never written by this app's scan-rejection
+    // path (e.g. older data, or another client writing to the same table) and
+    // only ever stored the site name in `detail` — no distance, no checkpoint.
+    // Showing that back verbatim just repeats the Site column and reads as if
+    // the distance info is there when it isn't. Say so plainly instead of
+    // fabricating a number or silently duplicating the site name.
+    const isUninformative = !rawDetail || rawDetail === '—' || rawDetail.toLowerCase() === siteName.toLowerCase();
+    return {
+      when: n.occurred_at,
+      site: siteName,
+      title: n.title,
+      // The distance/reason is spelled out here when available — e.g. "04:45 AM
+      // patrol · Scanned 20m away from Gate's assigned position (outside its 15m
+      // radius)" — this is what actually answers "how far off, and from which
+      // checkpoint," not just that an alert fired.
+      detail: isUninformative ? 'No distance recorded for this alert' : rawDetail,
+      severity: n.severity
+    };
+  });
   lastReportPositionAlerts = rows;
 
   if (!body) return;
