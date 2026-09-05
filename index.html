@@ -742,6 +742,9 @@
       <div class="panel">
         <h2>Users</h2>
         <div class="result-meta" style="margin-bottom:10px;">Every account across guard, admin, and controller roles.</div>
+        <div class="cp-row">
+          <input type="text" id="userSearch" placeholder="Search users by name, email, employee #, or role…">
+        </div>
         <div class="table-scroll">
           <table>
             <thead><tr><th>Name</th><th>Employee #</th><th>Email</th><th>Role</th><th>Site</th><th>Joined</th><th></th></tr></thead>
@@ -1658,7 +1661,21 @@ function renderUsersTable(){
     body.innerHTML = '<tr><td colspan="7" style="font-family:var(--sans); color:var(--muted);">No users yet.</td></tr>';
     return;
   }
-  const sorted = allUsers.slice().sort((a,b) => (a.full_name || a.email).localeCompare(b.full_name || b.email));
+  const searchEl = document.getElementById('userSearch');
+  const q = (searchEl ? searchEl.value : '').toLowerCase().trim();
+  const filtered = q ? allUsers.filter(u => {
+    const site = sites.find(s => s.id === u.site_id);
+    return (u.full_name || '').toLowerCase().includes(q)
+      || (u.email || '').toLowerCase().includes(q)
+      || (u.employee_number || '').toLowerCase().includes(q)
+      || (u.role || '').toLowerCase().includes(q)
+      || (site ? site.name.toLowerCase().includes(q) : false);
+  }) : allUsers;
+  if (!filtered.length){
+    body.innerHTML = '<tr><td colspan="7" style="font-family:var(--sans); color:var(--muted);">No users match.</td></tr>';
+    return;
+  }
+  const sorted = filtered.slice().sort((a,b) => (a.full_name || a.email).localeCompare(b.full_name || b.email));
   body.innerHTML = sorted.map(u => {
     const site = sites.find(s => s.id === u.site_id);
     const isSelf = session && u.id === session.user.id;
@@ -4048,43 +4065,68 @@ document.getElementById('markAbsentConfirmBtn').addEventListener('click', async 
 });
 
 // ---------------- CSV export (attendance -> EasyRoster-style import) ----------------
-async function exportAttendanceCsv(fromStr, toStr, statusElId){
+async function exportAttendanceCsv(fromStr, toStr, statusElId, btn){
   const statusEl = document.getElementById(statusElId);
   if (!fromStr || !toStr){ statusEl.textContent = 'Pick a from and to date.'; return; }
+  if (btn) btn.disabled = true;
   statusEl.textContent = 'Generating…';
-  const fromIso = new Date(fromStr + 'T00:00:00').toISOString();
-  const toIso = new Date(toStr + 'T23:59:59').toISOString();
-  const { data, error } = await sb.from('attendance').select('*').gte('clock_in_at', fromIso).lte('clock_in_at', toIso).order('clock_in_at');
-  if (error){ statusEl.textContent = 'Could not export — ' + error.message; return; }
-  const rows = data || [];
-  await Promise.all([...new Set(rows.map(r => r.site_id))].map(id => loadGuardDirectory(id)));
+  try {
+    const fromDate = new Date(fromStr + 'T00:00:00');
+    const toDate = new Date(toStr + 'T23:59:59');
+    if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())){
+      statusEl.textContent = 'Invalid date range.';
+      return;
+    }
+    const fromIso = fromDate.toISOString();
+    const toIso = toDate.toISOString();
+    const { data, error } = await sb.from('attendance').select('*').gte('clock_in_at', fromIso).lte('clock_in_at', toIso).order('clock_in_at');
+    if (error){ statusEl.textContent = 'Could not export — ' + error.message; return; }
+    const rows = data || [];
+    if (!rows.length){
+      statusEl.textContent = 'No attendance records in that range.';
+      return;
+    }
+    // Filter out null/undefined site_ids before warming the guard-directory
+    // cache — a stray RPC call with no site id can reject and silently abort
+    // the whole export.
+    const siteIds = [...new Set(rows.map(r => r.site_id).filter(Boolean))];
+    await Promise.all(siteIds.map(id => loadGuardDirectory(id)));
 
-  const csvRows = [['Employee Number','Full Name','Site','Shift','Shift Date','Clock In','Clock Out','Reliever','Covering For']];
-  rows.forEach(r => {
-    const dir = guardDirectoryCache[r.site_id] || [];
-    const g = dir.find(x => x.id === r.guard_id);
-    const site = sites.find(s => s.id === r.site_id);
-    const shift = siteShifts.find(s => s.id === r.shift_id);
-    const coveringG = r.covering_guard_id ? dir.find(x => x.id === r.covering_guard_id) : null;
-    csvRows.push([
-      g?.employee_number || '', g?.full_name || '', site ? site.name : '', shift ? shift.name : '',
-      r.shift_date, new Date(r.clock_in_at).toLocaleString(), r.clock_out_at ? new Date(r.clock_out_at).toLocaleString() : '',
-      r.is_reliever ? 'Yes' : 'No', coveringG ? (coveringG.full_name || '') : ''
-    ]);
-  });
-  const csv = csvRows.map(row => row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = `attendance_${fromStr}_${toStr}.csv`; a.click();
-  URL.revokeObjectURL(url);
-  statusEl.textContent = `Exported ${rows.length} record${rows.length === 1 ? '' : 's'}.`;
+    const csvRows = [['Employee Number','Full Name','Site','Shift','Shift Date','Clock In','Clock Out','Reliever','Covering For']];
+    rows.forEach(r => {
+      const dir = guardDirectoryCache[r.site_id] || [];
+      const g = dir.find(x => x.id === r.guard_id);
+      const site = sites.find(s => s.id === r.site_id);
+      const shift = siteShifts.find(s => s.id === r.shift_id);
+      const coveringG = r.covering_guard_id ? dir.find(x => x.id === r.covering_guard_id) : null;
+      csvRows.push([
+        g?.employee_number || '', g?.full_name || '', site ? site.name : '', shift ? shift.name : '',
+        r.shift_date, new Date(r.clock_in_at).toLocaleString(), r.clock_out_at ? new Date(r.clock_out_at).toLocaleString() : '',
+        r.is_reliever ? 'Yes' : 'No', coveringG ? (coveringG.full_name || '') : ''
+      ]);
+    });
+    const csv = csvRows.map(row => row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `attendance_${fromStr}_${toStr}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    statusEl.textContent = `Exported ${rows.length} record${rows.length === 1 ? '' : 's'}.`;
+  } catch (err) {
+    console.error('Attendance export failed:', err);
+    statusEl.textContent = 'Could not export — ' + (err?.message || 'unexpected error, see console.');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
-document.getElementById('exportAttendanceBtn').addEventListener('click', () => {
-  exportAttendanceCsv(document.getElementById('attExportFrom').value, document.getElementById('attExportTo').value, 'attExportStatus');
+document.getElementById('exportAttendanceBtn').addEventListener('click', (e) => {
+  exportAttendanceCsv(document.getElementById('attExportFrom').value, document.getElementById('attExportTo').value, 'attExportStatus', e.currentTarget);
 });
-document.getElementById('exportAttendanceBtnCtrl').addEventListener('click', () => {
-  exportAttendanceCsv(document.getElementById('attExportFromCtrl').value, document.getElementById('attExportToCtrl').value, 'attExportStatusCtrl');
+document.getElementById('exportAttendanceBtnCtrl').addEventListener('click', (e) => {
+  exportAttendanceCsv(document.getElementById('attExportFromCtrl').value, document.getElementById('attExportToCtrl').value, 'attExportStatusCtrl', e.currentTarget);
 });
 
 // qr-scanner (nimiq): decodes in a Web Worker, prefers the native BarcodeDetector when
@@ -4320,6 +4362,7 @@ document.getElementById('addSiteBtn').addEventListener('click', async () => {
 });
 
 document.getElementById('siteSearch').addEventListener('input', renderSiteTable);
+document.getElementById('userSearch').addEventListener('input', renderUsersTable);
 
 ['siteQuickSwitchCp','siteQuickSwitchManage','siteQuickSwitchPatrols','siteQuickSwitchAlerts','ctrlSiteSwitch'].forEach(id => {
   const el = document.getElementById(id);
