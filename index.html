@@ -9,6 +9,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 <style>
   :root{
     --bg:#0D1117;
@@ -55,6 +56,36 @@
   .site-contact-row{display:flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid var(--border); border-radius:8px; background:var(--panel-2);}
   .site-contact-name{font-family:var(--sans); font-weight:600; font-size:12.5px;}
   .site-contact-role{color:var(--accent); font-weight:500; font-size:11px;}
+
+  /* Attendance / clock-in */
+  .attendance-card{background:var(--panel-2); border:1px solid var(--border); border-radius:10px; padding:12px; margin:12px 0;}
+  .attendance-status-pill{display:inline-block; padding:3px 9px; border-radius:20px; font-size:11px; font-weight:600; font-family:var(--sans);}
+  .attendance-status-pill.off{background:var(--panel); color:var(--muted); border:1px solid var(--border);}
+  .attendance-status-pill.on{background:var(--success-dim); color:var(--success);}
+  .attendance-status-pill.reliever{background:var(--warn-dim); color:var(--warn);}
+  .face-modal-bg{position:fixed; inset:0; background:rgba(0,0,0,0.75); display:none; align-items:center; justify-content:center; z-index:200; padding:16px;}
+  .face-modal-bg.show{display:flex;}
+  .face-modal{background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:16px; width:100%; max-width:380px;}
+  .face-video-box{position:relative; width:100%; aspect-ratio:3/4; border-radius:10px; overflow:hidden; background:#000; border:2px solid var(--border);}
+  .face-video-box video{width:100%; height:100%; object-fit:cover; transform:scaleX(-1);}
+  .face-video-box.match{border-color:var(--success);}
+  .face-video-box.nomatch{border-color:var(--danger);}
+
+  /* Coverage tiles (controller/admin "who's on duty") */
+  .coverage-grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(260px,1fr)); gap:14px; margin-top:12px;}
+  .coverage-tile{border-radius:12px; padding:14px; background:var(--panel-2); border:2px solid var(--border); transition:border-color .2s;}
+  .coverage-tile.covered{border-color:var(--success); box-shadow:0 0 14px -2px var(--success);}
+  .coverage-tile.short{border-color:var(--danger); box-shadow:0 0 14px -2px var(--danger);}
+  .coverage-tile-head{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:2px;}
+  .coverage-tile-site{font-family:var(--sans); font-weight:700; font-size:13.5px;}
+  .coverage-tile-shift{font-family:var(--sans); font-size:11px; color:var(--muted);}
+  .coverage-tile-count{font-family:var(--mono); font-size:12px; margin:6px 0 8px;}
+  .coverage-guard-row{display:flex; align-items:center; gap:6px; padding:4px 0; font-family:var(--sans); font-size:12px;}
+  .coverage-guard-row .dot{width:7px; height:7px; border-radius:50%; flex:0 0 auto;}
+  .coverage-guard-row.present .dot{background:var(--success);}
+  .coverage-guard-row.absent{color:var(--warn);}
+  .coverage-guard-row.absent .dot{background:var(--warn);}
+  .coverage-guard-row .badge{font-size:9.5px; padding:1px 6px; border-radius:8px; background:var(--accent-dim); color:var(--accent); margin-left:auto;}
   .comment-item{border-bottom:1px solid var(--border); padding:8px 0; font-size:12px;}
   .comment-item:last-child{border-bottom:none;}
 
@@ -281,6 +312,36 @@
           <div class="field-label" style="margin-top:0;">Site</div>
           <div id="guardSiteName" style="font-family:var(--mono); font-size:13px; padding:2px 0 10px; font-weight:600;">—</div>
 
+          <div class="attendance-card" id="attendanceCard" style="display:none;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+              <span style="font-family:var(--sans); font-weight:700; font-size:12.5px;">Attendance</span>
+              <span class="attendance-status-pill off" id="attendanceStatusPill">Not clocked in</span>
+            </div>
+            <div class="result-meta" id="attendanceDetail" style="margin-bottom:8px;"></div>
+
+            <div id="attendanceClockInWrap">
+              <div class="field-label" style="margin-top:0;">Shift</div>
+              <select id="attendanceShiftSelect" style="margin-bottom:8px;"></select>
+              <div class="field-label">Site</div>
+              <select id="attendanceSiteSelect" style="margin-bottom:8px;"></select>
+              <div id="attendanceCoveringWrap" style="display:none;">
+                <div class="field-label">Covering for (optional — pick if you're relieving someone marked absent)</div>
+                <select id="attendanceCoveringSelect" style="margin-bottom:8px;">
+                  <option value="">Not covering anyone specific</option>
+                </select>
+              </div>
+              <div class="result-meta error-text" id="attendanceClockInError" style="display:none; margin-bottom:6px;"></div>
+              <button class="btn btn-primary" id="attendanceClockInBtn" style="width:100%;">Clock in with face scan</button>
+            </div>
+
+            <div id="attendanceClockOutWrap" style="display:none;">
+              <button class="btn" id="attendanceClockOutBtn" style="width:100%;">Clock out</button>
+              <div class="result-meta" id="attendanceClockOutNote" style="margin-top:4px;"></div>
+            </div>
+          </div>
+
+          <div class="result-meta error-text" id="guardNotClockedInNotice" style="display:none; margin:0 0 10px;">You must clock in above before you can scan checkpoints on this patrol.</div>
+
           <div class="cam-box" id="camBox">
             <div class="cam-placeholder" id="camPlaceholder">Camera off.<br>Tap "Start camera", then "Scan checkpoint" to read a QR tag.</div>
             <video id="video" playsinline></video>
@@ -340,6 +401,7 @@
       <button class="tab-btn" data-admin-view="alerts">Alert settings</button>
       <button class="tab-btn" data-admin-view="invites">Admin invites</button>
       <button class="tab-btn" data-admin-view="users">Users</button>
+      <button class="tab-btn" data-admin-view="attendance">Attendance</button>
       <button class="tab-btn" data-admin-view="reports">Reports</button>
     </div>
 
@@ -603,10 +665,48 @@
         <div class="result-meta" style="margin-bottom:10px;">Every account across guard, admin, and controller roles.</div>
         <div class="table-scroll">
           <table>
-            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Site</th><th>Joined</th><th></th></tr></thead>
-            <tbody id="usersTableBody"><tr><td colspan="6" style="font-family:var(--sans); color:var(--muted);">Loading…</td></tr></tbody>
+            <thead><tr><th>Name</th><th>Employee #</th><th>Email</th><th>Role</th><th>Site</th><th>Joined</th><th></th></tr></thead>
+            <tbody id="usersTableBody"><tr><td colspan="7" style="font-family:var(--sans); color:var(--muted);">Loading…</td></tr></tbody>
           </table>
         </div>
+      </div>
+    </div>
+
+    <div class="admin-view" id="admin-attendance">
+      <div class="panel">
+        <h2>Shift staffing</h2>
+        <div class="result-meta" style="margin-bottom:10px;">How many guards <span id="attShiftSiteLabel">this site</span> should have clocked in per shift. Uses the site picked in the <b>Sites</b> tab above.</div>
+        <div class="inline-fields">
+          <div class="f"><label>Shift name</label><input type="text" id="newShiftName" placeholder="e.g. Night Shift"></div>
+          <div class="f"><label>Start</label><input type="time" id="newShiftStart" value="18:00"></div>
+          <div class="f"><label>End</label><input type="time" id="newShiftEnd" value="06:00"></div>
+          <div class="f"><label>Guards required</label><input type="text" id="newShiftRequired" value="1" style="width:70px;"></div>
+        </div>
+        <div class="btn-row"><button class="btn btn-primary" id="addShiftBtn">Add shift</button></div>
+        <div class="table-scroll">
+          <table style="margin-top:14px;">
+            <thead><tr><th>Shift</th><th>Window</th><th>Required</th><th></th></tr></thead>
+            <tbody id="siteShiftsTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Live coverage</h2>
+        <div class="result-meta" style="margin-bottom:6px;">Who's clocked in right now, per site and shift. Green border = fully staffed, red = short.</div>
+        <div class="btn-row"><button class="btn" id="refreshCoverageBtnAdmin" style="width:auto; padding:7px 14px;">↻ Refresh</button></div>
+        <div class="coverage-grid" id="coverageGridAdmin"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Export attendance</h2>
+        <div class="result-meta" style="margin-bottom:10px;">Download clock-in/out records as CSV — formatted for import into rostering systems like EasyRoster.</div>
+        <div class="inline-fields">
+          <div class="f"><label>From</label><input type="date" id="attExportFrom"></div>
+          <div class="f"><label>To</label><input type="date" id="attExportTo"></div>
+        </div>
+        <div class="btn-row"><button class="btn btn-primary" id="exportAttendanceBtn" style="width:auto; padding:9px 14px;">⬇ Download CSV</button></div>
+        <div class="result-meta" id="attExportStatus" style="margin-top:6px;"></div>
       </div>
     </div>
 
@@ -709,6 +809,7 @@
     <button class="tab-btn" data-ctrl-view="sites">Sites</button>
     <button class="tab-btn" data-ctrl-view="log">Live activity log</button>
     <button class="tab-btn" data-ctrl-view="patrols">Patrols</button>
+    <button class="tab-btn" data-ctrl-view="attendance">Attendance</button>
   </div>
 
   <div class="ctrl-view active" id="ctrl-dashboard">
@@ -760,6 +861,24 @@
           </table>
         </div>
       </div>
+    </div>
+  </div>
+
+  <div class="ctrl-view" id="ctrl-attendance">
+    <div class="panel">
+      <h2>Live coverage</h2>
+      <div class="result-meta" style="margin-bottom:6px;">Who's clocked in right now, per site and shift. Green border = fully staffed, red = short. Mark a guard absent if they're not coming in — a reliever can then clock in to cover them.</div>
+      <div class="btn-row"><button class="btn" id="refreshCoverageBtnCtrl" style="width:auto; padding:7px 14px;">↻ Refresh</button></div>
+      <div class="coverage-grid" id="coverageGridCtrl"></div>
+    </div>
+    <div class="panel">
+      <h2>Export attendance</h2>
+      <div class="inline-fields">
+        <div class="f"><label>From</label><input type="date" id="attExportFromCtrl"></div>
+        <div class="f"><label>To</label><input type="date" id="attExportToCtrl"></div>
+      </div>
+      <div class="btn-row"><button class="btn btn-primary" id="exportAttendanceBtnCtrl" style="width:auto; padding:9px 14px;">⬇ Download CSV</button></div>
+      <div class="result-meta" id="attExportStatusCtrl" style="margin-top:6px;"></div>
     </div>
   </div>
 </div>
@@ -844,6 +963,34 @@
           <button class="btn btn-primary" id="addSiteContactBtn" style="flex:0 0 auto; width:auto; padding:9px 14px;">Add contact</button>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<div class="face-modal-bg" id="faceModalBg">
+  <div class="face-modal">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+      <span style="font-family:var(--sans); font-weight:700; font-size:13px;" id="faceModalTitle">Face verification</span>
+      <button class="btn" id="faceModalCloseBtn" style="width:auto; padding:5px 10px; font-size:11px;">Cancel</button>
+    </div>
+    <div class="face-video-box" id="faceVideoBox">
+      <video id="faceVideo" playsinline autoplay muted></video>
+    </div>
+    <div class="result-meta" id="faceModalStatus" style="margin-top:8px; text-align:center;">Loading face recognition…</div>
+    <div class="btn-row" style="margin-top:10px;">
+      <button class="btn btn-primary" id="faceCaptureBtn" style="display:none;">Capture</button>
+    </div>
+  </div>
+</div>
+
+<div class="qr-modal-bg" id="markAbsentModalBg">
+  <div class="detail-modal">
+    <h2 style="margin:0 0 4px; font-size:16px;" id="markAbsentTitle">Mark a guard absent</h2>
+    <div class="result-meta" style="margin-bottom:12px;">Choose who's not coming in for this shift. A reliever can then clock in specifically to cover them.</div>
+    <select id="markAbsentGuardSelect"></select>
+    <div class="btn-row" style="margin-top:14px;">
+      <button class="btn" id="markAbsentCancelBtn">Cancel</button>
+      <button class="btn btn-primary" id="markAbsentConfirmBtn">Mark absent</button>
     </div>
   </div>
 </div>
@@ -985,6 +1132,12 @@ let checkpoints = [];
 let routes = [];
 let schedules = [];
 let scans = [];
+let siteShifts = [];
+let attendance = [];
+let absences = [];
+let myAttendance = null;           // guard's own current on_duty attendance row, if any
+let activeDutySiteId = null;       // site the guard is actually clocked in/patrolling at (may differ from home site if relieving)
+let guardDirectoryCache = {};      // siteId -> [{id, full_name, employee_number, site_id}], via list_site_guards()
 let activeSiteId = null;
 let guardSiteId = null;
 // Checkpoints tapped (in order) while building a new route in the admin UI.
@@ -997,6 +1150,7 @@ function setActiveSite(id){
   activeSiteId = id;
   routeBuilderOrder = [];
   loadAlertSettingsForActiveSite();
+  if (typeof renderSiteShiftsTable === 'function') renderSiteShiftsTable();
 }
 
 function nowMs(){ return Date.now(); }
@@ -1244,6 +1398,85 @@ async function loadScans(){
   if (error){ showToast('Could not load scan history', error.message, 'danger'); return; }
   scans = (data || []).map(rowToScan);
 }
+async function loadSiteShifts(){
+  const { data, error } = await sb.from('site_shifts').select('*').order('start_time');
+  if (error){ showToast('Could not load shifts', error.message, 'danger'); return; }
+  siteShifts = (data || []).map(s => ({
+    id: s.id, siteId: s.site_id, name: s.name,
+    startTime: (s.start_time || '00:00:00').slice(0,5), endTime: (s.end_time || '00:00:00').slice(0,5),
+    required: s.required_guards, active: s.active
+  }));
+}
+function rowToAttendance(r){
+  return {
+    id: r.id, siteId: r.site_id, shiftId: r.shift_id, shiftDate: r.shift_date, guardId: r.guard_id,
+    isReliever: r.is_reliever, coveringGuardId: r.covering_guard_id,
+    clockInAt: new Date(r.clock_in_at).getTime(),
+    clockOutAt: r.clock_out_at ? new Date(r.clock_out_at).getTime() : null,
+    status: r.status
+  };
+}
+// Attendance/absences are loaded on a rolling 30h window so an overnight shift that
+// started "yesterday" is still visible in today's coverage tiles.
+async function loadAttendanceRecent(){
+  const since = new Date(Date.now() - 30*60*60*1000).toISOString();
+  const { data, error } = await sb.from('attendance').select('*').gte('clock_in_at', since);
+  if (error){ showToast('Could not load attendance', error.message, 'danger'); return; }
+  attendance = (data || []).map(rowToAttendance);
+  myAttendance = (session && attendance.find(a => a.guardId === session.user.id && a.status === 'on_duty')) || null;
+}
+async function loadAbsencesRecent(){
+  const since = new Date(Date.now() - 30*60*60*1000).toISOString();
+  const { data, error } = await sb.from('absences').select('*').gte('marked_at', since);
+  if (error){ showToast('Could not load absences', error.message, 'danger'); return; }
+  absences = (data || []).map(a => ({
+    id: a.id, siteId: a.site_id, shiftId: a.shift_id, shiftDate: a.shift_date,
+    guardId: a.guard_id, markedBy: a.marked_by, coveredByAttendanceId: a.covered_by_attendance_id
+  }));
+}
+// Guard names + employee numbers (never face_descriptor) for a site, via the
+// SECURITY DEFINER function so controllers/admins can see any site and a guard can
+// see their own site's roster. Cached per site for the session.
+async function loadGuardDirectory(siteId){
+  if (guardDirectoryCache[siteId]) return guardDirectoryCache[siteId];
+  const { data, error } = await sb.rpc('list_site_guards', { p_site_id: siteId });
+  if (error){ showToast('Could not load guard roster', error.message, 'danger'); return []; }
+  guardDirectoryCache[siteId] = data || [];
+  return guardDirectoryCache[siteId];
+}
+function guardLabel(siteId, guardId){
+  const dir = guardDirectoryCache[siteId] || [];
+  const g = dir.find(x => x.id === guardId);
+  if (!g) return 'Guard';
+  return g.full_name ? `${g.full_name}${g.employee_number ? ' · #' + g.employee_number : ''}` : (g.employee_number || 'Guard');
+}
+// Which calendar date "bucket" a shift instance covering `atMs` belongs to — the
+// date the shift STARTED, so an overnight shift (e.g. 18:00-06:00) checked at
+// 02:00 still resolves to the previous day's instance, not a fresh one.
+function ymd(d){ return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+function currentShiftDateFor(shift, atMs){
+  const at = new Date(atMs);
+  const [sh, sm] = shift.startTime.split(':').map(Number);
+  const [eh, em] = shift.endTime.split(':').map(Number);
+  const crossesMidnight = (eh*60 + em) <= (sh*60 + sm);
+  const todayStart = new Date(at); todayStart.setHours(sh, sm, 0, 0);
+  const todayEnd = new Date(at); todayEnd.setHours(eh, em, 0, 0);
+  if (crossesMidnight) todayEnd.setDate(todayEnd.getDate() + 1);
+  if (at >= todayStart && at < todayEnd) return ymd(todayStart);
+  const yStart = new Date(todayStart); yStart.setDate(yStart.getDate() - 1);
+  const yEnd = new Date(todayEnd); yEnd.setDate(yEnd.getDate() - 1);
+  if (at >= yStart && at < yEnd) return ymd(yStart);
+  return ymd(todayStart);
+}
+function shiftEndMsFor(shift, shiftDate){
+  const [y,m,d] = shiftDate.split('-').map(Number);
+  const [sh, sm] = shift.startTime.split(':').map(Number);
+  const [eh, em] = shift.endTime.split(':').map(Number);
+  const crossesMidnight = (eh*60 + em) <= (sh*60 + sm);
+  const end = new Date(y, m-1, d, eh, em, 0, 0);
+  if (crossesMidnight) end.setDate(end.getDate() + 1);
+  return end.getTime();
+}
 async function loadAlertSettingsForActiveSite(){
   if (!activeSiteId) return;
   const { data, error } = await sb.from('alert_settings').select('*').eq('site_id', activeSiteId).maybeSingle();
@@ -1339,6 +1572,13 @@ async function loadAllData(){
   await loadRoutes();
   await loadSchedules();
   await loadScans();
+  await loadSiteShifts();
+  await loadAttendanceRecent();
+  await loadAbsencesRecent();
+  // Warm the guard-directory cache for every site the current user can see shifts
+  // for, so coverage tiles and the reliever/covering-for pickers render names
+  // immediately rather than one lazy RPC per tile.
+  await Promise.all([...new Set(siteShifts.map(s => s.siteId))].map(id => loadGuardDirectory(id)));
   await loadAlertSettingsForActiveSite();
   if (profile && profile.role === 'admin'){
     await loadInviteCodes();
@@ -1347,6 +1587,13 @@ async function loadAllData(){
   }
   if (profile && (profile.role === 'admin' || profile.role === 'controller')){
     await loadNotifications();
+    renderCoverageGrid('coverageGridAdmin');
+    renderCoverageGrid('coverageGridCtrl');
+    renderSiteShiftsTable();
+  }
+  if (profile && profile.role === 'guard'){
+    activeDutySiteId = (myAttendance && myAttendance.siteId) || guardSiteId;
+    renderAttendanceCard();
   }
 }
 
@@ -1366,7 +1613,7 @@ function renderUsersTable(){
   const body = document.getElementById('usersTableBody');
   if (!body) return;
   if (!allUsers.length){
-    body.innerHTML = '<tr><td colspan="6" style="font-family:var(--sans); color:var(--muted);">No users yet.</td></tr>';
+    body.innerHTML = '<tr><td colspan="7" style="font-family:var(--sans); color:var(--muted);">No users yet.</td></tr>';
     return;
   }
   const sorted = allUsers.slice().sort((a,b) => (a.full_name || a.email).localeCompare(b.full_name || b.email));
@@ -1376,17 +1623,40 @@ function renderUsersTable(){
     return `
       <tr>
         <td style="font-family:var(--sans); font-weight:600;">${u.full_name || '—'}</td>
+        <td>${u.role === 'guard' ? `<input type="text" data-emp-num="${u.id}" value="${(u.employee_number || '').replace(/"/g,'&quot;')}" placeholder="—" style="width:90px; padding:5px 7px; font-size:11px;">` : '<span class="result-meta">—</span>'}</td>
         <td style="font-family:var(--sans); color:var(--muted);">${u.email}</td>
         <td>${u.role || '—'}</td>
         <td style="font-family:var(--sans);">${site ? site.name : '—'}</td>
         <td>${u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</td>
         <td style="display:flex; gap:6px; flex-wrap:wrap;">
           <button class="btn" data-reset-pw="${u.id}" data-user-label="${(u.full_name || u.email).replace(/"/g,'&quot;')}" style="width:auto; padding:5px 10px; font-size:11px;">Reset password</button>
+          ${u.role === 'guard' ? `<button class="btn" data-reset-face="${u.id}" data-user-label="${(u.full_name || u.email).replace(/"/g,'&quot;')}" style="width:auto; padding:5px 10px; font-size:11px;">Reset face</button>` : ''}
           ${isSelf ? '' : `<button class="del-btn" data-del-user="${u.id}" data-user-label="${(u.full_name || u.email).replace(/"/g,'&quot;')}" aria-label="Delete user"><i>&times;</i></button>`}
         </td>
       </tr>
     `;
   }).join('');
+
+  body.querySelectorAll('[data-emp-num]').forEach(input => {
+    input.addEventListener('change', async () => {
+      const val = input.value.trim();
+      const { error } = await sb.from('profiles').update({ employee_number: val || null }).eq('id', input.dataset.empNum);
+      if (error){ showToast('Could not save employee number', error.message, 'danger'); return; }
+      const u = allUsers.find(x => x.id === input.dataset.empNum);
+      if (u) u.employee_number = val || null;
+      showToast('Employee number saved', '', 'success');
+    });
+  });
+
+  body.querySelectorAll('[data-reset-face]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const label = btn.dataset.userLabel;
+      if (!confirm(`Clear ${label}'s enrolled face? They'll enroll a new one the next time they clock in.`)) return;
+      const { error } = await sb.from('profiles').update({ face_descriptor: null }).eq('id', btn.dataset.resetFace);
+      if (error){ showToast('Could not reset face enrollment', error.message, 'danger'); return; }
+      showToast('Face enrollment cleared', '', 'success');
+    });
+  });
 
   body.querySelectorAll('[data-del-user]').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -2053,7 +2323,7 @@ function renderLog(){
 function renderGuardSiteName(){
   const el = document.getElementById('guardSiteName');
   if (!el) return;
-  const s = sites.find(s => s.id === guardSiteId);
+  const s = sites.find(s => s.id === (activeDutySiteId || guardSiteId));
   el.textContent = s ? s.name : '—';
 }
 
@@ -2851,8 +3121,9 @@ function renderPatrolsAdmin(){
 let notifiedFiveMin = new Set(), notifiedStart = new Set(), notifiedLate = new Set(), notifiedMissed = new Set();
 
 function currentDutyRouteNextInstance(){
-  if (!guardSiteId) return null;
-  const siteRouteIds = new Set(routes.filter(r => r.siteId === guardSiteId).map(r => r.id));
+  const dutySiteId = activeDutySiteId || guardSiteId;
+  if (!dutySiteId) return null;
+  const siteRouteIds = new Set(routes.filter(r => r.siteId === dutySiteId).map(r => r.id));
   const siteScheds = schedules.filter(s => siteRouteIds.has(s.routeId) && s.active !== false);
   if (!siteScheds.length) return null;
 
@@ -2882,11 +3153,16 @@ function renderGuardPatrolCard(){
 
   const gate = guardPatrolGate();
   const blockedNotice = document.getElementById('guardScanBlockedNotice');
+  const notClockedInNotice = document.getElementById('guardNotClockedInNotice');
   const scanBtn = document.getElementById('manualScanBtn');
+  const camBtn = document.getElementById('camToggleBtn');
+  const clockedIn = !!myAttendance;
+  if (notClockedInNotice) notClockedInNotice.style.display = clockedIn ? 'none' : 'block';
   if (blockedNotice && scanBtn){
-    blockedNotice.style.display = gate.inProgress ? 'none' : 'block';
-    scanBtn.disabled = !gate.inProgress;
+    blockedNotice.style.display = (clockedIn && !gate.inProgress) ? 'block' : 'none';
+    scanBtn.disabled = !clockedIn || !gate.inProgress;
   }
+  if (camBtn) camBtn.disabled = !clockedIn;
 
   const found = gate.dutyInfo;
   if (!found){ card.style.display = 'none'; return; }
@@ -2964,6 +3240,7 @@ function renderAll(){
   renderSiteTable();
   renderControllerSiteTable();
   renderGuardSiteName();
+  renderAttendanceCard();
   renderCpTable();
   renderStats();
   renderLog();
@@ -3004,10 +3281,19 @@ function guardPatrolGate(){
 }
 
 async function processScan(qrId){
-  // Only checkpoints belonging to the guard's own site count as "known" tags.
-  const cp = checkpoints.find(c => c.qrId === qrId && c.siteId === guardSiteId);
+  const dutySiteId = activeDutySiteId || guardSiteId;
+  // Only checkpoints belonging to the site the guard is actually clocked in at
+  // count as "known" tags — this is what makes the app behave as a site app now:
+  // a reliever clocked in at a different site scans against THAT site's tags.
+  const cp = checkpoints.find(c => c.qrId === qrId && c.siteId === dutySiteId);
   // A tag that's real but belongs to a different site — reported distinctly from "unknown".
   const cpElsewhere = !cp ? checkpoints.find(c => c.qrId === qrId) : null;
+
+  // Hard gate: scanning is disabled entirely until the guard has clocked in for a
+  // shift. Rejected locally — no DB write, so it never reaches the activity feed.
+  if (!myAttendance){
+    return { qrId, cpName: cp ? cp.name : null, distance: null, result: 'REJECTED_NOT_CLOCKED_IN', siteId: cp ? cp.siteId : dutySiteId, expectedQrId: null, timestamp: Date.now(), localOnly: true };
+  }
 
   const { dutyInfo, dutyRoute, instSt, inProgress } = guardPatrolGate();
 
@@ -3015,7 +3301,7 @@ async function processScan(qrId){
   // progress. Rejected entirely locally — no DB write, so no activity reaches the
   // controller or admin feeds.
   if (!inProgress){
-    return { qrId, cpName: cp ? cp.name : null, distance: null, result: 'REJECTED_NO_PATROL', siteId: cp ? cp.siteId : guardSiteId, expectedQrId: null, timestamp: Date.now(), localOnly: true };
+    return { qrId, cpName: cp ? cp.name : null, distance: null, result: 'REJECTED_NO_PATROL', siteId: cp ? cp.siteId : dutySiteId, expectedQrId: null, timestamp: Date.now(), localOnly: true };
   }
 
   // Duration is the real patrol window — a tag scanned within it is on time. One
@@ -3046,13 +3332,14 @@ async function processScan(qrId){
     result = 'ACCEPTED';
   }
 
-  const siteId = cp ? cp.siteId : guardSiteId;
+  const siteId = cp ? cp.siteId : dutySiteId;
   const insertPayload = {
     site_id: siteId,
     checkpoint_id: cp ? cp.id : null,
     raw_qr_id: qrId,
     route_id: dutyInfo ? dutyInfo.inst.routeId : null,
     guard_id: session.user.id,
+    attendance_id: myAttendance.id,
     result,
     distance_m: distance,
     is_mock: false,
@@ -3131,7 +3418,8 @@ function showResult(record){
       REJECTED_OUT_OF_RANGE: 'Guard is outside the checkpoint radius',
       REJECTED_OUT_OF_ORDER: `Wrong checkpoint — this route requires checkpoints in order, expected ${expectedCp ? expectedCp.name : record.expectedQrId} next`,
       REJECTED_ALREADY_SCANNED: 'Tag already scanned — already checked in on this tag for the current patrol',
-      REJECTED_NO_PATROL: 'No patrol in progress — scanning is disabled until your patrol starts'
+      REJECTED_NO_PATROL: 'No patrol in progress — scanning is disabled until your patrol starts',
+      REJECTED_NOT_CLOCKED_IN: 'You\'re not clocked in — clock in above before scanning checkpoints'
     };
     title.textContent = `Rejected — ${reasons[record.result] || (record.saveFailed ? 'Could not save scan' : record.result)}`;
   }
@@ -3198,7 +3486,7 @@ document.getElementById('manualScanBtn').addEventListener('click', async () => {
   setManualScanStatus('Getting your location…', false);
   SOUND.tagScan();
   const record = await processScan(qrId);
-  lastDecoded = qrId; lastDecodedAt = Date.now();
+  lastDecodedAt = Date.now();
   decodeLocked = false;
   btn.disabled = false;
   setManualScanStatus('', false);
@@ -3208,6 +3496,437 @@ document.getElementById('manualScanBtn').addEventListener('click', async () => {
 });
 
 // ---------------- Real camera + QR decode ----------------
+// =================== Attendance / clock-in (facial recognition) ===================
+// Face capture uses face-api.js entirely client-side: a 128-float descriptor is
+// captured once at enrollment (a guard's first-ever clock-in) and stored on their
+// profile; every later clock-in captures a fresh descriptor and compares it against
+// the enrolled one. This stops casual buddy-punching (a different face won't match)
+// but isn't liveness-proof — a good photo of the enrolled guard could still fool it.
+let faceModelsLoaded = false;
+let faceStream = null;
+let faceDetectTimer = null;
+let lastFaceDescriptor = null;
+let faceModalResolve = null;
+const FACE_MATCH_THRESHOLD = 0.55; // faceapi.euclideanDistance — lower is a closer match
+
+async function ensureFaceModels(){
+  if (faceModelsLoaded) return;
+  const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js/weights';
+  await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+  await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+  await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+  faceModelsLoaded = true;
+}
+
+// Opens the face modal and resolves with { descriptor: number[] } once the guard
+// captures a face, or null if they cancel. Caller decides what to do with it
+// (enroll vs. compare against an existing enrollment).
+function openFaceModal(title){
+  document.getElementById('faceModalTitle').textContent = title;
+  document.getElementById('faceModalStatus').textContent = 'Loading face recognition…';
+  document.getElementById('faceCaptureBtn').style.display = 'none';
+  document.getElementById('faceVideoBox').className = 'face-video-box';
+  document.getElementById('faceModalBg').classList.add('show');
+  return new Promise((resolve) => {
+    faceModalResolve = resolve;
+    startFaceCapture();
+  });
+}
+
+function closeFaceModal(result){
+  document.getElementById('faceModalBg').classList.remove('show');
+  if (faceStream){ faceStream.getTracks().forEach(t => t.stop()); faceStream = null; }
+  if (faceDetectTimer){ clearTimeout(faceDetectTimer); faceDetectTimer = null; }
+  lastFaceDescriptor = null;
+  if (faceModalResolve){ const r = faceModalResolve; faceModalResolve = null; r(result); }
+}
+document.getElementById('faceModalCloseBtn').addEventListener('click', () => closeFaceModal(null));
+
+async function startFaceCapture(){
+  const statusEl = document.getElementById('faceModalStatus');
+  try {
+    await ensureFaceModels();
+    faceStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+    const video = document.getElementById('faceVideo');
+    video.srcObject = faceStream;
+    await video.play();
+    statusEl.textContent = 'Position your face in frame…';
+    document.getElementById('faceCaptureBtn').style.display = 'block';
+    detectFaceLoop();
+  } catch (err){
+    statusEl.textContent = 'Could not access the front camera — ' + err.message;
+  }
+}
+
+async function detectFaceLoop(){
+  if (!faceStream) return; // modal was closed mid-loop
+  const video = document.getElementById('faceVideo');
+  const box = document.getElementById('faceVideoBox');
+  try {
+    const det = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
+      .withFaceLandmarks().withFaceDescriptor();
+    if (det){
+      lastFaceDescriptor = Array.from(det.descriptor);
+      box.classList.add('match');
+      document.getElementById('faceModalStatus').textContent = 'Face detected — tap Capture.';
+    } else {
+      lastFaceDescriptor = null;
+      box.classList.remove('match');
+      document.getElementById('faceModalStatus').textContent = 'Position your face in frame…';
+    }
+  } catch (e){ /* transient detection error — just retry on the next tick */ }
+  if (faceStream) faceDetectTimer = setTimeout(detectFaceLoop, 350);
+}
+
+document.getElementById('faceCaptureBtn').addEventListener('click', () => {
+  if (!lastFaceDescriptor) return;
+  closeFaceModal({ descriptor: lastFaceDescriptor });
+});
+
+// ---------------- Guard-side clock in / clock out ----------------
+function siteShiftsFor(siteId){
+  return siteShifts.filter(s => s.siteId === siteId && s.active);
+}
+
+function populateAttendanceSiteSelect(){
+  const sel = document.getElementById('attendanceSiteSelect');
+  if (!sel) return;
+  const homeSite = sites.find(s => s.id === guardSiteId);
+  const others = sites.filter(s => s.id !== guardSiteId);
+  sel.innerHTML =
+    (homeSite ? `<option value="${homeSite.id}">${homeSite.name} (your site)</option>` : '') +
+    others.map(s => `<option value="${s.id}">Relieving at ${s.name}</option>`).join('');
+  populateAttendanceShiftSelect();
+}
+
+function populateAttendanceShiftSelect(){
+  const siteSel = document.getElementById('attendanceSiteSelect');
+  const shiftSel = document.getElementById('attendanceShiftSelect');
+  if (!siteSel || !shiftSel) return;
+  const siteId = siteSel.value;
+  const isReliever = siteId !== guardSiteId;
+  const shifts = siteShiftsFor(siteId);
+  shiftSel.innerHTML = shifts.length
+    ? shifts.map(s => `<option value="${s.id}">${s.name} (${s.startTime}–${s.endTime})</option>`).join('')
+    : '<option value="">No shifts configured for this site</option>';
+  document.getElementById('attendanceCoveringWrap').style.display = isReliever ? 'block' : 'none';
+  populateAttendanceCoveringSelect();
+}
+
+function populateAttendanceCoveringSelect(){
+  const siteSel = document.getElementById('attendanceSiteSelect');
+  const shiftSel = document.getElementById('attendanceShiftSelect');
+  const coverSel = document.getElementById('attendanceCoveringSelect');
+  if (!siteSel || !shiftSel || !coverSel) return;
+  const siteId = siteSel.value;
+  const shift = siteShifts.find(s => s.id === shiftSel.value);
+  if (!shift){ coverSel.innerHTML = '<option value="">Not covering anyone specific</option>'; return; }
+  const shiftDate = currentShiftDateFor(shift, nowMs());
+  const openAbsences = absences.filter(a => a.siteId === siteId && a.shiftId === shift.id && a.shiftDate === shiftDate && !a.coveredByAttendanceId);
+  const dir = guardDirectoryCache[siteId] || [];
+  coverSel.innerHTML = '<option value="">Not covering anyone specific</option>' +
+    openAbsences.map(a => {
+      const g = dir.find(x => x.id === a.guardId);
+      return `<option value="${a.id}">${g ? (g.full_name || 'Guard') : 'Guard'}${g && g.employee_number ? ' · #' + g.employee_number : ''}</option>`;
+    }).join('');
+}
+
+document.getElementById('attendanceSiteSelect').addEventListener('change', async () => {
+  await loadGuardDirectory(document.getElementById('attendanceSiteSelect').value);
+  populateAttendanceShiftSelect();
+});
+document.getElementById('attendanceShiftSelect').addEventListener('change', populateAttendanceCoveringSelect);
+
+function renderAttendanceCard(){
+  const cardEl = document.getElementById('attendanceCard');
+  if (!cardEl || profile.role !== 'guard') return;
+  cardEl.style.display = guardSiteId ? 'block' : 'none';
+  if (!guardSiteId) return;
+
+  const pill = document.getElementById('attendanceStatusPill');
+  const detail = document.getElementById('attendanceDetail');
+  const clockInWrap = document.getElementById('attendanceClockInWrap');
+  const clockOutWrap = document.getElementById('attendanceClockOutWrap');
+
+  if (myAttendance){
+    const site = sites.find(s => s.id === myAttendance.siteId);
+    const shift = siteShifts.find(s => s.id === myAttendance.shiftId);
+    pill.className = 'attendance-status-pill ' + (myAttendance.isReliever ? 'reliever' : 'on');
+    pill.textContent = myAttendance.isReliever ? 'On duty (reliever)' : 'On duty';
+    detail.textContent = `${site ? site.name : '—'} · ${shift ? shift.name : '—'} · since ${new Date(myAttendance.clockInAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}`;
+    clockInWrap.style.display = 'none';
+    clockOutWrap.style.display = 'block';
+    const shiftEnd = shift ? shiftEndMsFor(shift, myAttendance.shiftDate) : 0;
+    const canClockOut = nowMs() >= shiftEnd;
+    document.getElementById('attendanceClockOutBtn').disabled = !canClockOut;
+    document.getElementById('attendanceClockOutNote').textContent = canClockOut
+      ? 'Shift has ended — you can clock out.'
+      : `Clock-out unlocks at ${new Date(shiftEnd).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} (end of shift).`;
+  } else {
+    pill.className = 'attendance-status-pill off';
+    pill.textContent = 'Not clocked in';
+    detail.textContent = '';
+    clockInWrap.style.display = 'block';
+    clockOutWrap.style.display = 'none';
+    if (!document.getElementById('attendanceSiteSelect').options.length) populateAttendanceSiteSelect();
+  }
+}
+
+document.getElementById('attendanceClockInBtn').addEventListener('click', async () => {
+  const errEl = document.getElementById('attendanceClockInError');
+  errEl.style.display = 'none';
+  const siteId = document.getElementById('attendanceSiteSelect').value;
+  const shiftId = document.getElementById('attendanceShiftSelect').value;
+  const coveringAbsenceId = document.getElementById('attendanceCoveringSelect').value || null;
+  if (!siteId || !shiftId){ errEl.textContent = 'Pick a site and shift first.'; errEl.style.display = 'block'; return; }
+
+  // A guard (home or reliever) can only be on duty in one place at a time.
+  await loadAttendanceRecent();
+  const existingElsewhere = attendance.find(a => a.guardId === session.user.id && a.status === 'on_duty');
+  if (existingElsewhere){
+    const elsewhereSite = sites.find(s => s.id === existingElsewhere.siteId);
+    errEl.textContent = `You're already clocked in at ${elsewhereSite ? elsewhereSite.name : 'another site'} — clock out there first.`;
+    errEl.style.display = 'block';
+    return;
+  }
+
+  const shift = siteShifts.find(s => s.id === shiftId);
+  const shiftDate = currentShiftDateFor(shift, nowMs());
+  const isReliever = siteId !== guardSiteId;
+
+  const hasEnrolled = Array.isArray(profile.face_descriptor) && profile.face_descriptor.length > 0;
+  const faceResult = await openFaceModal(hasEnrolled ? 'Verify your face to clock in' : 'Enroll your face — this becomes your reference for every future clock-in');
+  if (!faceResult){ errEl.textContent = 'Face scan cancelled.'; errEl.style.display = 'block'; return; }
+
+  let faceScore = 0;
+  if (hasEnrolled){
+    const dist = faceapi.euclideanDistance(profile.face_descriptor, faceResult.descriptor);
+    if (dist > FACE_MATCH_THRESHOLD){
+      errEl.textContent = "Face didn't match your enrolled profile. Try again with better lighting, or ask an admin to reset your enrollment if this keeps happening.";
+      errEl.style.display = 'block';
+      return;
+    }
+    faceScore = dist;
+  } else {
+    const { error: enrollErr } = await sb.from('profiles').update({ face_descriptor: faceResult.descriptor }).eq('id', session.user.id);
+    if (enrollErr){ errEl.textContent = 'Could not save face enrollment — ' + enrollErr.message; errEl.style.display = 'block'; return; }
+    profile.face_descriptor = faceResult.descriptor;
+  }
+
+  const covering = coveringAbsenceId ? absences.find(a => a.id === coveringAbsenceId) : null;
+  const { data: row, error } = await sb.from('attendance').insert({
+    site_id: siteId, shift_id: shiftId, shift_date: shiftDate, guard_id: session.user.id,
+    is_reliever: isReliever, covering_guard_id: covering ? covering.guardId : null,
+    clock_in_face_score: faceScore
+  }).select().single();
+  if (error){ errEl.textContent = 'Could not clock in — ' + error.message; errEl.style.display = 'block'; return; }
+
+  if (covering){
+    await sb.from('absences').update({ covered_by_attendance_id: row.id }).eq('id', covering.id);
+  }
+
+  await loadAttendanceRecent();
+  await loadAbsencesRecent();
+  activeDutySiteId = siteId;
+  renderGuardSiteName();
+  renderAttendanceCard();
+  renderGuardPatrolCard();
+  showToast('Clocked in', isReliever ? `Relieving at ${sites.find(s=>s.id===siteId)?.name || 'site'}` : '', 'success');
+});
+
+document.getElementById('attendanceClockOutBtn').addEventListener('click', async () => {
+  if (!myAttendance) return;
+  if (!confirm('Clock out now?')) return;
+  const { error } = await sb.from('attendance').update({ status: 'clocked_out', clock_out_at: new Date().toISOString() }).eq('id', myAttendance.id);
+  if (error){ showToast('Could not clock out', error.message, 'danger'); return; }
+  await loadAttendanceRecent();
+  activeDutySiteId = guardSiteId;
+  renderGuardSiteName();
+  renderAttendanceCard();
+  renderGuardPatrolCard();
+  showToast('Clocked out', '', 'success');
+});
+
+// ---------------- Admin: shift staffing config ----------------
+function renderSiteShiftsTable(){
+  const body = document.getElementById('siteShiftsTableBody');
+  const label = document.getElementById('attShiftSiteLabel');
+  if (!body) return;
+  const site = sites.find(s => s.id === activeSiteId);
+  if (label) label.textContent = site ? site.name : 'this site';
+  const rows = siteShifts.filter(s => s.siteId === activeSiteId);
+  body.innerHTML = rows.length ? rows.map(s => `
+    <tr>
+      <td style="font-family:var(--sans); font-weight:600;">${s.name}</td>
+      <td>${s.startTime}–${s.endTime}</td>
+      <td>${s.required}</td>
+      <td><button class="del-btn" data-del-shift="${s.id}" aria-label="Delete shift"><i>&times;</i></button></td>
+    </tr>
+  `).join('') : '<tr><td colspan="4" style="font-family:var(--sans); color:var(--muted);">No shifts configured for this site yet.</td></tr>';
+  body.querySelectorAll('[data-del-shift]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this shift definition? Past attendance records are kept.')) return;
+      const { error } = await sb.from('site_shifts').delete().eq('id', btn.dataset.delShift);
+      if (error){ showToast('Could not delete shift', error.message, 'danger'); return; }
+      await loadSiteShifts();
+      renderSiteShiftsTable();
+      renderCoverageGrid('coverageGridAdmin');
+      renderCoverageGrid('coverageGridCtrl');
+    });
+  });
+}
+
+document.getElementById('addShiftBtn').addEventListener('click', async () => {
+  if (!activeSiteId){ showToast('Pick a site first', '', 'warn'); return; }
+  const name = document.getElementById('newShiftName').value.trim() || 'Shift';
+  const start = document.getElementById('newShiftStart').value || '18:00';
+  const end = document.getElementById('newShiftEnd').value || '06:00';
+  const required = parseInt(document.getElementById('newShiftRequired').value) || 1;
+  const { error } = await sb.from('site_shifts').insert({ site_id: activeSiteId, name, start_time: start, end_time: end, required_guards: required, active: true });
+  if (error){ showToast('Could not add shift', error.message, 'danger'); return; }
+  document.getElementById('newShiftName').value = '';
+  await loadSiteShifts();
+  await Promise.all([...new Set(siteShifts.map(s => s.siteId))].map(id => loadGuardDirectory(id)));
+  renderSiteShiftsTable();
+  renderCoverageGrid('coverageGridAdmin');
+  renderCoverageGrid('coverageGridCtrl');
+  showToast('Shift added', '', 'success');
+});
+
+// ---------------- Coverage tiles (who's on duty per site/shift) ----------------
+function shiftInstancesForRender(){
+  const now = nowMs();
+  return siteShifts.filter(s => s.active).map(shift => {
+    const shiftDate = currentShiftDateFor(shift, now);
+    const onDuty = attendance.filter(a => a.shiftId === shift.id && a.shiftDate === shiftDate && a.status === 'on_duty');
+    const openAbsences = absences.filter(a => a.shiftId === shift.id && a.shiftDate === shiftDate && !a.coveredByAttendanceId);
+    return { shift, shiftDate, onDuty, openAbsences };
+  }).sort((a,b) => {
+    const sa = sites.find(s => s.id === a.shift.siteId), sb2 = sites.find(s => s.id === b.shift.siteId);
+    return (sa ? sa.name : '').localeCompare(sb2 ? sb2.name : '');
+  });
+}
+
+function renderCoverageGrid(containerId){
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const rows = shiftInstancesForRender();
+  if (!rows.length){ el.innerHTML = '<div class="result-meta">No shifts configured yet — set up shift staffing first.</div>'; return; }
+  el.innerHTML = rows.map(r => {
+    const site = sites.find(s => s.id === r.shift.siteId);
+    const covered = r.onDuty.length >= r.shift.required;
+    const guardRows = r.onDuty.map(a => {
+      const badge = a.isReliever ? '<span class="badge">reliever</span>' : '';
+      return `<div class="coverage-guard-row present"><span class="dot"></span>${guardLabel(r.shift.siteId, a.guardId)}${badge}</div>`;
+    }).join('');
+    const absentRows = r.openAbsences.map(a =>
+      `<div class="coverage-guard-row absent"><span class="dot"></span>${guardLabel(r.shift.siteId, a.guardId)} — absent</div>`
+    ).join('');
+    return `
+      <div class="coverage-tile ${covered ? 'covered' : 'short'}">
+        <div class="coverage-tile-head">
+          <span class="coverage-tile-site">${site ? site.name : '—'}</span>
+        </div>
+        <div class="coverage-tile-shift">${r.shift.name} · ${r.shift.startTime}–${r.shift.endTime}</div>
+        <div class="coverage-tile-count">${r.onDuty.length} / ${r.shift.required} on duty</div>
+        ${guardRows || '<div class="result-meta">No one clocked in yet.</div>'}
+        ${absentRows}
+        <div class="btn-row" style="margin-top:8px;">
+          <button class="btn" data-mark-absent="${r.shift.siteId}|${r.shift.id}|${r.shiftDate}" style="width:auto; padding:5px 10px; font-size:11px;">+ Mark absent</button>
+        </div>
+      </div>`;
+  }).join('');
+  el.querySelectorAll('[data-mark-absent]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const [siteId, shiftId, shiftDate] = btn.dataset.markAbsent.split('|');
+      openMarkAbsentModal(siteId, shiftId, shiftDate);
+    });
+  });
+}
+
+document.getElementById('refreshCoverageBtnAdmin').addEventListener('click', async () => {
+  await loadAttendanceRecent(); await loadAbsencesRecent();
+  renderCoverageGrid('coverageGridAdmin');
+});
+document.getElementById('refreshCoverageBtnCtrl').addEventListener('click', async () => {
+  await loadAttendanceRecent(); await loadAbsencesRecent();
+  renderCoverageGrid('coverageGridCtrl');
+});
+
+// ---------------- Mark absent ----------------
+let markAbsentContext = null;
+async function openMarkAbsentModal(siteId, shiftId, shiftDate){
+  markAbsentContext = { siteId, shiftId, shiftDate };
+  const dir = await loadGuardDirectory(siteId);
+  const onDutyIds = new Set(attendance.filter(a => a.shiftId === shiftId && a.shiftDate === shiftDate && a.status === 'on_duty').map(a => a.guardId));
+  const absentIds = new Set(absences.filter(a => a.shiftId === shiftId && a.shiftDate === shiftDate).map(a => a.guardId));
+  const site = sites.find(s => s.id === siteId);
+  document.getElementById('markAbsentTitle').textContent = `Mark absent — ${site ? site.name : 'site'}`;
+  const options = dir.filter(g => !onDutyIds.has(g.id) && !absentIds.has(g.id));
+  const sel = document.getElementById('markAbsentGuardSelect');
+  sel.innerHTML = options.length
+    ? options.map(g => `<option value="${g.id}">${g.full_name || 'Guard'}${g.employee_number ? ' · #' + g.employee_number : ''}</option>`).join('')
+    : '<option value="">No eligible guards at this site</option>';
+  document.getElementById('markAbsentModalBg').classList.add('show');
+}
+document.getElementById('markAbsentCancelBtn').addEventListener('click', () => {
+  document.getElementById('markAbsentModalBg').classList.remove('show');
+});
+document.getElementById('markAbsentConfirmBtn').addEventListener('click', async () => {
+  const guardId = document.getElementById('markAbsentGuardSelect').value;
+  if (!guardId || !markAbsentContext) return;
+  const { error } = await sb.from('absences').insert({
+    site_id: markAbsentContext.siteId, shift_id: markAbsentContext.shiftId, shift_date: markAbsentContext.shiftDate,
+    guard_id: guardId, marked_by: session.user.id
+  });
+  if (error){ showToast('Could not mark absent', error.message, 'danger'); return; }
+  document.getElementById('markAbsentModalBg').classList.remove('show');
+  await loadAbsencesRecent();
+  renderCoverageGrid('coverageGridAdmin');
+  renderCoverageGrid('coverageGridCtrl');
+  showToast('Marked absent', '', 'success');
+});
+
+// ---------------- CSV export (attendance -> EasyRoster-style import) ----------------
+async function exportAttendanceCsv(fromStr, toStr, statusElId){
+  const statusEl = document.getElementById(statusElId);
+  if (!fromStr || !toStr){ statusEl.textContent = 'Pick a from and to date.'; return; }
+  statusEl.textContent = 'Generating…';
+  const fromIso = new Date(fromStr + 'T00:00:00').toISOString();
+  const toIso = new Date(toStr + 'T23:59:59').toISOString();
+  const { data, error } = await sb.from('attendance').select('*').gte('clock_in_at', fromIso).lte('clock_in_at', toIso).order('clock_in_at');
+  if (error){ statusEl.textContent = 'Could not export — ' + error.message; return; }
+  const rows = data || [];
+  await Promise.all([...new Set(rows.map(r => r.site_id))].map(id => loadGuardDirectory(id)));
+
+  const csvRows = [['Employee Number','Full Name','Site','Shift','Shift Date','Clock In','Clock Out','Reliever','Covering For']];
+  rows.forEach(r => {
+    const dir = guardDirectoryCache[r.site_id] || [];
+    const g = dir.find(x => x.id === r.guard_id);
+    const site = sites.find(s => s.id === r.site_id);
+    const shift = siteShifts.find(s => s.id === r.shift_id);
+    const coveringG = r.covering_guard_id ? dir.find(x => x.id === r.covering_guard_id) : null;
+    csvRows.push([
+      g?.employee_number || '', g?.full_name || '', site ? site.name : '', shift ? shift.name : '',
+      r.shift_date, new Date(r.clock_in_at).toLocaleString(), r.clock_out_at ? new Date(r.clock_out_at).toLocaleString() : '',
+      r.is_reliever ? 'Yes' : 'No', coveringG ? (coveringG.full_name || '') : ''
+    ]);
+  });
+  const csv = csvRows.map(row => row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `attendance_${fromStr}_${toStr}.csv`; a.click();
+  URL.revokeObjectURL(url);
+  statusEl.textContent = `Exported ${rows.length} record${rows.length === 1 ? '' : 's'}.`;
+}
+document.getElementById('exportAttendanceBtn').addEventListener('click', () => {
+  exportAttendanceCsv(document.getElementById('attExportFrom').value, document.getElementById('attExportTo').value, 'attExportStatus');
+});
+document.getElementById('exportAttendanceBtnCtrl').addEventListener('click', () => {
+  exportAttendanceCsv(document.getElementById('attExportFromCtrl').value, document.getElementById('attExportToCtrl').value, 'attExportStatusCtrl');
+});
+
 // qr-scanner (nimiq): decodes in a Web Worker, prefers the native BarcodeDetector when
 // genuinely available and falls back to its own bundled decoder otherwise — unlike our
 // old hand-rolled fallback, it doesn't get stuck silently returning "nothing found"
@@ -3218,13 +3937,20 @@ const camPlaceholder = document.getElementById('camPlaceholder');
 const scanFrame = document.getElementById('scanFrame');
 const camToggleBtn = document.getElementById('camToggleBtn');
 
-let lastDecoded = null, lastDecodedAt = 0, decodeLocked = false;
+let lastDecodedAt = 0, decodeLocked = false;
+const AUTO_SCAN_COOLDOWN_MS = 3000;
 
 function handleDecoded(qrId){
   if (decodeLocked) return;
   const now = Date.now();
-  if (qrId === lastDecoded && now - lastDecodedAt <= 4000) return;
-  lastDecoded = qrId; lastDecodedAt = now;
+  // Auto-scan fires on every video frame with a readable code in it, so without a
+  // cooldown the same physical tap could trigger two scans a fraction of a second
+  // apart — the second one landing as a spurious rejection since the checkpoint's
+  // already done. Space auto-scans a flat 3s apart regardless of tag, giving the
+  // guard time to move the tag out of frame. (The manual "Scan now" button below
+  // is a deliberate one-off tap and isn't subject to this.)
+  if (now - lastDecodedAt < AUTO_SCAN_COOLDOWN_MS) return;
+  lastDecodedAt = now;
   decodeLocked = true;
   SOUND.tagScan();
   processScan(qrId).then(record => {
@@ -4077,21 +4803,30 @@ document.getElementById('printPdfReportBtn').addEventListener('click', async () 
 
 // ---------------- Inner admin tabs ----------------
 document.querySelectorAll('[data-admin-view]').forEach(btn => {
-  btn.addEventListener('click', () => {
+  btn.addEventListener('click', async () => {
     document.querySelectorAll('[data-admin-view]').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.admin-view').forEach(v => v.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('admin-' + btn.dataset.adminView).classList.add('active');
+    if (btn.dataset.adminView === 'attendance'){
+      await loadSiteShifts(); await loadAttendanceRecent(); await loadAbsencesRecent();
+      renderSiteShiftsTable();
+      renderCoverageGrid('coverageGridAdmin');
+    }
   });
 });
 
 // ---------------- Inner controller tabs ----------------
 document.querySelectorAll('[data-ctrl-view]').forEach(btn => {
-  btn.addEventListener('click', () => {
+  btn.addEventListener('click', async () => {
     document.querySelectorAll('[data-ctrl-view]').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.ctrl-view').forEach(v => v.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('ctrl-' + btn.dataset.ctrlView).classList.add('active');
+    if (btn.dataset.ctrlView === 'attendance'){
+      await loadSiteShifts(); await loadAttendanceRecent(); await loadAbsencesRecent();
+      renderCoverageGrid('coverageGridCtrl');
+    }
   });
 });
 
