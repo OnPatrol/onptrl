@@ -395,8 +395,8 @@
     <div class="tabs" style="margin-bottom:16px; display:inline-flex;">
       <button class="tab-btn active" data-admin-view="notifications">Notifications</button>
       <button class="tab-btn" data-admin-view="sites">Sites</button>
-      <button class="tab-btn" data-admin-view="overview">Checkpoints & log</button>
-      <button class="tab-btn" data-admin-view="guards">Routes</button>
+      <button class="tab-btn" data-admin-view="manage">Manage site</button>
+      <button class="tab-btn" data-admin-view="overview">Activity log</button>
       <button class="tab-btn" data-admin-view="patrols">Patrols</button>
       <button class="tab-btn" data-admin-view="alerts">Alert settings</button>
       <button class="tab-btn" data-admin-view="invites">Admin invites</button>
@@ -426,106 +426,101 @@
         </div>
         <div class="table-scroll">
         <table style="margin-top:10px;">
-          <thead><tr><th>Site</th><th>Address</th><th>Site code</th><th>Checkpoints</th><th>Routes</th><th></th><th></th></tr></thead>
+          <thead><tr><th>Site</th><th>Address</th><th>Site code</th><th>Checkpoints</th><th>Routes</th><th></th></tr></thead>
           <tbody id="siteTableBody"></tbody>
         </table>
         </div>
       </div>
     </div>
 
-    <div class="admin-view" id="admin-overview">
+    <div class="admin-view" id="admin-manage">
       <div class="panel" style="margin-bottom:16px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
         <span class="field-label" style="margin:0;">Managing site</span>
-        <select id="siteQuickSwitchCp" style="max-width:260px;"></select>
+        <select id="siteQuickSwitchManage" style="max-width:260px;"></select>
+        <span class="result-meta">Everything about this site in one place. List/table sections below save as you go; Basic info uses the Save changes button.</span>
       </div>
-    <div class="grid-2">
+
       <div class="panel">
-        <h2 style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
-          <span>Checkpoints</span>
-          <button class="btn" id="printCpTagsBtn" style="width:auto; padding:6px 12px; font-size:11px; text-transform:none; letter-spacing:normal;">🖨️ Print tags</button>
-        </h2>
+        <h2>Basic info</h2>
         <div class="cp-row">
-          <input type="text" id="newCpName" placeholder="Checkpoint name">
+          <input type="text" id="manageSiteName" placeholder="Site name">
+          <input type="text" id="manageSiteAddress" placeholder="Address">
         </div>
-
-        <div class="cp-row">
-          <button class="btn btn-primary" id="detectCpLocBtn" style="width:auto; padding:9px 14px;">📍 Use my location</button>
-          <span class="result-meta" id="detectCpStatus" style="align-self:center;"></span>
-        </div>
-
-        <div class="cp-row">
-          <input type="text" id="newCpLat" placeholder="Latitude" readonly>
-          <input type="text" id="newCpLng" placeholder="Longitude" readonly>
-        </div>
-
-        <div class="field-label">Detection radius</div>
-        <div class="slider-row">
-          <input type="range" id="newCpRadiusSlider" min="5" max="100" value="15" step="1">
-          <span class="slider-val" id="newCpRadiusVal">15 m</span>
-        </div>
-        <div class="result-meta" id="cpRadiusHint" style="margin-top:4px;">Stand at the checkpoint and tap "Use my location" — radius auto-suggests from GPS accuracy, then adjust if needed.</div>
-
+        <div class="result-meta" style="margin:4px 0 0;">Site code: <b id="manageSiteCode">—</b> — share this with guards joining the site.</div>
         <div class="btn-row">
-          <button class="btn btn-primary" id="addCpBtn">Add checkpoint</button>
-        </div>
-
-        <div class="table-scroll">
-        <table style="margin-top:14px;">
-          <thead><tr><th>QR</th><th>Name</th><th>Radius</th><th></th></tr></thead>
-          <tbody id="cpTableBody"></tbody>
-        </table>
+          <button class="btn btn-primary" id="manageSiteSaveBtn" style="width:auto; padding:9px 14px;">Save changes</button>
+          <span class="result-meta" id="manageSiteSaveStatus" style="align-self:center;"></span>
         </div>
       </div>
 
       <div class="panel">
-        <h2>Live activity log</h2>
-        <div class="result-meta" style="margin-bottom:10px;">This shift only, most recent first.</div>
-        <div class="log-wrap" id="logWrap">
-          <div class="empty">No scans yet — try the guard view.</div>
+        <h2>Location &amp; perimeter</h2>
+        <div class="result-meta" id="manageSiteLocationSummary" style="margin-bottom:10px;">No location set yet.</div>
+        <button class="btn" id="manageSiteOpenMapBtn" style="width:auto; padding:9px 14px;">🗺️ Edit location &amp; perimeter</button>
+      </div>
+
+      <div class="panel">
+        <h2>Site contacts</h2>
+        <div class="result-meta" style="margin-bottom:8px;">Site management personnel — no limit on how many.</div>
+        <div id="siteContactsList" style="display:flex; flex-direction:column; gap:6px;"></div>
+        <div id="siteContactsAddWrap" style="display:none; margin-top:10px;">
+          <div class="cp-row">
+            <input type="text" id="newContactName" placeholder="Name">
+            <input type="text" id="newContactRole" placeholder="Role (e.g. Site Manager)" list="contactRoleSuggestions">
+          </div>
+          <datalist id="contactRoleSuggestions">
+            <option value="Site Manager">
+            <option value="Facilities Manager">
+            <option value="Security Supervisor">
+            <option value="Emergency Contact">
+            <option value="Building Owner">
+          </datalist>
+          <div class="cp-row" style="margin-top:8px;">
+            <input type="text" id="newContactPhone" placeholder="Phone">
+            <input type="text" id="newContactEmail" placeholder="Email">
+            <button class="btn btn-primary" id="addSiteContactBtn" style="flex:0 0 auto; width:auto; padding:9px 14px;">Add contact</button>
+          </div>
         </div>
       </div>
-    </div>
-    </div>
 
-    <div class="admin-view" id="admin-guards">
-      <div class="panel" style="margin-bottom:16px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-        <span class="field-label" style="margin:0;">Managing site</span>
-        <select id="siteQuickSwitchGuards" style="max-width:260px;"></select>
-      </div>
       <div class="panel">
-        <h2>Routes</h2>
+        <h2>Guards</h2>
+        <div class="result-meta" style="margin-bottom:8px;">Guards whose home site is this one. Edit names/employee numbers in the <b>Users</b> tab.</div>
+        <div id="manageSiteGuardsList" style="display:flex; flex-direction:column; gap:6px;"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Vehicles</h2>
+        <div class="result-meta" style="margin-bottom:8px;">Patrol vehicles assigned to this site, if any.</div>
+        <div id="siteVehiclesList" style="display:flex; flex-direction:column; gap:6px; margin-bottom:10px;"></div>
         <div class="cp-row">
-          <input type="text" id="newRouteName" placeholder="Route name (e.g. Night perimeter)">
+          <input type="text" id="newVehicleLabel" placeholder="e.g. Patrol bakkie 1">
+          <input type="text" id="newVehiclePlate" placeholder="Plate">
         </div>
-        <div class="field-label" style="margin-top:8px;">Tap checkpoints in the order guards should scan them</div>
-        <div id="routeCpAvailable" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px;"></div>
-        <div class="field-label">Route order</div>
-        <div id="routeCpOrderList" style="display:flex; flex-direction:column; gap:6px; margin-bottom:6px;"></div>
-        <div class="toggle-row" style="margin-top:8px;">
-          <span>Require checkpoints scanned in this exact order</span>
-          <label class="switch">
-            <input type="checkbox" id="newRouteStrictOrder">
-            <span class="slider-tog"></span>
-          </label>
-        </div>
-        <div class="result-meta" style="margin:6px 0 10px;">Strict order rejects a scan that's out of sequence. Flexible lets guards scan checkpoints in any order.</div>
-        <button class="btn btn-primary" id="addRouteBtn">Add route</button>
-        <div class="table-scroll">
-        <table style="margin-top:14px;">
-          <thead><tr><th>Route</th><th>Checkpoints (in order)</th><th>Order mode</th><th></th></tr></thead>
-          <tbody id="routeTableBody"></tbody>
-        </table>
+        <div class="cp-row">
+          <input type="text" id="newVehicleNotes" placeholder="Notes (optional)">
+          <button class="btn btn-primary" id="addVehicleBtn" style="flex:0 0 auto; width:auto; padding:9px 14px;">Add vehicle</button>
         </div>
       </div>
-    </div>
 
-    <div class="admin-view" id="admin-patrols">
-      <div class="panel" style="margin-bottom:16px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-        <span class="field-label" style="margin:0;">Managing site</span>
-        <select id="siteQuickSwitchPatrols" style="max-width:260px;"></select>
-        <span class="result-meta">Schedules, upcoming and past patrols below are all scoped to this site — sites can run different routes and orders.</span>
+      <div class="panel">
+        <h2>Shift staffing</h2>
+        <div class="result-meta" style="margin-bottom:10px;">How many guards <span id="attShiftSiteLabel">this site</span> should have clocked in per shift. Uses the site picked at the top of this page.</div>
+        <div class="inline-fields">
+          <div class="f"><label>Shift name</label><input type="text" id="newShiftName" placeholder="e.g. Night Shift"></div>
+          <div class="f"><label>Start</label><input type="time" id="newShiftStart" value="18:00"></div>
+          <div class="f"><label>End</label><input type="time" id="newShiftEnd" value="06:00"></div>
+          <div class="f"><label>Guards required</label><input type="text" id="newShiftRequired" value="1" style="width:70px;"></div>
+        </div>
+        <div class="btn-row"><button class="btn btn-primary" id="addShiftBtn">Add shift</button></div>
+        <div class="table-scroll">
+          <table style="margin-top:14px;">
+            <thead><tr><th>Shift</th><th>Window</th><th>Required</th><th></th></tr></thead>
+            <tbody id="siteShiftsTableBody"></tbody>
+          </table>
+        </div>
       </div>
-      <div class="grid-2">
+
         <div class="panel">
           <h2>New patrol schedule</h2>
           <div class="field-label" style="margin-top:0;">Route</div>
@@ -581,10 +576,94 @@
         </div>
         </div>
 
-        <div class="panel">
-          <h2>Upcoming patrols</h2>
-          <div class="log-wrap" id="upcomingWrap" style="max-height:220px;"></div>
+      <div class="panel">
+        <h2>Routes</h2>
+        <div class="cp-row">
+          <input type="text" id="newRouteName" placeholder="Route name (e.g. Night perimeter)">
         </div>
+        <div class="field-label" style="margin-top:8px;">Tap checkpoints in the order guards should scan them</div>
+        <div id="routeCpAvailable" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px;"></div>
+        <div class="field-label">Route order</div>
+        <div id="routeCpOrderList" style="display:flex; flex-direction:column; gap:6px; margin-bottom:6px;"></div>
+        <div class="toggle-row" style="margin-top:8px;">
+          <span>Require checkpoints scanned in this exact order</span>
+          <label class="switch">
+            <input type="checkbox" id="newRouteStrictOrder">
+            <span class="slider-tog"></span>
+          </label>
+        </div>
+        <div class="result-meta" style="margin:6px 0 10px;">Strict order rejects a scan that's out of sequence. Flexible lets guards scan checkpoints in any order.</div>
+        <button class="btn btn-primary" id="addRouteBtn">Add route</button>
+        <div class="table-scroll">
+        <table style="margin-top:14px;">
+          <thead><tr><th>Route</th><th>Checkpoints (in order)</th><th>Order mode</th><th></th></tr></thead>
+          <tbody id="routeTableBody"></tbody>
+        </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2 style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+          <span>Checkpoints</span>
+          <button class="btn" id="printCpTagsBtn" style="width:auto; padding:6px 12px; font-size:11px; text-transform:none; letter-spacing:normal;">🖨️ Print tags</button>
+        </h2>
+        <div class="cp-row">
+          <input type="text" id="newCpName" placeholder="Checkpoint name">
+        </div>
+
+        <div class="cp-row">
+          <button class="btn btn-primary" id="detectCpLocBtn" style="width:auto; padding:9px 14px;">📍 Use my location</button>
+          <span class="result-meta" id="detectCpStatus" style="align-self:center;"></span>
+        </div>
+
+        <div class="cp-row">
+          <input type="text" id="newCpLat" placeholder="Latitude" readonly>
+          <input type="text" id="newCpLng" placeholder="Longitude" readonly>
+        </div>
+
+        <div class="field-label">Detection radius</div>
+        <div class="slider-row">
+          <input type="range" id="newCpRadiusSlider" min="5" max="100" value="15" step="1">
+          <span class="slider-val" id="newCpRadiusVal">15 m</span>
+        </div>
+        <div class="result-meta" id="cpRadiusHint" style="margin-top:4px;">Stand at the checkpoint and tap "Use my location" — radius auto-suggests from GPS accuracy, then adjust if needed.</div>
+
+        <div class="btn-row">
+          <button class="btn btn-primary" id="addCpBtn">Add checkpoint</button>
+        </div>
+
+        <div class="table-scroll">
+        <table style="margin-top:14px;">
+          <thead><tr><th>QR</th><th>Name</th><th>Radius</th><th></th></tr></thead>
+          <tbody id="cpTableBody"></tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="admin-view" id="admin-overview">
+      <div class="panel" style="margin-bottom:16px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+        <span class="field-label" style="margin:0;">Managing site</span>
+        <select id="siteQuickSwitchCp" style="max-width:260px;"></select>
+      </div>
+      <div class="panel">
+        <h2>Live activity log</h2>
+        <div class="result-meta" style="margin-bottom:10px;">This shift only, most recent first.</div>
+        <div class="log-wrap" id="logWrap">
+          <div class="empty">No scans yet — try the guard view.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="admin-view" id="admin-patrols">
+      <div class="panel" style="margin-bottom:16px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+        <span class="field-label" style="margin:0;">Managing site</span>
+        <select id="siteQuickSwitchPatrols" style="max-width:260px;"></select>
+        <span class="result-meta">Upcoming and past patrols below are scoped to this site. Schedules now live under <b>Manage site</b>.</span>
+      </div>
+      <div class="panel">
+        <h2>Upcoming patrols</h2>
+        <div class="log-wrap" id="upcomingWrap" style="max-height:220px;"></div>
       </div>
 
       <div class="panel" style="margin-top:16px;">
@@ -673,24 +752,6 @@
     </div>
 
     <div class="admin-view" id="admin-attendance">
-      <div class="panel">
-        <h2>Shift staffing</h2>
-        <div class="result-meta" style="margin-bottom:10px;">How many guards <span id="attShiftSiteLabel">this site</span> should have clocked in per shift. Uses the site picked in the <b>Sites</b> tab above.</div>
-        <div class="inline-fields">
-          <div class="f"><label>Shift name</label><input type="text" id="newShiftName" placeholder="e.g. Night Shift"></div>
-          <div class="f"><label>Start</label><input type="time" id="newShiftStart" value="18:00"></div>
-          <div class="f"><label>End</label><input type="time" id="newShiftEnd" value="06:00"></div>
-          <div class="f"><label>Guards required</label><input type="text" id="newShiftRequired" value="1" style="width:70px;"></div>
-        </div>
-        <div class="btn-row"><button class="btn btn-primary" id="addShiftBtn">Add shift</button></div>
-        <div class="table-scroll">
-          <table style="margin-top:14px;">
-            <thead><tr><th>Shift</th><th>Window</th><th>Required</th><th></th></tr></thead>
-            <tbody id="siteShiftsTableBody"></tbody>
-          </table>
-        </div>
-      </div>
-
       <div class="panel">
         <h2>Live coverage</h2>
         <div class="result-meta" style="margin-bottom:6px;">Who's clocked in right now, per site and shift. Green border = fully staffed, red = short.</div>
@@ -943,26 +1004,7 @@
     </div>
 
     <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--border);">
-      <div class="field-label" style="margin:0 0 8px;">Site contacts</div>
-      <div id="siteContactsList" style="display:flex; flex-direction:column; gap:6px;"></div>
-      <div id="siteContactsAddWrap" style="display:none; margin-top:10px;">
-        <div class="cp-row">
-          <input type="text" id="newContactName" placeholder="Name">
-          <input type="text" id="newContactRole" placeholder="Role (e.g. Site Manager)" list="contactRoleSuggestions">
-        </div>
-        <datalist id="contactRoleSuggestions">
-          <option value="Site Manager">
-          <option value="Facilities Manager">
-          <option value="Security Supervisor">
-          <option value="Emergency Contact">
-          <option value="Building Owner">
-        </datalist>
-        <div class="cp-row" style="margin-top:8px;">
-          <input type="text" id="newContactPhone" placeholder="Phone">
-          <input type="text" id="newContactEmail" placeholder="Email">
-          <button class="btn btn-primary" id="addSiteContactBtn" style="flex:0 0 auto; width:auto; padding:9px 14px;">Add contact</button>
-        </div>
-      </div>
+      <div class="result-meta">Site contacts and shift staffing now live under <b>Manage site</b> in the admin Attendance/Sites area.</div>
     </div>
   </div>
 </div>
@@ -2453,7 +2495,7 @@ function renderRouteTable(){
 
 function renderSiteSwitchers(){
   const opts = sites.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
-  ['siteQuickSwitchCp','siteQuickSwitchGuards','siteQuickSwitchPatrols','siteQuickSwitchAlerts','ctrlSiteSwitch'].forEach(id => {
+  ['siteQuickSwitchCp','siteQuickSwitchManage','siteQuickSwitchPatrols','siteQuickSwitchAlerts','ctrlSiteSwitch'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     el.innerHTML = opts;
@@ -2483,7 +2525,6 @@ function renderSiteTable(){
           <button class="btn" data-manage-site="${s.id}" style="width:auto; padding:5px 10px; font-size:11px;">Manage</button>
           <button class="del-btn" data-del-site="${s.id}" aria-label="Delete site"><i>&times;</i></button>
         </td>
-        <td><button class="btn" data-map-site="${s.id}" style="width:auto; padding:5px 10px; font-size:11px;">🗺️ Map</button></td>
       </tr>
     `;
   }).join('');
@@ -2491,7 +2532,7 @@ function renderSiteTable(){
     btn.addEventListener('click', () => {
       setActiveSite(btn.dataset.manageSite);
       renderAll();
-      document.querySelector('[data-admin-view="overview"]').click();
+      document.querySelector('[data-admin-view="manage"]').click();
     });
   });
   body.querySelectorAll('[data-del-site]').forEach(btn => {
@@ -2506,9 +2547,6 @@ function renderSiteTable(){
       if (!sites.some(s => s.id === activeSiteId)) setActiveSite(sites[0] ? sites[0].id : null);
       renderAll();
     });
-  });
-  body.querySelectorAll('[data-map-site]').forEach(btn => {
-    btn.addEventListener('click', () => openSiteMapModal(btn.dataset.mapSite));
   });
 }
 
@@ -2713,6 +2751,126 @@ document.getElementById('siteMapSaveBtn').addEventListener('click', async () => 
   renderAll();
   openSiteMapModal(siteMapCurrentSiteId);
 });
+
+// ---------------- Manage site: basic info, location summary, guards, vehicles ----------------
+function renderManageSiteBasicInfo(){
+  const nameEl = document.getElementById('manageSiteName');
+  if (!nameEl) return;
+  const s = sites.find(x => x.id === activeSiteId);
+  const addrEl = document.getElementById('manageSiteAddress');
+  const summaryEl = document.getElementById('manageSiteLocationSummary');
+  if (!s){
+    nameEl.value = ''; addrEl.value = '';
+    document.getElementById('manageSiteCode').textContent = '—';
+    summaryEl.textContent = 'No site selected.';
+    return;
+  }
+  // Don't stomp on text the admin is mid-typing when a background refresh runs.
+  if (document.activeElement !== nameEl) nameEl.value = s.name || '';
+  if (document.activeElement !== addrEl) addrEl.value = (s.address && s.address !== '—') ? s.address : '';
+  document.getElementById('manageSiteCode').textContent = s.siteCode || '—';
+
+  const hasLoc = s.lat != null && s.lng != null;
+  const perimeterCount = Array.isArray(s.perimeter) ? s.perimeter.length : 0;
+  summaryEl.textContent = hasLoc
+    ? `Pinned at ${Number(s.lat).toFixed(5)}, ${Number(s.lng).toFixed(5)}${perimeterCount >= 3 ? ` · perimeter drawn (${perimeterCount} points)` : ' · no perimeter drawn yet'}`
+    : 'No location set yet — open the map to drop a pin.';
+}
+
+document.getElementById('manageSiteSaveBtn').addEventListener('click', async () => {
+  if (!activeSiteId) return;
+  const statusEl = document.getElementById('manageSiteSaveStatus');
+  const name = document.getElementById('manageSiteName').value.trim();
+  const address = document.getElementById('manageSiteAddress').value.trim();
+  if (!name){ statusEl.textContent = 'Site name is required.'; return; }
+  statusEl.textContent = 'Saving…';
+  const { error } = await sb.from('sites').update({ name, address: address || null }).eq('id', activeSiteId);
+  if (error){ statusEl.textContent = 'Could not save — ' + error.message; return; }
+  await loadSites();
+  renderAll();
+  statusEl.textContent = 'Saved.';
+  showToast('Site updated', '', 'success');
+});
+
+document.getElementById('manageSiteOpenMapBtn').addEventListener('click', () => {
+  if (activeSiteId) openSiteMapModal(activeSiteId);
+});
+
+// Guards roster is read-only here — editing names/employee numbers happens in Users,
+// since that's where employee number + face-reset already live.
+async function renderManageSiteGuards(){
+  const el = document.getElementById('manageSiteGuardsList');
+  if (!el || !activeSiteId) return;
+  const dir = await loadGuardDirectory(activeSiteId);
+  el.innerHTML = dir.length
+    ? dir.map(g => `
+        <div class="site-contact-row">
+          <div style="flex:1; min-width:0;">
+            <div class="site-contact-name">${g.full_name || 'Guard'}</div>
+            <div class="result-meta">${g.employee_number ? '#' + g.employee_number : 'No employee number set'}</div>
+          </div>
+        </div>`).join('')
+    : '<div class="result-meta">No guards assigned to this site yet.</div>';
+}
+
+// ---------------- Manage site: vehicles ----------------
+let siteVehicles = [];
+async function loadSiteVehicles(siteId){
+  const { data, error } = await sb.from('site_vehicles').select('*').eq('site_id', siteId).order('created_at');
+  if (error){ showToast('Could not load vehicles', error.message, 'danger'); siteVehicles = []; return; }
+  siteVehicles = (data || []).map(v => ({ id: v.id, label: v.label, plate: v.plate, notes: v.notes }));
+}
+function renderSiteVehicles(){
+  const el = document.getElementById('siteVehiclesList');
+  if (!el) return;
+  el.innerHTML = siteVehicles.length ? siteVehicles.map(v => `
+    <div class="site-contact-row">
+      <div style="flex:1; min-width:0;">
+        <div class="site-contact-name">${v.label}${v.plate ? ' <span class="site-contact-role">· ' + v.plate + '</span>' : ''}</div>
+        ${v.notes ? `<div class="result-meta" style="margin-top:2px;">${v.notes}</div>` : ''}
+      </div>
+      <button class="del-btn" data-del-vehicle="${v.id}" aria-label="Remove vehicle"><i>&times;</i></button>
+    </div>
+  `).join('') : '<div class="result-meta">No vehicles added yet.</div>';
+  el.querySelectorAll('[data-del-vehicle]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Remove this vehicle?')) return;
+      const { error } = await sb.from('site_vehicles').delete().eq('id', btn.dataset.delVehicle);
+      if (error){ showToast('Could not remove vehicle', error.message, 'danger'); return; }
+      await loadSiteVehicles(activeSiteId);
+      renderSiteVehicles();
+    });
+  });
+}
+document.getElementById('addVehicleBtn').addEventListener('click', async () => {
+  if (!activeSiteId) return;
+  const label = document.getElementById('newVehicleLabel').value.trim();
+  const plate = document.getElementById('newVehiclePlate').value.trim();
+  const notes = document.getElementById('newVehicleNotes').value.trim();
+  if (!label){ showToast('Vehicle needs a name/label', '', 'warn'); return; }
+  const { error } = await sb.from('site_vehicles').insert({ site_id: activeSiteId, label, plate: plate || null, notes: notes || null });
+  if (error){ showToast('Could not add vehicle', error.message, 'danger'); return; }
+  document.getElementById('newVehicleLabel').value = '';
+  document.getElementById('newVehiclePlate').value = '';
+  document.getElementById('newVehicleNotes').value = '';
+  await loadSiteVehicles(activeSiteId);
+  renderSiteVehicles();
+  showToast('Vehicle added', '', 'success');
+});
+
+// Refreshes every section of Manage Site for whichever site is currently
+// selected. Contacts/guards/vehicles aren't part of the eager global load (only
+// fetched for the site actually being viewed), so this runs on tab-open and
+// whenever this page's own site switcher changes.
+async function refreshManageSitePanels(){
+  if (!activeSiteId) return;
+  renderManageSiteBasicInfo();
+  await loadSiteContactsFor(activeSiteId);
+  renderSiteContacts();
+  await renderManageSiteGuards();
+  await loadSiteVehicles(activeSiteId);
+  renderSiteVehicles();
+}
 
 // ---------------- Site contacts (site management personnel) ----------------
 async function loadSiteContactsFor(siteId){
@@ -3241,11 +3399,13 @@ function renderAll(){
   renderControllerSiteTable();
   renderGuardSiteName();
   renderAttendanceCard();
+  renderManageSiteBasicInfo();
   renderCpTable();
   renderStats();
   renderLog();
   renderRouteBuilder();
   renderRouteTable();
+  renderSiteShiftsTable();
   renderPatrolsAdmin();
   renderGuardPatrolCard();
   renderAlertsForm();
@@ -4161,7 +4321,7 @@ document.getElementById('addSiteBtn').addEventListener('click', async () => {
 
 document.getElementById('siteSearch').addEventListener('input', renderSiteTable);
 
-['siteQuickSwitchCp','siteQuickSwitchGuards','siteQuickSwitchPatrols','siteQuickSwitchAlerts','ctrlSiteSwitch'].forEach(id => {
+['siteQuickSwitchCp','siteQuickSwitchManage','siteQuickSwitchPatrols','siteQuickSwitchAlerts','ctrlSiteSwitch'].forEach(id => {
   const el = document.getElementById(id);
   if (!el) return;
   el.addEventListener('change', e => {
@@ -4169,6 +4329,8 @@ document.getElementById('siteSearch').addEventListener('input', renderSiteTable)
     renderAll();
   });
 });
+
+document.getElementById('siteQuickSwitchManage').addEventListener('change', refreshManageSitePanels);
 
 let muteTimeout = null;
 document.getElementById('soundToggleBtn').addEventListener('click', (e) => {
@@ -4812,6 +4974,9 @@ document.querySelectorAll('[data-admin-view]').forEach(btn => {
       await loadSiteShifts(); await loadAttendanceRecent(); await loadAbsencesRecent();
       renderSiteShiftsTable();
       renderCoverageGrid('coverageGridAdmin');
+    }
+    if (btn.dataset.adminView === 'manage'){
+      await refreshManageSitePanels();
     }
   });
 });
