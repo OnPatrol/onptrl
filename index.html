@@ -10,30 +10,39 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#0D1117;
-    --panel:#161B22;
-    --panel-2:#1C2330;
-    --border:#2A313C;
-    --text:#E6EDF3;
-    --muted:#8B96A5;
-    --accent:#4EA1FF;
-    --accent-dim:#1E3A5C;
+    --bg:#0B0D0E;
+    --panel:#131618;
+    --panel-2:#191D20;
+    --border:#2A2F33;
+    --text:#EDEEEC;
+    --muted:#8C9296;
+    --accent:#F5A623;
+    --accent-ink:#1A1200;
+    --accent-dim:#3A2C10;
     --success:#3FB878;
     --success-dim:#123324;
     --danger:#E5484D;
     --danger-dim:#3A1418;
-    --warn:#F0A020;
-    --warn-dim:#3A2A0A;
-    --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
-    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --warn:#E8862A;
+    --warn-dim:#3A2708;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }
   *{box-sizing:border-box;}
   body{
     margin:0; background:var(--bg); color:var(--text); font-family:var(--sans);
     -webkit-font-smoothing:antialiased;
   }
+  .icon{width:15px; height:15px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; vertical-align:-3px; flex:0 0 auto;}
+  .icon-sm{width:13px; height:13px;}
+  .btn .icon, .tab-btn .icon{margin-right:5px;}
+  .stat-card{display:flex; flex-direction:column; gap:2px;}
+  .stat-label{display:flex; align-items:center; gap:6px;}
   .app{max-width:1100px; margin:0 auto; padding:20px;}
   .topbar{display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; flex-wrap:wrap; gap:12px;}
   .brand{display:flex; align-items:center; gap:10px;}
@@ -52,7 +61,7 @@
   .ctrl-view{display:none;}
   .ctrl-view.active{display:block;}
   .site-map-box{width:100%; height:260px; border-radius:10px; overflow:hidden; border:1px solid var(--border); background:var(--panel-2);}
-  .perimeter-vertex{width:12px; height:12px; border-radius:50%; background:var(--accent); border:2px solid #04121F; box-shadow:0 0 0 2px rgba(78,161,255,0.45); cursor:grab;}
+  .perimeter-vertex{width:12px; height:12px; border-radius:50%; background:var(--accent); border:2px solid var(--accent-ink); box-shadow:0 0 0 2px rgba(245,166,35,0.45); cursor:grab;}
   .site-contact-row{display:flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid var(--border); border-radius:8px; background:var(--panel-2);}
   .site-contact-name{font-family:var(--sans); font-weight:600; font-size:12.5px;}
   .site-contact-role{color:var(--accent); font-weight:500; font-size:11px;}
@@ -113,16 +122,17 @@
   .btn:hover{border-color:var(--accent);}
   .btn:disabled{opacity:0.5; cursor:not-allowed;}
   .btn:disabled:hover{border-color:var(--border);}
-  .btn-primary{background:var(--accent); border-color:var(--accent); color:#04121F;}
+  .btn-primary{background:var(--accent); border-color:var(--accent); color:var(--accent-ink);}
   .btn-primary:hover{opacity:0.9;}
   .btn-row{display:flex; gap:8px; margin-top:10px;}
   .btn-row .btn{flex:1;}
   #manualScanBtn{padding:20px 16px; font-size:17px; font-weight:800; border-radius:12px; letter-spacing:0.3px;}
   .field-label{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; margin:16px 0 6px;}
-  select, input[type=text], input[type=password], input[type=email]{
+  select, input[type=text], input[type=password], input[type=email], input[type=date], input[type=time]{
     width:100%; background:var(--panel-2); border:1px solid var(--border); color:var(--text);
-    padding:9px 10px; border-radius:8px; font-size:13px; font-family:var(--mono);
+    padding:9px 10px; border-radius:8px; font-size:13px; font-family:var(--sans);
   }
+  .code-text{font-family:var(--mono);}
   .auth-gate{z-index:100;}
   .auth-gate .detail-modal{max-width:380px;}
   .user-badge{display:flex; align-items:center; gap:10px; font-size:12px; color:var(--muted); flex-wrap:wrap;}
@@ -290,9 +300,9 @@
       <button class="btn" id="signOutBtn" style="width:auto; padding:6px 10px; font-size:11px;">Sign out</button>
     </div>
     <div class="tabs">
-      <button class="tab-btn active" data-view="guard" id="guardTabBtn">Guard scan</button>
-      <button class="tab-btn" data-view="admin" id="adminTabBtn2">Admin</button>
-      <button class="tab-btn" data-view="controller" id="controllerTabBtn" style="display:none;">Controller</button>
+      <button class="tab-btn active" data-view="guard" id="guardTabBtn"><svg class="icon" viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="13" rx="2"/><path d="M9 7V5a3 3 0 0 1 6 0v2"/><circle cx="12" cy="13" r="2.2"/></svg>Guard scan</button>
+      <button class="tab-btn" data-view="admin" id="adminTabBtn2"><svg class="icon" viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5 3.4 8.7 8 11 4.6-2.3 8-6 8-11V5l-8-3Z"/></svg>Admin</button>
+      <button class="tab-btn" data-view="controller" id="controllerTabBtn" style="display:none;"><svg class="icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Controller</button>
     </div>
   </div>
 
@@ -340,14 +350,12 @@
             </div>
           </div>
 
-          <div class="attendance-card" id="teammatesCard" style="display:none;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-              <span style="font-family:var(--sans); font-weight:700; font-size:12.5px;">Teammates at this site</span>
-            </div>
-            <div class="result-meta" style="margin-bottom:8px;">On a shared device, a teammate can clock in with just their own face scan — no separate login needed.</div>
+          <details class="attendance-card" id="teammatesCard" style="display:none;">
+            <summary style="cursor:pointer; font-family:var(--sans); font-weight:700; font-size:12.5px; list-style:none;">Teammates at this site</summary>
+            <div class="result-meta" style="margin:8px 0;">On a shared device, a teammate can clock in with just their own face scan — no separate login needed.</div>
             <div id="teammatesList"></div>
             <div class="result-meta error-text" id="teammatesError" style="display:none; margin-top:6px;"></div>
-          </div>
+          </details>
 
           <div class="result-meta error-text" id="guardNotClockedInNotice" style="display:none; margin:0 0 10px;">You must clock in above before you can scan checkpoints on this patrol.</div>
 
@@ -383,7 +391,7 @@
           <div class="field-label">Scan checkpoint</div>
           <div class="result-meta" style="margin:-2px 0 6px;">Hold the tag about 15–20cm from the camera and keep it steady — it scans automatically. If it doesn't pick it up, tap "Scan now" to read the current frame.</div>
           <div class="result-meta error-text" id="guardScanBlockedNotice" style="display:none; margin:-2px 0 6px;">No patrol in progress — checkpoint scanning is disabled until your patrol starts.</div>
-          <div class="btn-row">
+          <div class="btn-row" style="position:sticky; bottom:8px; background:var(--panel); padding-top:6px; margin-top:10px;">
             <button class="btn btn-primary" id="manualScanBtn">Scan now</button>
           </div>
         </div>
@@ -394,10 +402,10 @@
   <!-- ADMIN VIEW -->
   <div class="view" id="view-admin">
     <div class="stat-grid">
-      <div class="stat-card"><div class="stat-label">Scans (last 48h)</div><div class="stat-val" id="statTotal">0</div></div>
-      <div class="stat-card"><div class="stat-label">Accepted (last 48h)</div><div class="stat-val success" id="statAccepted">0</div></div>
-      <div class="stat-card"><div class="stat-label">Rejected (last 48h)</div><div class="stat-val danger" id="statRejected">0</div></div>
-      <div class="stat-card"><div class="stat-label">Position alerts (last 48h)</div><div class="stat-val warn" id="statAlerts">0</div></div>
+      <div class="stat-card"><div class="stat-label"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M20 8V5a1 1 0 0 0-1-1h-3M4 16v3a1 1 0 0 0 1 1h3M20 16v3a1 1 0 0 1-1 1h-3M3 12h18"/></svg>Scans (last 48h)</div><div class="stat-val" id="statTotal">0</div></div>
+      <div class="stat-card"><div class="stat-label"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>Accepted (last 48h)</div><div class="stat-val success" id="statAccepted">0</div></div>
+      <div class="stat-card"><div class="stat-label"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>Rejected (last 48h)</div><div class="stat-val danger" id="statRejected">0</div></div>
+      <div class="stat-card"><div class="stat-label"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>Position alerts (last 48h)</div><div class="stat-val warn" id="statAlerts">0</div></div>
     </div>
     <div class="result-meta" style="margin:-8px 0 16px;">These four update live and only cover the last 48 hours. For totals over a longer or specific date range, use <b>Patrol reports</b> below — it queries full history, not this rolling window.</div>
 
@@ -465,7 +473,7 @@
       <div class="panel">
         <h2>Location &amp; perimeter</h2>
         <div class="result-meta" id="manageSiteLocationSummary" style="margin-bottom:10px;">No location set yet.</div>
-        <button class="btn" id="manageSiteOpenMapBtn" style="width:auto; padding:9px 14px;">🗺️ Edit location &amp; perimeter</button>
+        <button class="btn" id="manageSiteOpenMapBtn" style="width:auto; padding:9px 14px;"><svg class="icon" viewBox="0 0 24 24"><path d="M9 20 3 17V4l6 3 6-3 6 3v13l-6-3-6 3Z"/><path d="M9 4v13M15 7v13"/></svg> Edit location &amp; perimeter</button>
       </div>
 
       <div class="panel">
@@ -614,14 +622,14 @@
       <div class="panel">
         <h2 style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
           <span>Checkpoints</span>
-          <button class="btn" id="printCpTagsBtn" style="width:auto; padding:6px 12px; font-size:11px; text-transform:none; letter-spacing:normal;">🖨️ Print tags</button>
+          <button class="btn" id="printCpTagsBtn" style="width:auto; padding:6px 12px; font-size:11px; text-transform:none; letter-spacing:normal;"><svg class="icon" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 17v4h12v-4"/></svg> Print tags</button>
         </h2>
         <div class="cp-row">
           <input type="text" id="newCpName" placeholder="Checkpoint name">
         </div>
 
         <div class="cp-row">
-          <button class="btn btn-primary" id="detectCpLocBtn" style="width:auto; padding:9px 14px;">📍 Use my location</button>
+          <button class="btn btn-primary" id="detectCpLocBtn" style="width:auto; padding:9px 14px;"><svg class="icon" viewBox="0 0 24 24"><path d="M12 22s7-6.3 7-12a7 7 0 1 0-14 0c0 5.7 7 12 7 12Z"/><circle cx="12" cy="10" r="2.3"/></svg> Use my location</button>
           <span class="result-meta" id="detectCpStatus" style="align-self:center;"></span>
         </div>
 
@@ -767,7 +775,7 @@
       <div class="panel">
         <h2>Live coverage</h2>
         <div class="result-meta" style="margin-bottom:6px;">Who's clocked in right now, per site and shift. Green border = fully staffed, red = short.</div>
-        <div class="btn-row"><button class="btn" id="refreshCoverageBtnAdmin" style="width:auto; padding:7px 14px;">↻ Refresh</button></div>
+        <div class="btn-row"><button class="btn" id="refreshCoverageBtnAdmin" style="width:auto; padding:7px 14px;"><svg class="icon" viewBox="0 0 24 24"><path d="M20 11A8 8 0 1 0 18.6 15.5"/><path d="M20 5v6h-6"/></svg> Refresh</button></div>
         <div class="coverage-grid" id="coverageGridAdmin"></div>
       </div>
 
@@ -778,7 +786,7 @@
           <div class="f"><label>From</label><input type="date" id="attExportFrom"></div>
           <div class="f"><label>To</label><input type="date" id="attExportTo"></div>
         </div>
-        <div class="btn-row"><button class="btn btn-primary" id="exportAttendanceBtn" style="width:auto; padding:9px 14px;">⬇ Download CSV</button></div>
+        <div class="btn-row"><button class="btn btn-primary" id="exportAttendanceBtn" style="width:auto; padding:9px 14px;"><svg class="icon" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/></svg> Download CSV</button></div>
         <div class="result-meta" id="attExportStatus" style="margin-top:6px;"></div>
       </div>
     </div>
@@ -803,8 +811,8 @@
         </div>
         <div class="btn-row" style="margin-top:10px;">
           <button class="btn btn-primary" id="runReportBtn">Run report</button>
-          <button class="btn" id="downloadReportBtn" style="width:auto; padding:9px 14px;">⬇ Download CSV</button>
-          <button class="btn" id="printPdfReportBtn" style="width:auto; padding:9px 14px;">🖨 Print / Save PDF</button>
+          <button class="btn" id="downloadReportBtn" style="width:auto; padding:9px 14px;"><svg class="icon" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/></svg> Download CSV</button>
+          <button class="btn" id="printPdfReportBtn" style="width:auto; padding:9px 14px;"><svg class="icon" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 17v4h12v-4"/></svg> Print / Save PDF</button>
         </div>
         <div class="result-meta" id="reportRunStatus" style="margin-top:6px;"></div>
 
@@ -871,10 +879,10 @@
 <div class="view" id="view-controller">
   <div class="result-meta" id="ctrlShiftLabel" style="margin-bottom:8px;"></div>
   <div class="stat-grid">
-    <div class="stat-card"><div class="stat-label">Scans this shift</div><div class="stat-val" id="ctrlStatTotal">0</div></div>
-    <div class="stat-card"><div class="stat-label">Accepted this shift</div><div class="stat-val success" id="ctrlStatAccepted">0</div></div>
-    <div class="stat-card"><div class="stat-label">Active rejected</div><div class="stat-val danger" id="ctrlStatRejected">0</div></div>
-    <div class="stat-card"><div class="stat-label">Active position alerts</div><div class="stat-val warn" id="ctrlStatAlerts">0</div></div>
+    <div class="stat-card"><div class="stat-label"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M20 8V5a1 1 0 0 0-1-1h-3M4 16v3a1 1 0 0 0 1 1h3M20 16v3a1 1 0 0 1-1 1h-3M3 12h18"/></svg>Scans this shift</div><div class="stat-val" id="ctrlStatTotal">0</div></div>
+    <div class="stat-card"><div class="stat-label"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>Accepted this shift</div><div class="stat-val success" id="ctrlStatAccepted">0</div></div>
+    <div class="stat-card"><div class="stat-label"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>Active rejected</div><div class="stat-val danger" id="ctrlStatRejected">0</div></div>
+    <div class="stat-card"><div class="stat-label"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>Active position alerts</div><div class="stat-val warn" id="ctrlStatAlerts">0</div></div>
   </div>
 
   <div class="tabs" style="margin-bottom:16px; display:inline-flex;">
@@ -941,7 +949,7 @@
     <div class="panel">
       <h2>Live coverage</h2>
       <div class="result-meta" style="margin-bottom:6px;">Who's clocked in right now, per site and shift. Green border = fully staffed, red = short. Mark a guard absent if they're not coming in — a reliever can then clock in to cover them.</div>
-      <div class="btn-row"><button class="btn" id="refreshCoverageBtnCtrl" style="width:auto; padding:7px 14px;">↻ Refresh</button></div>
+      <div class="btn-row"><button class="btn" id="refreshCoverageBtnCtrl" style="width:auto; padding:7px 14px;"><svg class="icon" viewBox="0 0 24 24"><path d="M20 11A8 8 0 1 0 18.6 15.5"/><path d="M20 5v6h-6"/></svg> Refresh</button></div>
       <div class="coverage-grid" id="coverageGridCtrl"></div>
     </div>
     <div class="panel">
@@ -950,7 +958,7 @@
         <div class="f"><label>From</label><input type="date" id="attExportFromCtrl"></div>
         <div class="f"><label>To</label><input type="date" id="attExportToCtrl"></div>
       </div>
-      <div class="btn-row"><button class="btn btn-primary" id="exportAttendanceBtnCtrl" style="width:auto; padding:9px 14px;">⬇ Download CSV</button></div>
+      <div class="btn-row"><button class="btn btn-primary" id="exportAttendanceBtnCtrl" style="width:auto; padding:9px 14px;"><svg class="icon" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/></svg> Download CSV</button></div>
       <div class="result-meta" id="attExportStatusCtrl" style="margin-top:6px;"></div>
     </div>
   </div>
@@ -987,8 +995,8 @@
     </div>
 
     <div class="cp-row" id="siteMapModeRow" style="display:none; margin-top:12px;">
-      <button class="btn btn-primary" id="siteMapModePinBtn" style="width:auto; padding:7px 12px; font-size:11px;">📍 Move pin</button>
-      <button class="btn" id="siteMapModePerimeterBtn" style="width:auto; padding:7px 12px; font-size:11px;">⬠ Draw perimeter</button>
+      <button class="btn btn-primary" id="siteMapModePinBtn" style="width:auto; padding:7px 12px; font-size:11px;"><svg class="icon" viewBox="0 0 24 24"><path d="M12 22s7-6.3 7-12a7 7 0 1 0-14 0c0 5.7 7 12 7 12Z"/><circle cx="12" cy="10" r="2.3"/></svg> Move pin</button>
+      <button class="btn" id="siteMapModePerimeterBtn" style="width:auto; padding:7px 12px; font-size:11px;"><svg class="icon" viewBox="0 0 24 24"><path d="M9 3h6l5 8-5 10H9L4 11Z"/></svg> Draw perimeter</button>
     </div>
 
     <div id="siteMapBox" class="site-map-box" style="margin-top:12px;"></div>
@@ -1005,7 +1013,7 @@
     <div id="siteMapNoLocation" class="result-meta" style="margin-top:10px; display:none;">This site doesn't have a location set yet.</div>
     <div id="siteMapEditWrap" style="margin-top:12px; display:none;">
       <div class="cp-row">
-        <button class="btn" id="siteMapUseLocBtn" style="width:auto; padding:9px 14px;">📍 Use my location</button>
+        <button class="btn" id="siteMapUseLocBtn" style="width:auto; padding:9px 14px;"><svg class="icon" viewBox="0 0 24 24"><path d="M12 22s7-6.3 7-12a7 7 0 1 0-14 0c0 5.7 7 12 7 12Z"/><circle cx="12" cy="10" r="2.3"/></svg> Use my location</button>
         <span class="result-meta" id="siteMapEditStatus" style="align-self:center;"></span>
       </div>
       <div class="cp-row">
@@ -2679,7 +2687,7 @@ function redrawSitePerimeter(){
 
   if (sitePerimeterPoints.length){
     sitePerimeterPolygon = L.polygon(sitePerimeterPoints.map(p => [p.lat, p.lng]), {
-      color: '#4EA1FF', weight: 2, fillOpacity: 0.12
+      color: '#F5A623', weight: 2, fillOpacity: 0.12
     }).addTo(siteMapInstance);
 
     sitePerimeterPoints.forEach((p, i) => {
@@ -4136,6 +4144,9 @@ function renderCoverageGrid(containerId){
       <div class="coverage-tile ${covered ? 'covered' : 'short'}">
         <div class="coverage-tile-head">
           <span class="coverage-tile-site">${site ? site.name : '—'}</span>
+          <span style="display:inline-flex; align-items:center; gap:4px; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.3px; color:${covered ? 'var(--success)' : 'var(--danger)'};">
+            ${covered ? '<svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>Staffed' : '<svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>Short'}
+          </span>
         </div>
         <div class="coverage-tile-shift">${r.shift.name} · ${r.shift.startTime}–${r.shift.endTime}</div>
         <div class="coverage-tile-count">${r.onDuty.length} / ${r.shift.required} on duty</div>
@@ -4664,7 +4675,7 @@ let lastReportPositionAlerts = [];
 function svgStackedBarChart(rows){
   const w = 480, h = 220, padL = 30, padB = 30, padT = 10, padR = 10;
   const plotW = w - padL - padR, plotH = h - padT - padB;
-  const successColor = '#3FB878', warnColor = '#F0A020', dangerColor = '#E5484D', gridColor = '#3a4451', textColor = '#8B96A5';
+  const successColor = '#3FB878', warnColor = '#E8862A', dangerColor = '#E5484D', gridColor = '#33383C', textColor = '#8C9296';
   if (!rows.length){
     return `<svg viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto;"><text x="${w/2}" y="${h/2}" text-anchor="middle" font-size="12" fill="${textColor}" font-family="sans-serif">No resolved patrols in this range</text></svg>`;
   }
@@ -4695,11 +4706,11 @@ function svgStackedBarChart(rows){
 
 function svgDonutChart(onTime, late, missed){
   const size = 200, r = 74, cx = size/2, cy = size/2, strokeW = 26;
-  const successColor = '#3FB878', warnColor = '#F0A020', dangerColor = '#E5484D', mutedColor = '#8B96A5', textColor = '#E6EDF3';
+  const successColor = '#3FB878', warnColor = '#E8862A', dangerColor = '#E5484D', mutedColor = '#8C9296', textColor = '#EDEEEC';
   const total = onTime + late + missed;
   if (!total){
     return `<svg viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg" style="width:100%; max-width:200px;">
-      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#2A313C" stroke-width="${strokeW}"/>
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#2A2F33" stroke-width="${strokeW}"/>
       <text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="middle" font-size="11" fill="${mutedColor}" font-family="sans-serif">No data</text>
     </svg>`;
   }
@@ -5097,8 +5108,8 @@ document.getElementById('printPdfReportBtn').addEventListener('click', async () 
   </div>
 
   <div class="charts">
-    <div>${svgStackedBarChart(lastReportRows).replace(/fill="#8B96A5"/g, 'fill="#555"').replace(/stroke="#3a4451"/g, 'stroke="#ddd"')}</div>
-    <div>${svgDonutChart(s.onTime, s.late, s.missed).replace(/fill="#E6EDF3"/g, 'fill="#111"').replace(/fill="#8B96A5"/g, 'fill="#555"')}</div>
+    <div>${svgStackedBarChart(lastReportRows).replace(/fill="#8C9296"/g, 'fill="#555"').replace(/stroke="#33383C"/g, 'stroke="#ddd"')}</div>
+    <div>${svgDonutChart(s.onTime, s.late, s.missed).replace(/fill="#EDEEEC"/g, 'fill="#111"').replace(/fill="#8C9296"/g, 'fill="#555"')}</div>
   </div>
 
   <h2>By patrol / route</h2>
