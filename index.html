@@ -944,6 +944,9 @@
     <div class="panel">
       <h2>Sites</h2>
       <div class="result-meta" style="margin-bottom:10px;">Read-only — tap 🗺️ Map to see where a site is located.</div>
+      <div class="cp-row" style="margin-bottom:10px;">
+        <input type="text" id="ctrlSiteSearch" placeholder="Search sites by name or address…">
+      </div>
       <div class="table-scroll">
         <table>
           <thead><tr><th>Site</th><th>Address</th><th>Checkpoints</th><th>Routes</th><th></th></tr></thead>
@@ -1032,6 +1035,7 @@
     <div id="siteMapBox" class="site-map-box" style="margin-top:12px;"></div>
 
     <div class="result-meta" id="siteMapPinHint" style="margin-top:6px; display:none;">GPS can be a few metres off — drag the pin to the site's real entrance/position for accuracy.</div>
+    <div class="result-meta" id="siteMapReadOnlyNote" style="margin-top:6px; display:none; color:var(--muted);"><svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg> View only — the pin and perimeter are locked for controllers.</div>
 
     <div class="cp-row" id="sitePerimeterWrap" style="display:none; margin-top:8px;">
       <button class="btn" id="sitePerimeterUndoBtn" style="width:auto; padding:7px 12px; font-size:11px;">Undo last point</button>
@@ -2615,12 +2619,16 @@ function renderSiteTable(){
         <td>${cpCount}</td>
         <td>${routeCount}</td>
         <td style="display:flex; gap:6px;">
+          <button class="btn" data-map-site="${s.id}" style="width:auto; padding:5px 10px; font-size:11px;"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M9 20 3 17V4l6 3 6-3 6 3v13l-6-3-6 3Z"/><path d="M9 4v13M15 7v13"/></svg> Map</button>
           <button class="btn" data-manage-site="${s.id}" style="width:auto; padding:5px 10px; font-size:11px;">Manage</button>
           <button class="del-btn" data-del-site="${s.id}" aria-label="Delete site"><i>&times;</i></button>
         </td>
       </tr>
     `;
   }).join('');
+  body.querySelectorAll('[data-map-site]').forEach(btn => {
+    btn.addEventListener('click', () => openSiteMapModal(btn.dataset.mapSite));
+  });
   body.querySelectorAll('[data-manage-site]').forEach(btn => {
     btn.addEventListener('click', () => {
       setActiveSite(btn.dataset.manageSite);
@@ -2650,7 +2658,16 @@ function renderControllerSiteTable(){
     body.innerHTML = '<tr><td colspan="5" style="font-family:var(--sans); color:var(--muted);">No sites yet.</td></tr>';
     return;
   }
-  body.innerHTML = sites.map(s => {
+  const searchEl = document.getElementById('ctrlSiteSearch');
+  const q = searchEl ? searchEl.value.trim().toLowerCase() : '';
+  const filtered = q
+    ? sites.filter(s => (s.name || '').toLowerCase().includes(q) || (s.address || '').toLowerCase().includes(q))
+    : sites;
+  if (filtered.length === 0){
+    body.innerHTML = '<tr><td colspan="5" style="font-family:var(--sans); color:var(--muted);">No sites match your search.</td></tr>';
+    return;
+  }
+  body.innerHTML = filtered.map(s => {
     const cpCount = checkpoints.filter(c => c.siteId === s.id).length;
     const routeCount = routes.filter(r => r.siteId === s.id).length;
     return `
@@ -2673,6 +2690,7 @@ function renderControllerSiteTable(){
     btn.addEventListener('click', () => openCtrlSiteDetailModal(btn.dataset.detailSite));
   });
 }
+document.getElementById('ctrlSiteSearch').addEventListener('input', renderControllerSiteTable);
 
 // ---------------- Controller: site detail modal (contacts, home guards, vehicles) ----------------
 async function openCtrlSiteDetailModal(siteId){
@@ -2754,6 +2772,7 @@ async function openSiteMapModal(siteId){
   document.getElementById('siteMapBox').style.display = hasLoc ? 'block' : 'none';
   document.getElementById('siteMapModeRow').style.display = (hasLoc && isAdmin) ? 'flex' : 'none';
   document.getElementById('siteMapPinHint').style.display = (hasLoc && isAdmin) ? 'block' : 'none';
+  document.getElementById('siteMapReadOnlyNote').style.display = (hasLoc && !isAdmin) ? 'block' : 'none';
   document.getElementById('sitePerimeterWrap').style.display = 'none';
   document.getElementById('sitePerimeterStatus').style.display = 'none';
   document.getElementById('siteMapModalBg').classList.add('show');
@@ -3048,7 +3067,7 @@ function renderSiteContacts(){
       if (!confirm(`Remove ${c ? c.name : 'this contact'}?`)) return;
       const { error } = await sb.from('site_contacts').delete().eq('id', id);
       if (error){ showToast('Could not remove contact', error.message, 'danger'); return; }
-      await loadSiteContactsFor(siteMapCurrentSiteId);
+      await loadSiteContactsFor(activeSiteId);
       renderSiteContacts();
     });
   });
@@ -3060,15 +3079,16 @@ document.getElementById('addSiteContactBtn').addEventListener('click', async () 
   const phone = document.getElementById('newContactPhone').value.trim();
   const email = document.getElementById('newContactEmail').value.trim();
   if (!name || !role){ showToast('Name and role are required', '', 'warn'); return; }
+  if (!activeSiteId){ showToast('Select a site first', '', 'warn'); return; }
   const { error } = await sb.from('site_contacts').insert({
-    site_id: siteMapCurrentSiteId, name, role, phone: phone || null, email: email || null
+    site_id: activeSiteId, name, role, phone: phone || null, email: email || null
   });
   if (error){ showToast('Could not add contact', error.message, 'danger'); return; }
   document.getElementById('newContactName').value = '';
   document.getElementById('newContactRole').value = '';
   document.getElementById('newContactPhone').value = '';
   document.getElementById('newContactEmail').value = '';
-  await loadSiteContactsFor(siteMapCurrentSiteId);
+  await loadSiteContactsFor(activeSiteId);
   renderSiteContacts();
 });
 
