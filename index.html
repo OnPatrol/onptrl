@@ -803,8 +803,8 @@
         </div>
         <div class="table-scroll">
           <table>
-            <thead><tr><th>Name</th><th>Employee #</th><th>Email</th><th>Role</th><th>Site</th><th>Joined</th><th></th></tr></thead>
-            <tbody id="usersTableBody"><tr><td colspan="7" style="font-family:var(--sans); color:var(--muted);">Loading…</td></tr></tbody>
+            <thead><tr><th>Name</th><th>Employee #</th><th>Phone</th><th>Email</th><th>Role</th><th>Site</th><th>Joined</th><th></th></tr></thead>
+            <tbody id="usersTableBody"><tr><td colspan="8" style="font-family:var(--sans); color:var(--muted);">Loading…</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -1203,6 +1203,9 @@
     <div id="authFullNameWrap" style="display:none;">
       <div class="field-label">Full name</div>
       <input type="text" id="authFullName" placeholder="Jane Guard">
+      <div class="field-label">Phone number</div>
+      <input type="tel" id="authPhone" placeholder="e.g. 082 123 4567" autocomplete="tel">
+      <div class="result-meta" style="margin-top:2px;">So admins and controllers can reach you if there's an issue on shift.</div>
     </div>
 
     <div id="authRoleWrap" style="display:none;">
@@ -1278,6 +1281,14 @@ function setActiveSite(id){
 }
 
 function nowMs(){ return Date.now(); }
+// A "valid" phone number here just means enough digits to actually be
+// reachable on — 9 is the shortest real mobile number length (SA numbers
+// without a country code), and it still accepts +country-code formats,
+// spaces, dashes, and parentheses.
+function isValidPhone(val){
+  const digits = (val || '').replace(/\D/g, '');
+  return digits.length >= 9 && digits.length <= 15;
+}
 
 // ---------------- Sound notifications ----------------
 let soundOn = true;
@@ -1592,6 +1603,23 @@ function currentShiftDateFor(shift, atMs){
   if (at >= yStart && at < yEnd) return ymd(yStart);
   return ymd(todayStart);
 }
+// Is "now" actually inside this shift's own window (handles shifts that
+// cross midnight, like Night Shift 18:00-06:00)? Used so Day Shift and Night
+// Shift tiles don't both show around the clock — each only appears while
+// its own hours are running.
+function isShiftActiveAt(shift, atMs){
+  const at = new Date(atMs);
+  const [sh, sm] = shift.startTime.split(':').map(Number);
+  const [eh, em] = shift.endTime.split(':').map(Number);
+  const crossesMidnight = (eh*60 + em) <= (sh*60 + sm);
+  const todayStart = new Date(at); todayStart.setHours(sh, sm, 0, 0);
+  const todayEnd = new Date(at); todayEnd.setHours(eh, em, 0, 0);
+  if (crossesMidnight) todayEnd.setDate(todayEnd.getDate() + 1);
+  if (at >= todayStart && at < todayEnd) return true;
+  const yStart = new Date(todayStart); yStart.setDate(yStart.getDate() - 1);
+  const yEnd = new Date(todayEnd); yEnd.setDate(yEnd.getDate() - 1);
+  return at >= yStart && at < yEnd;
+}
 function shiftEndMsFor(shift, shiftDate){
   const [y,m,d] = shiftDate.split('-').map(Number);
   const [sh, sm] = shift.startTime.split(':').map(Number);
@@ -1621,7 +1649,7 @@ async function loadInviteCodes(){
   body.innerHTML = data.map(row => `
     <tr>
       <td>${row.code}</td>
-      <td>${new Date(row.created_at).toLocaleString()}</td>
+      <td>${new Date(row.created_at).toLocaleString([], { hour12: false })}</td>
       <td>${row.used_by ? `<span class="badge rejected">Used</span>` : `<span class="badge accepted">Unused</span>`}</td>
     </tr>
   `).join('');
@@ -1666,7 +1694,7 @@ async function loadControllerInviteCodes(){
   body.innerHTML = data.map(row => `
     <tr>
       <td>${row.code}</td>
-      <td>${new Date(row.created_at).toLocaleString()}</td>
+      <td>${new Date(row.created_at).toLocaleString([], { hour12: false })}</td>
       <td>${row.used_by ? `<span class="badge rejected">Used</span>` : `<span class="badge accepted">Unused</span>`}</td>
     </tr>
   `).join('');
@@ -1738,7 +1766,7 @@ function renderUsersTable(){
   const body = document.getElementById('usersTableBody');
   if (!body) return;
   if (!allUsers.length){
-    body.innerHTML = '<tr><td colspan="7" style="font-family:var(--sans); color:var(--muted);">No users yet.</td></tr>';
+    body.innerHTML = '<tr><td colspan="8" style="font-family:var(--sans); color:var(--muted);">No users yet.</td></tr>';
     return;
   }
   const searchEl = document.getElementById('userSearch');
@@ -1748,11 +1776,12 @@ function renderUsersTable(){
     return (u.full_name || '').toLowerCase().includes(q)
       || (u.email || '').toLowerCase().includes(q)
       || (u.employee_number || '').toLowerCase().includes(q)
+      || (u.phone || '').toLowerCase().includes(q)
       || (u.role || '').toLowerCase().includes(q)
       || (site ? site.name.toLowerCase().includes(q) : false);
   }) : allUsers;
   if (!filtered.length){
-    body.innerHTML = '<tr><td colspan="7" style="font-family:var(--sans); color:var(--muted);">No users match.</td></tr>';
+    body.innerHTML = '<tr><td colspan="8" style="font-family:var(--sans); color:var(--muted);">No users match.</td></tr>';
     return;
   }
   const sorted = filtered.slice().sort((a,b) => (a.full_name || a.email).localeCompare(b.full_name || b.email));
@@ -1763,6 +1792,7 @@ function renderUsersTable(){
       <tr>
         <td style="font-family:var(--sans); font-weight:600;">${u.full_name || '—'}</td>
         <td>${u.role === 'guard' ? `<input type="text" data-emp-num="${u.id}" value="${(u.employee_number || '').replace(/"/g,'&quot;')}" placeholder="—" style="width:90px; padding:5px 7px; font-size:11px;">` : '<span class="result-meta">—</span>'}</td>
+        <td><input type="tel" data-phone="${u.id}" value="${(u.phone || '').replace(/"/g,'&quot;')}" placeholder="—" style="width:120px; padding:5px 7px; font-size:11px;"></td>
         <td style="font-family:var(--sans); color:var(--muted);">${u.email}</td>
         <td>${u.role || '—'}</td>
         <td style="font-family:var(--sans);">${site ? site.name : '—'}</td>
@@ -1784,6 +1814,23 @@ function renderUsersTable(){
       const u = allUsers.find(x => x.id === input.dataset.empNum);
       if (u) u.employee_number = val || null;
       showToast('Employee number saved', '', 'success');
+    });
+  });
+
+  body.querySelectorAll('[data-phone]').forEach(input => {
+    input.addEventListener('change', async () => {
+      const val = input.value.trim();
+      if (val && !isValidPhone(val)){
+        showToast('Could not save phone number', 'Enter a valid phone number (at least 9 digits), or leave it blank.', 'danger');
+        const u = allUsers.find(x => x.id === input.dataset.phone);
+        input.value = (u && u.phone) || '';
+        return;
+      }
+      const { error } = await sb.from('profiles').update({ phone: val || null }).eq('id', input.dataset.phone);
+      if (error){ showToast('Could not save phone number', error.message, 'danger'); return; }
+      const u = allUsers.find(x => x.id === input.dataset.phone);
+      if (u) u.phone = val || null;
+      showToast('Phone number saved', '', 'success');
     });
   });
 
@@ -1922,6 +1969,18 @@ document.getElementById('authSubmitBtn').addEventListener('click', async () => {
     errEl.style.display = 'block';
     return;
   }
+  if (authMode === 'signup' && !document.getElementById('authPhone').value.trim()){
+    errEl.textContent = 'A phone number is required so admins and controllers can reach you.';
+    errEl.style.color = 'var(--danger)';
+    errEl.style.display = 'block';
+    return;
+  }
+  if (authMode === 'signup' && !isValidPhone(document.getElementById('authPhone').value)){
+    errEl.textContent = 'Enter a valid phone number (at least 9 digits).';
+    errEl.style.color = 'var(--danger)';
+    errEl.style.display = 'block';
+    return;
+  }
   if (authMode === 'signup' && authSignupRole === 'admin' && !document.getElementById('authInviteCode').value.trim()){
     errEl.textContent = 'An admin invite code is required to sign up as an admin.';
     errEl.style.color = 'var(--danger)';
@@ -1945,13 +2004,20 @@ document.getElementById('authSubmitBtn').addEventListener('click', async () => {
   try{
     if (authMode === 'signup'){
       const fullName = document.getElementById('authFullName').value.trim();
+      const phone = document.getElementById('authPhone').value.trim();
       const wantsAdmin = authSignupRole === 'admin';
       const wantsController = authSignupRole === 'controller';
       const inviteCode = document.getElementById('authInviteCode').value.trim();
       const controllerCode = document.getElementById('authControllerCode').value.trim();
       const siteCode = document.getElementById('authSiteCode').value.trim();
-      const { data, error } = await sb.auth.signUp({ email, password, options: { data: { full_name: fullName } } });
+      const { data, error } = await sb.auth.signUp({ email, password, options: { data: { full_name: fullName, phone } } });
       if (error) throw error;
+
+      if (data.session){
+        // Belt-and-suspenders: write phone straight to the profile row too, in case
+        // the account-creation trigger only reads full_name from signup metadata.
+        await sb.from('profiles').update({ phone }).eq('id', data.session.user.id);
+      }
 
       if (wantsAdmin && data.session){
         const { data: claimed, error: claimErr } = await sb.rpc('claim_admin', { p_code: inviteCode });
@@ -2191,6 +2257,8 @@ async function loadProfileAndApp(){
       sweepAutoClearGreens();
       renderNotifications();
       renderLog(); // re-filters to the current shift, in case the shift boundary just passed
+      renderCoverageGrid('coverageGridAdmin'); // so Day/Night tiles swap automatically at shift boundaries
+      renderCoverageGrid('coverageGridCtrl');
     }, 30000);
   }
 }
@@ -2382,7 +2450,7 @@ function isDayShift(atMs){
   return h >= 6 && h < 18;
 }
 function fmtClock(atMs){
-  return new Date(atMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return new Date(atMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 function currentShiftStart(atMs){
   const d = new Date(atMs);
@@ -2438,7 +2506,7 @@ function renderLog(){
     ? '<div class="empty">No scans yet this shift.</div>'
     : shiftScans.slice().reverse().slice(0, 200).map(s => {
       const ok = s.result === 'ACCEPTED';
-      const time = new Date(s.timestamp).toLocaleTimeString();
+      const time = new Date(s.timestamp).toLocaleTimeString([], { hour12: false });
       const site = sites.find(x => x.id === s.siteId);
       return `
         <div class="log-entry">
@@ -2724,7 +2792,7 @@ async function openCtrlSiteDetailModal(siteId){
     <div class="site-contact-row">
       <div style="flex:1; min-width:0;">
         <div class="site-contact-name">${g.full_name || 'Guard'}</div>
-        <div class="result-meta">${g.employee_number ? '#' + g.employee_number : 'No employee number set'}</div>
+        <div class="result-meta">${g.employee_number ? '#' + g.employee_number : 'No employee number set'}${g.phone ? ' · ' + g.phone : ''}</div>
       </div>
     </div>`).join('') : '<div class="result-meta">No guards assigned to this site yet.</div>';
 
@@ -2973,7 +3041,7 @@ async function renderManageSiteGuards(){
         <div class="site-contact-row">
           <div style="flex:1; min-width:0;">
             <div class="site-contact-name">${g.full_name || 'Guard'}</div>
-            <div class="result-meta">${g.employee_number ? '#' + g.employee_number : 'No employee number set'}</div>
+            <div class="result-meta">${g.employee_number ? '#' + g.employee_number : 'No employee number set'}${g.phone ? ' · ' + g.phone : ''}</div>
           </div>
         </div>`).join('')
     : '<div class="result-meta">No guards assigned to this site yet.</div>';
@@ -3133,7 +3201,17 @@ function isGreenExpired(n){
 function notifContextLine(n, site){
   const parts = [];
   if (site) parts.push(site.name);
-  if (n.detail) parts.push(n.detail);
+  const rawDetail = (n.detail || '').trim();
+  if (n.kind === 'radius_alert'){
+    // Position alerts specifically promise a distance/reason — never let one
+    // through showing just the site name again with nothing else, whether
+    // that's from stale data or a future write that forgot to fill it in.
+    const siteName = site ? site.name : '';
+    const isUninformative = !rawDetail || rawDetail === '—' || rawDetail.toLowerCase() === siteName.toLowerCase();
+    parts.push(isUninformative ? 'No distance recorded for this alert' : rawDetail);
+  } else if (rawDetail){
+    parts.push(rawDetail);
+  }
   return parts.join(' · ');
 }
 
@@ -3339,10 +3417,10 @@ function openPatrolDetail(instId){
     .sort((a,b) => a.timestamp - b.timestamp);
 
   document.getElementById('patrolDetailTitle').textContent =
-    `${r ? r.name : '—'} · ${new Date(inst.expectedTime).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}`;
+    `${r ? r.name : '—'} · ${new Date(inst.expectedTime).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', hour12: false})}`;
   document.getElementById('patrolDetailSub').innerHTML =
     `<span class="status-pill ${st.status}">${statusLabel(st.status)}</span>
-     <span class="result-meta">${st.doneCps.length}/${st.totalCps} checkpoints · ${r && r.strictOrder ? 'strict order' : 'flexible order'} · ${inst.durationMinutes}m duration + ${inst.graceMinutes}m grace, concludes ${new Date(st.concludeAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>`;
+     <span class="result-meta">${st.doneCps.length}/${st.totalCps} checkpoints · ${r && r.strictOrder ? 'strict order' : 'flexible order'} · ${inst.durationMinutes}m duration + ${inst.graceMinutes}m grace, concludes ${new Date(st.concludeAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12: false})}</span>`;
 
   const sequenceHtml = st.cpIds.map((id, i) => {
     const done = st.doneCps.includes(id);
@@ -3358,7 +3436,7 @@ function openPatrolDetail(instId){
     if (s.result === 'REJECTED_OUT_OF_ORDER' && s.expectedQrId) detailBits.push(`expected ${s.expectedQrId} next`);
     return `
       <tr>
-        <td>${new Date(s.timestamp).toLocaleTimeString()}</td>
+        <td>${new Date(s.timestamp).toLocaleTimeString([], { hour12: false })}</td>
         <td style="font-family:var(--sans);">${s.qrId} — ${s.cpName || 'unknown'}</td>
         <td><span class="badge ${ok ? 'accepted' : 'rejected'}">${s.result.replace('REJECTED_','').replace(/_/g,' ')}</span>${lateFlag}</td>
         <td class="progress-mini">${detailBits.join(' · ') || '—'}</td>
@@ -3398,7 +3476,7 @@ function renderPatrolLists(upWrapId, pastBodyId){
           <div class="log-bar ${st.status === 'due_soon' ? 'rejected' : 'accepted'}"></div>
           <div class="log-main">
             <div class="log-top">
-              <span>${r ? r.name : '—'} · ${new Date(inst.expectedTime).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span>
+              <span>${r ? r.name : '—'} · ${new Date(inst.expectedTime).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit', hour12: false})}</span>
               <span class="status-pill ${st.status}">${statusLabel(st.status)}</span>
             </div>
             <div class="log-sub">${fmtCountdown(inst.expectedTime - now)} · ${st.doneCps.length}/${st.totalCps} checkpoints</div>
@@ -3420,7 +3498,7 @@ function renderPatrolLists(upWrapId, pastBodyId){
       const st = instanceStatus(inst, now);
       return `
         <tr data-patrol-detail="${inst.id}">
-          <td>${new Date(inst.expectedTime).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</td>
+          <td>${new Date(inst.expectedTime).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', hour12: false})}</td>
           <td style="font-family:var(--sans);">${r ? r.name : '—'}</td>
           <td class="progress-mini">${st.doneCps.length}/${st.totalCps}</td>
           <td><span class="status-pill ${st.status}">${statusLabel(st.status)}</span></td>
@@ -3504,7 +3582,7 @@ function renderGuardPatrolCard(){
   const countdownEl = document.getElementById('guardPatrolCountdown');
   const diff = inst.expectedTime - now;
   countdownEl.textContent = diff > 0
-    ? `Next patrol ${fmtCountdown(diff)} (${new Date(inst.expectedTime).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})})`
+    ? `Next patrol ${fmtCountdown(diff)} (${new Date(inst.expectedTime).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit', hour12: false})})`
     : `Started ${fmtCountdown(diff)} ago`;
   countdownEl.className = 'patrol-countdown ' + (st.status === 'missed' ? 'danger' : st.status === 'grace' ? 'warn' : st.status === 'due_soon' ? 'warn' : st.status === 'active' ? 'ok' : '');
 
@@ -3530,7 +3608,7 @@ function checkGuardNotifications(){
   if (now >= inst.expectedTime - 5*60000 && now < inst.expectedTime && !notifiedFiveMin.has(inst.id)){
     notifiedFiveMin.add(inst.id);
     SOUND.fiveMinWarning();
-    showToast('Patrol in 5 minutes', new Date(inst.expectedTime).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}), 'warn');
+    showToast('Patrol in 5 minutes', new Date(inst.expectedTime).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit', hour12: false}), 'warn');
   }
   if (now >= inst.expectedTime && !notifiedStart.has(inst.id)){
     notifiedStart.add(inst.id);
@@ -3686,9 +3764,10 @@ async function processScan(qrId){
   // best-effort and never blocks the scan itself if it fails to save.
   if (result === 'REJECTED_OUT_OF_RANGE' || result === 'REJECTED_NO_LOCATION'){
     const patrolTime = fmtClock(dutyInfo.inst.expectedTime);
+    const scanTime = fmtClock(Date.now());
     const baseDetail = result === 'REJECTED_OUT_OF_RANGE'
-      ? `${patrolTime} patrol · Scanned ${Math.round(distance)}m away from ${cp.name}'s assigned position (outside its ${cp.radius}m radius)`
-      : `${patrolTime} patrol · Guard's location wasn't available while scanning ${cp.name}`;
+      ? `Patrol scheduled for ${patrolTime} · Tag scanned at ${scanTime}, ${Math.round(distance)}m away from ${cp.name}'s assigned position (outside its ${cp.radius}m radius)`
+      : `Patrol scheduled for ${patrolTime} · No location was detected when the tag was scanned at ${scanTime} (${cp.name})`;
 
     // Alert Settings' escalation threshold, made real: count this guard's
     // location-related rejections at this site since the shift began (the
@@ -3752,7 +3831,7 @@ function showResult(record){
     title.textContent = `Rejected — ${reasons[record.result] || (record.saveFailed ? 'Could not save scan' : record.result)}`;
   }
   const site = sites.find(x => x.id === record.siteId);
-  meta.innerHTML = `site: ${site ? site.name : 'n/a'}<br>qrId: ${record.qrId}<br>distance: ${record.distance != null ? record.distance.toFixed(1)+'m' : 'n/a'}<br>time: ${new Date(record.timestamp).toLocaleTimeString()}`;
+  meta.innerHTML = `site: ${site ? site.name : 'n/a'}<br>qrId: ${record.qrId}<br>distance: ${record.distance != null ? record.distance.toFixed(1)+'m' : 'n/a'}<br>time: ${new Date(record.timestamp).toLocaleTimeString([], { hour12: false })}`;
 }
 
 // ---------------- Guard view interactions ----------------
@@ -3981,7 +4060,7 @@ function renderAttendanceCard(){
     const shift = siteShifts.find(s => s.id === myAttendance.shiftId);
     pill.className = 'attendance-status-pill ' + (myAttendance.isReliever ? 'reliever' : 'on');
     pill.textContent = myAttendance.isReliever ? 'On duty (reliever)' : 'On duty';
-    detail.textContent = `${site ? site.name : '—'} · ${shift ? shift.name : '—'} · since ${new Date(myAttendance.clockInAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}`;
+    detail.textContent = `${site ? site.name : '—'} · ${shift ? shift.name : '—'} · since ${new Date(myAttendance.clockInAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12: false})}`;
     clockInWrap.style.display = 'none';
     clockOutWrap.style.display = 'block';
     const shiftEnd = shift ? shiftEndMsFor(shift, myAttendance.shiftDate) : 0;
@@ -3989,7 +4068,7 @@ function renderAttendanceCard(){
     document.getElementById('attendanceClockOutBtn').disabled = !canClockOut;
     document.getElementById('attendanceClockOutNote').textContent = canClockOut
       ? 'Shift has ended — you can clock out.'
-      : `Clock-out unlocks at ${new Date(shiftEnd).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} (end of shift).`;
+      : `Clock-out unlocks at ${new Date(shiftEnd).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12: false})} (end of shift).`;
   } else {
     pill.className = 'attendance-status-pill off';
     pill.textContent = 'Not clocked in';
@@ -4030,7 +4109,7 @@ async function renderTeammatesCard(){
         <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--border);">
           <div>
             <div style="font-family:var(--sans); font-weight:600; font-size:12.5px;">${g.full_name}</div>
-            <div class="result-meta">On duty · ${shift ? shift.name : '—'} · since ${new Date(att.clockInAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
+            <div class="result-meta">On duty · ${shift ? shift.name : '—'} · since ${new Date(att.clockInAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12: false})}</div>
           </div>
           <button class="btn" style="width:auto; padding:5px 10px; font-size:11px;" data-teammate-clockout="${att.id}" data-teammate-shift="${att.shiftId}" data-teammate-shiftdate="${att.shiftDate}">Clock out</button>
         </div>`;
@@ -4108,7 +4187,7 @@ async function clockOutTeammate(attendanceId, shiftId, shiftDate){
   const shift = siteShifts.find(s => s.id === shiftId);
   const shiftEnd = shift ? shiftEndMsFor(shift, shiftDate) : 0;
   if (nowMs() < shiftEnd){
-    errEl.textContent = `Clock-out unlocks at ${new Date(shiftEnd).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} (end of shift).`;
+    errEl.textContent = `Clock-out unlocks at ${new Date(shiftEnd).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12: false})} (end of shift).`;
     errEl.style.display = 'block';
     return;
   }
@@ -4251,7 +4330,14 @@ function shiftInstancesForRender(){
     const onDuty = attendance.filter(a => a.shiftId === shift.id && a.shiftDate === shiftDate && a.status === 'on_duty');
     const openAbsences = absences.filter(a => a.shiftId === shift.id && a.shiftDate === shiftDate && !a.coveredByAttendanceId);
     return { shift, shiftDate, onDuty, openAbsences };
-  }).sort((a,b) => {
+  }).filter(r =>
+    // Only show a shift's tile while its own hours are actually running —
+    // Day Shift (06:00-18:00) and Night Shift (18:00-06:00) coexist without
+    // stepping on each other. Exception: if someone is still clocked in past
+    // their shift's end (running over), keep showing it so they don't get
+    // lost until they're clocked out.
+    isShiftActiveAt(r.shift, now) || r.onDuty.length > 0
+  ).sort((a,b) => {
     const sa = sites.find(s => s.id === a.shift.siteId), sb2 = sites.find(s => s.id === b.shift.siteId);
     return (sa ? sa.name : '').localeCompare(sb2 ? sb2.name : '');
   });
@@ -4261,7 +4347,11 @@ function renderCoverageGrid(containerId){
   const el = document.getElementById(containerId);
   if (!el) return;
   const rows = shiftInstancesForRender();
-  if (!rows.length){ el.innerHTML = '<div class="result-meta">No shifts configured yet — set up shift staffing first.</div>'; return; }
+  if (!rows.length){
+    const anyShifts = siteShifts.some(s => s.active);
+    el.innerHTML = `<div class="result-meta">${anyShifts ? 'No shift is currently running — check back when a shift starts.' : 'No shifts configured yet — set up shift staffing first.'}</div>`;
+    return;
+  }
   el.innerHTML = rows.map(r => {
     const site = sites.find(s => s.id === r.shift.siteId);
     const covered = r.onDuty.length >= r.shift.required;
@@ -4377,7 +4467,7 @@ async function exportAttendanceCsv(fromStr, toStr, statusElId, btn){
       const coveringG = r.covering_guard_id ? dir.find(x => x.id === r.covering_guard_id) : null;
       csvRows.push([
         g?.employee_number || '', g?.full_name || '', site ? site.name : '', shift ? shift.name : '',
-        r.shift_date, new Date(r.clock_in_at).toLocaleString(), r.clock_out_at ? new Date(r.clock_out_at).toLocaleString() : '',
+        r.shift_date, new Date(r.clock_in_at).toLocaleString([], { hour12: false }), r.clock_out_at ? new Date(r.clock_out_at).toLocaleString([], { hour12: false }) : '',
         r.is_reliever ? 'Yes' : 'No', coveringG ? (coveringG.full_name || '') : ''
       ]);
     });
@@ -4982,8 +5072,8 @@ function renderReport(){
 
   const detailBody = document.getElementById('reportDetailBody');
   detailBody.innerHTML = lastReportDetail.length ? lastReportDetail.map(d => {
-    const cpText = d.checkpoints.map(cp => `${escapeHtmlForPrint(cp.name)} — ${cp.scannedAt != null ? new Date(cp.scannedAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : 'not scanned'}`).join('<br>');
-    return `<tr><td style="font-family:var(--sans);">${escapeHtmlForPrint(d.siteName)}</td><td style="font-family:var(--sans);">${escapeHtmlForPrint(d.routeName)}</td><td>${new Date(d.expectedTime).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</td><td>${statusLabel(d.status)}</td><td style="font-family:var(--sans);">${cpText}</td></tr>`;
+    const cpText = d.checkpoints.map(cp => `${escapeHtmlForPrint(cp.name)} — ${cp.scannedAt != null ? new Date(cp.scannedAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12: false}) : 'not scanned'}`).join('<br>');
+    return `<tr><td style="font-family:var(--sans);">${escapeHtmlForPrint(d.siteName)}</td><td style="font-family:var(--sans);">${escapeHtmlForPrint(d.routeName)}</td><td>${new Date(d.expectedTime).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', hour12: false})}</td><td>${statusLabel(d.status)}</td><td style="font-family:var(--sans);">${cpText}</td></tr>`;
   }).join('') : '<tr><td colspan="5" style="font-family:var(--sans); color:var(--muted);">No resolved patrols in this range.</td></tr>';
 
   renderReportCharts();
@@ -5040,10 +5130,11 @@ async function loadAndRenderPositionAlerts(){
       when: n.occurred_at,
       site: siteName,
       title: n.title,
-      // The distance/reason is spelled out here when available — e.g. "04:45 AM
-      // patrol · Scanned 20m away from Gate's assigned position (outside its 15m
-      // radius)" — this is what actually answers "how far off, and from which
-      // checkpoint," not just that an alert fired.
+      // The distance/reason is spelled out here when available — e.g. "Patrol
+      // scheduled for 04:45 · Tag scanned at 04:52, 20m away from Gate's
+      // assigned position (outside its 15m radius)" — this is what actually
+      // answers "how far off, from which checkpoint, and at what time," not
+      // just that an alert fired.
       detail: isUninformative ? 'No distance recorded for this alert' : rawDetail,
       severity: n.severity
     };
@@ -5053,7 +5144,7 @@ async function loadAndRenderPositionAlerts(){
   if (!body) return;
   body.innerHTML = rows.length ? rows.map(r => `
     <tr>
-      <td>${new Date(r.when).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</td>
+      <td>${new Date(r.when).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', hour12: false})}</td>
       <td style="font-family:var(--sans);">${escapeHtmlForPrint(r.site)}</td>
       <td style="font-family:var(--sans);"><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${severityColor(r.severity)}; margin-right:6px;"></span>${escapeHtmlForPrint(r.title)}</td>
       <td style="font-family:var(--sans);">${escapeHtmlForPrint(r.detail)}</td>
@@ -5108,7 +5199,7 @@ async function loadAndRenderControllerComments(){
   // ever be able to blank out or break the row that's supposed to show it.
   body.innerHTML = rows.map(r => `
     <tr>
-      <td>${new Date(r.when).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</td>
+      <td>${new Date(r.when).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', hour12: false})}</td>
       <td style="font-family:var(--sans);">${escapeHtmlForPrint(r.site)}</td>
       <td style="font-family:var(--sans);"><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${severityColor(r.severity)}; margin-right:6px;"></span>${escapeHtmlForPrint(r.title)}</td>
       <td style="font-family:var(--sans);">${escapeHtmlForPrint(r.body)}</td>
@@ -5170,16 +5261,16 @@ document.getElementById('printPdfReportBtn').addEventListener('click', async () 
     }).join('') || '<tr><td colspan="7" class="empty-row">No resolved patrols in this range.</td></tr>';
 
     const detailRows = lastReportDetail.map(d => {
-      const cpText = d.checkpoints.map(cp => `${escapeHtmlForPrint(cp.name)} — ${cp.scannedAt != null ? new Date(cp.scannedAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : 'not scanned'}`).join('<br>');
-      return `<tr><td>${escapeHtmlForPrint(d.siteName)}</td><td>${escapeHtmlForPrint(d.routeName)}</td><td>${new Date(d.expectedTime).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</td><td>${statusLabel(d.status)}</td><td>${cpText}</td></tr>`;
+      const cpText = d.checkpoints.map(cp => `${escapeHtmlForPrint(cp.name)} — ${cp.scannedAt != null ? new Date(cp.scannedAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12: false}) : 'not scanned'}`).join('<br>');
+      return `<tr><td>${escapeHtmlForPrint(d.siteName)}</td><td>${escapeHtmlForPrint(d.routeName)}</td><td>${new Date(d.expectedTime).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', hour12: false})}</td><td>${statusLabel(d.status)}</td><td>${cpText}</td></tr>`;
     }).join('') || '<tr><td colspan="5" class="empty-row">No resolved patrols in this range.</td></tr>';
 
     const positionAlertRows = lastReportPositionAlerts.map(a => `
-      <tr><td>${new Date(a.when).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</td><td>${escapeHtmlForPrint(a.site)}</td><td>${escapeHtmlForPrint(a.title)}</td><td>${escapeHtmlForPrint(a.detail)}</td></tr>
+      <tr><td>${new Date(a.when).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', hour12: false})}</td><td>${escapeHtmlForPrint(a.site)}</td><td>${escapeHtmlForPrint(a.title)}</td><td>${escapeHtmlForPrint(a.detail)}</td></tr>
     `).join('') || '<tr><td colspan="4" class="empty-row">No position alerts in this range.</td></tr>';
 
     const commentRows = lastReportComments.map(c => `
-      <tr><td>${new Date(c.when).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</td><td>${escapeHtmlForPrint(c.site)}</td><td>${escapeHtmlForPrint(c.title)}</td><td>${escapeHtmlForPrint(c.body)}</td><td>${escapeHtmlForPrint(c.author)}</td></tr>
+      <tr><td>${new Date(c.when).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', hour12: false})}</td><td>${escapeHtmlForPrint(c.site)}</td><td>${escapeHtmlForPrint(c.title)}</td><td>${escapeHtmlForPrint(c.body)}</td><td>${escapeHtmlForPrint(c.author)}</td></tr>
     `).join('') || '<tr><td colspan="5" class="empty-row">No commented alerts in this range.</td></tr>';
 
     const win = window.open('', '_blank');
@@ -5224,7 +5315,7 @@ document.getElementById('printPdfReportBtn').addEventListener('click', async () 
     ${logoSrc ? `<img src="${logoSrc}" alt="OnPatrol">` : ''}
     <div>
       <h1>Patrol Report</h1>
-      <div class="meta">Site: ${escapeHtmlForPrint(siteLabel)} &nbsp;•&nbsp; ${from} to ${to} &nbsp;•&nbsp; Generated ${new Date().toLocaleString()}</div>
+      <div class="meta">Site: ${escapeHtmlForPrint(siteLabel)} &nbsp;•&nbsp; ${from} to ${to} &nbsp;•&nbsp; Generated ${new Date().toLocaleString([], { hour12: false })}</div>
     </div>
   </div>
 
