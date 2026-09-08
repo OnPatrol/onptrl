@@ -1145,9 +1145,18 @@
     <h2 style="margin:0 0 4px; font-size:16px;">Claim admin access</h2>
     <div class="result-meta" style="margin-bottom:14px;">Enter the admin invite code you were given.</div>
     <div id="claimAdminError" class="result-meta" style="color:var(--danger); display:none; margin-bottom:10px; font-family:var(--sans);"></div>
+    <div class="result-meta" style="margin-bottom:8px; text-align:right; font-family:var(--sans);">
+      <a href="#" id="claimAdminModeToggle" style="color:var(--accent); text-decoration:none;">First admin? Create your company instead</a>
+    </div>
 
-    <div class="field-label" style="margin-top:0;">Admin invite code</div>
-    <input type="text" id="claimAdminCode" placeholder="Invite code">
+    <div id="claimAdminCodeSub">
+      <div class="field-label" style="margin-top:0;">Admin invite code</div>
+      <input type="text" id="claimAdminCode" placeholder="Invite code">
+    </div>
+    <div id="claimAdminCreateOrgSub" style="display:none;">
+      <div class="field-label" style="margin-top:0;">Company name</div>
+      <input type="text" id="claimAdminOrgName" placeholder="e.g. Sefeko Security">
+    </div>
 
     <div class="btn-row" style="margin-top:14px;">
       <button class="btn" onclick="document.getElementById('claimAdminModalBg').classList.remove('show')">Cancel</button>
@@ -1218,8 +1227,18 @@
     </div>
 
     <div id="authInviteWrap" style="display:none;">
-      <div class="field-label">Admin invite code</div>
-      <input type="text" id="authInviteCode" placeholder="Enter the code you were given">
+      <div class="result-meta" style="margin-bottom:8px; text-align:right; font-family:var(--sans);">
+        <a href="#" id="authAdminModeToggle" style="color:var(--accent); text-decoration:none;">First admin? Create your company instead</a>
+      </div>
+      <div id="authInviteCodeSub">
+        <div class="field-label">Admin invite code</div>
+        <input type="text" id="authInviteCode" placeholder="Enter the code you were given">
+      </div>
+      <div id="authCreateOrgSub" style="display:none;">
+        <div class="field-label">Company name</div>
+        <input type="text" id="authOrgName" placeholder="e.g. Sefeko Security">
+        <div class="result-meta" style="margin-top:2px;">You'll be the first admin — invite the rest of your team afterward.</div>
+      </div>
     </div>
 
     <div id="authControllerCodeWrap" style="display:none;">
@@ -1939,10 +1958,30 @@ function setAuthSignupRole(role){
   if (role !== 'guard') document.getElementById('authSiteCode').value = '';
 }
 
+// Two ways to sign up as an admin: redeem a code from an existing company,
+// or — for the very first person at a brand-new client — create the company
+// itself and become its first admin automatically.
+let authCreatingOrg = false;
+function setAuthAdminMode(creatingOrg){
+  authCreatingOrg = creatingOrg;
+  document.getElementById('authInviteCodeSub').style.display = creatingOrg ? 'none' : 'block';
+  document.getElementById('authCreateOrgSub').style.display = creatingOrg ? 'block' : 'none';
+  document.getElementById('authAdminModeToggle').textContent = creatingOrg
+    ? 'Joining an existing company instead? Use an invite code'
+    : 'First admin? Create your company instead';
+  if (creatingOrg) document.getElementById('authInviteCode').value = '';
+  else document.getElementById('authOrgName').value = '';
+}
+document.getElementById('authAdminModeToggle').addEventListener('click', e => {
+  e.preventDefault();
+  setAuthAdminMode(!authCreatingOrg);
+});
+
 function setAuthMode(mode){
   authMode = mode;
   document.getElementById('authFullNameWrap').style.display = mode === 'signup' ? 'block' : 'none';
   document.getElementById('authRoleWrap').style.display = mode === 'signup' ? 'block' : 'none';
+  setAuthAdminMode(false);
   setAuthSignupRole('guard');
   document.getElementById('authSubmitBtn').textContent = mode === 'signup' ? 'Create account' : 'Sign in';
   document.getElementById('authModeToggle').textContent = mode === 'signup' ? 'Already have an account? Sign in' : 'Need an account? Sign up';
@@ -1981,8 +2020,14 @@ document.getElementById('authSubmitBtn').addEventListener('click', async () => {
     errEl.style.display = 'block';
     return;
   }
-  if (authMode === 'signup' && authSignupRole === 'admin' && !document.getElementById('authInviteCode').value.trim()){
+  if (authMode === 'signup' && authSignupRole === 'admin' && !authCreatingOrg && !document.getElementById('authInviteCode').value.trim()){
     errEl.textContent = 'An admin invite code is required to sign up as an admin.';
+    errEl.style.color = 'var(--danger)';
+    errEl.style.display = 'block';
+    return;
+  }
+  if (authMode === 'signup' && authSignupRole === 'admin' && authCreatingOrg && !document.getElementById('authOrgName').value.trim()){
+    errEl.textContent = 'A company name is required to create your company.';
     errEl.style.color = 'var(--danger)';
     errEl.style.display = 'block';
     return;
@@ -2008,6 +2053,7 @@ document.getElementById('authSubmitBtn').addEventListener('click', async () => {
       const wantsAdmin = authSignupRole === 'admin';
       const wantsController = authSignupRole === 'controller';
       const inviteCode = document.getElementById('authInviteCode').value.trim();
+      const orgName = document.getElementById('authOrgName').value.trim();
       const controllerCode = document.getElementById('authControllerCode').value.trim();
       const siteCode = document.getElementById('authSiteCode').value.trim();
       const { data, error } = await sb.auth.signUp({ email, password, options: { data: { full_name: fullName, phone } } });
@@ -2019,7 +2065,14 @@ document.getElementById('authSubmitBtn').addEventListener('click', async () => {
         await sb.from('profiles').update({ phone }).eq('id', data.session.user.id);
       }
 
-      if (wantsAdmin && data.session){
+      if (wantsAdmin && authCreatingOrg && data.session){
+        const { data: newOrgId, error: orgErr } = await sb.rpc('create_organization', { p_org_name: orgName });
+        if (orgErr || !newOrgId){
+          showToast('Signed up as guard', 'Could not create the company — your account was created with guard access instead.', 'warn');
+        } else {
+          showToast('Company created', "You're the first admin — invite your team from Admin invites.", 'success');
+        }
+      } else if (wantsAdmin && data.session){
         const { data: claimed, error: claimErr } = await sb.rpc('claim_admin', { p_code: inviteCode });
         if (claimErr || !claimed){
           showToast('Signed up as guard', 'That invite code was invalid or already used — your account was created with guard access instead.', 'warn');
@@ -2070,22 +2123,64 @@ document.getElementById('signOutBtn').addEventListener('click', async () => {
   await sb.auth.signOut();
 });
 
+let claimAdminCreatingOrg = false;
+function setClaimAdminMode(creatingOrg){
+  claimAdminCreatingOrg = creatingOrg;
+  document.getElementById('claimAdminCodeSub').style.display = creatingOrg ? 'none' : 'block';
+  document.getElementById('claimAdminCreateOrgSub').style.display = creatingOrg ? 'block' : 'none';
+  document.getElementById('claimAdminModeToggle').textContent = creatingOrg
+    ? 'Joining an existing company instead? Use an invite code'
+    : 'First admin? Create your company instead';
+}
+document.getElementById('claimAdminModeToggle').addEventListener('click', e => {
+  e.preventDefault();
+  setClaimAdminMode(!claimAdminCreatingOrg);
+});
+
 document.getElementById('claimAdminBtn').addEventListener('click', () => {
   document.getElementById('claimAdminError').style.display = 'none';
   document.getElementById('claimAdminCode').value = '';
+  document.getElementById('claimAdminOrgName').value = '';
+  setClaimAdminMode(false);
   document.getElementById('claimAdminModalBg').classList.add('show');
 });
 
 document.getElementById('claimAdminSubmitBtn').addEventListener('click', async () => {
-  const code = document.getElementById('claimAdminCode').value.trim();
   const errEl = document.getElementById('claimAdminError');
   errEl.style.display = 'none';
+  const btn = document.getElementById('claimAdminSubmitBtn');
+  if (claimAdminCreatingOrg){
+    const orgName = document.getElementById('claimAdminOrgName').value.trim();
+    if (!orgName){
+      errEl.textContent = 'Enter a company name.';
+      errEl.style.display = 'block';
+      return;
+    }
+    btn.disabled = true;
+    try{
+      const { data: newOrgId, error } = await sb.rpc('create_organization', { p_org_name: orgName });
+      if (error || !newOrgId){
+        errEl.textContent = "Couldn't create the company — your account may already belong to one.";
+        errEl.style.display = 'block';
+        return;
+      }
+      document.getElementById('claimAdminModalBg').classList.remove('show');
+      showToast('Company created', "You're the first admin — invite your team from Admin invites.", 'success');
+      await loadProfileAndApp();
+    } catch(err){
+      errEl.textContent = err.message;
+      errEl.style.display = 'block';
+    } finally {
+      btn.disabled = false;
+    }
+    return;
+  }
+  const code = document.getElementById('claimAdminCode').value.trim();
   if (!code){
     errEl.textContent = 'Enter an invite code.';
     errEl.style.display = 'block';
     return;
   }
-  const btn = document.getElementById('claimAdminSubmitBtn');
   btn.disabled = true;
   try{
     const { data: claimed, error } = await sb.rpc('claim_admin', { p_code: code });
