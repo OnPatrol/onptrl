@@ -1326,6 +1326,26 @@ function setActiveSite(id){
 }
 
 function nowMs(){ return Date.now(); }
+// sb.functions.invoke() only puts the real error message in `data` when the
+// edge function returns 2xx. On a non-2xx response, `data` is null and
+// `error.message` is just the generic "Edge Function returned a non-2xx
+// status code" - the actual reason your function sent back (face mismatch,
+// already clocked in, validation error, etc.) is sitting unread in
+// `error.context`, a Response object. Every screen that calls an edge
+// function should show the real reason, not this generic wrapper text.
+async function functionErrorMessage(data, error, fallback){
+  if (data && data.error) return data.error;
+  if (error){
+    try{
+      if (error.context && typeof error.context.json === 'function'){
+        const body = await error.context.json();
+        if (body && body.error) return body.error;
+      }
+    } catch(e){ /* body wasn't JSON, or already consumed - fall through */ }
+    return error.message || fallback;
+  }
+  return fallback;
+}
 // A "valid" phone number here just means enough digits to actually be
 // reachable on — 9 is the shortest real mobile number length (SA numbers
 // without a country code), and it still accepts +country-code formats,
@@ -1801,7 +1821,7 @@ let allUsers = [];
 async function loadUsersAdmin(){
   const { data, error } = await sb.functions.invoke('admin-users', { body: { action: 'list' } });
   if (error || !data || data.error){
-    showToast('Could not load users', (data && data.error) || error.message, 'danger');
+    showToast('Could not load users', await functionErrorMessage(data, error, 'Unknown error'), 'danger');
     return;
   }
   allUsers = data.users || [];
@@ -1896,7 +1916,7 @@ function renderUsersTable(){
       btn.disabled = true;
       const { data, error } = await sb.functions.invoke('admin-users', { body: { action: 'delete', user_id: btn.dataset.delUser } });
       if (error || !data || data.error){
-        showToast('Could not delete user', (data && data.error) || error.message, 'danger');
+        showToast('Could not delete user', await functionErrorMessage(data, error, 'Unknown error'), 'danger');
         btn.disabled = false;
         return;
       }
@@ -1946,7 +1966,7 @@ document.getElementById('resetPasswordSubmitBtn').addEventListener('click', asyn
   const { data, error } = await sb.functions.invoke('admin-users', { body: { action: 'set_password', user_id: resetPasswordUserId, new_password: pw } });
   btn.disabled = false;
   if (error || !data || data.error){
-    errEl.textContent = (data && data.error) || error.message;
+    errEl.textContent = await functionErrorMessage(data, error, 'Unknown error');
     errEl.style.display = 'block';
     return;
   }
@@ -4300,12 +4320,12 @@ async function clockInTeammate(guardId){
       is_reliever: false, descriptor: faceResult.descriptor
     }
   });
-  const result = data || {};
-  if (error || result.error){
-    errEl.textContent = result.error || error.message || 'Could not clock in.';
+  if (error || (data && data.error)){
+    errEl.textContent = await functionErrorMessage(data, error, 'Could not clock in.');
     errEl.style.display = 'block';
     return;
   }
+  const result = data;
 
   await loadAttendanceRecent();
   renderTeammatesCard();
@@ -5542,7 +5562,7 @@ async function loadAndRenderPlatformOrgs(){
   list.innerHTML = '<div class="result-meta">Loading...</div>';
   const { data, error } = await sb.functions.invoke('platform-admin', { body: { action: 'list_orgs' } });
   if (error || data?.error){
-    list.innerHTML = `<div class="result-meta" style="color:var(--danger);">${(data && data.error) || error.message}</div>`;
+    list.innerHTML = `<div class="result-meta" style="color:var(--danger);">${await functionErrorMessage(data, error, 'Unknown error')}</div>`;
     return;
   }
   platformOrgs = data.organizations || [];
@@ -5612,7 +5632,7 @@ function renderPlatformOrgs(){
       btn.disabled = true;
       const { data, error } = await sb.functions.invoke('platform-admin', { body: { action: 'update_org', org_id: orgId, updates } });
       btn.disabled = false;
-      if (error || data?.error){ showToast('Could not save', (data && data.error) || error.message, 'danger'); return; }
+      if (error || data?.error){ showToast('Could not save', await functionErrorMessage(data, error, 'Unknown error'), 'danger'); return; }
       showToast('Saved', '', 'success');
       await loadAndRenderPlatformOrgs();
     });
@@ -5627,7 +5647,7 @@ function renderPlatformOrgs(){
       const { data, error } = await sb.functions.invoke('platform-admin', { body: { action: 'export_org', org_id: orgId } });
       btn.disabled = false;
       btn.textContent = 'Download data';
-      if (error || data?.error){ showToast('Export failed', (data && data.error) || error.message, 'danger'); return; }
+      if (error || data?.error){ showToast('Export failed', await functionErrorMessage(data, error, 'Unknown error'), 'danger'); return; }
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -5674,7 +5694,7 @@ document.getElementById('platformDeleteSubmitBtn').addEventListener('click', asy
   try{
     const { data, error } = await sb.functions.invoke('platform-admin', { body: { action: 'delete_org', org_id: orgId, confirm_name: typed } });
     if (error || data?.error){
-      errEl.textContent = (data && data.error) || error.message;
+      errEl.textContent = await functionErrorMessage(data, error, 'Unknown error');
       errEl.style.display = 'block';
       return;
     }
