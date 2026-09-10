@@ -137,6 +137,7 @@
   .auth-gate .detail-modal{max-width:380px;}
   .user-badge{display:flex; align-items:center; gap:10px; font-size:12px; color:var(--muted); flex-wrap:wrap;}
   .user-badge .role-pill{font-family:var(--mono); font-size:10px; padding:2px 8px; border-radius:20px; background:var(--accent-dim); color:var(--accent); text-transform:uppercase;}
+  .role-pill{font-family:var(--mono); font-size:10px; padding:2px 8px; border-radius:20px; background:var(--accent-dim); color:var(--accent); text-transform:uppercase;}
   .slider-row{display:flex; align-items:center; gap:10px; margin-top:6px;}
   .slider-row input[type=range]{flex:1;}
   .slider-val{font-family:var(--mono); font-size:12px; color:var(--accent); min-width:52px; text-align:right;}
@@ -448,6 +449,18 @@
       <div class="panel">
         <h2>Recently resolved</h2>
         <div class="result-meta" style="margin-bottom:10px;">Alerts the control room has commented on and cleared, from the last 24 hours. Live monitoring and clearing happens on the Controller dashboard — the full permanent history is in Reports → Controller Comments.</div>
+        <div class="inline-fields" style="margin-bottom:12px;">
+          <div class="f"><label>Site</label><select id="adminNotifSiteFilter"><option value="">All sites</option></select></div>
+          <div class="f"><label>Alert type</label>
+            <select id="adminNotifKindFilter">
+              <option value="">All types</option>
+              <option value="missed_patrol">Missed patrol</option>
+              <option value="late_patrol">Late patrol</option>
+              <option value="radius_alert">Position alert</option>
+              <option value="success_patrol">Successful patrol</option>
+            </select>
+          </div>
+        </div>
         <div id="adminNotifResolved" style="display:flex; flex-direction:column; gap:8px;"><div class="empty">Nothing resolved in the last 24 hours.</div></div>
       </div>
     </div>
@@ -563,7 +576,7 @@
         <button class="btn btn-primary" id="addRouteBtn">Add route</button>
         <div class="table-scroll">
         <table style="margin-top:14px;">
-          <thead><tr><th>Route</th><th>Checkpoints (in order)</th><th>Order mode</th><th></th></tr></thead>
+          <thead><tr><th>Route</th><th>Checkpoints (in order)</th><th>Order mode</th><th>Active</th><th></th></tr></thead>
           <tbody id="routeTableBody"></tbody>
         </table>
         </div>
@@ -583,7 +596,7 @@
         <div class="btn-row"><button class="btn btn-primary" id="addShiftBtn">Add shift</button></div>
         <div class="table-scroll">
           <table style="margin-top:14px;">
-            <thead><tr><th>Shift</th><th>Window</th><th>Required</th><th></th></tr></thead>
+            <thead><tr><th>Shift</th><th>Window</th><th>Required</th><th>Active</th><th></th></tr></thead>
             <tbody id="siteShiftsTableBody"></tbody>
           </table>
         </div>
@@ -640,7 +653,7 @@
 
           <div class="table-scroll">
         <table style="margin-top:14px;">
-            <thead><tr><th>Route</th><th>Repeats</th><th>Shift</th><th>Duration</th><th>Grace</th><th></th></tr></thead>
+            <thead><tr><th>Route</th><th>Repeats</th><th>Shift</th><th>Duration</th><th>Grace</th><th>Active</th><th></th></tr></thead>
             <tbody id="schedTableBody"></tbody>
           </table>
         </div>
@@ -940,12 +953,25 @@
     <button class="tab-btn" data-ctrl-view="log">Live activity log</button>
     <button class="tab-btn" data-ctrl-view="patrols">Patrols</button>
     <button class="tab-btn" data-ctrl-view="attendance">Attendance</button>
+    <button class="tab-btn" data-ctrl-view="team">Team</button>
   </div>
 
   <div class="ctrl-view active" id="ctrl-dashboard">
     <div class="panel">
       <h2>Active alerts</h2>
       <div class="result-meta" style="margin-bottom:10px;">Red = missed or late. Orange = position, order, or declined-tag issues. Comment to resolve — it'll clear here and update the admin. Green successes clear on their own after an hour.</div>
+      <div class="inline-fields" style="margin-bottom:12px;">
+        <div class="f"><label>Site</label><select id="ctrlNotifSiteFilter"><option value="">All sites</option></select></div>
+        <div class="f"><label>Alert type</label>
+          <select id="ctrlNotifKindFilter">
+            <option value="">All types</option>
+            <option value="missed_patrol">Missed patrol</option>
+            <option value="late_patrol">Late patrol</option>
+            <option value="radius_alert">Position alert</option>
+            <option value="success_patrol">Successful patrol</option>
+          </select>
+        </div>
+      </div>
       <div id="ctrlNotifActive" style="display:flex; flex-direction:column; gap:10px;"><div class="empty">No alerts right now.</div></div>
     </div>
   </div>
@@ -1003,6 +1029,31 @@
       <div class="result-meta" style="margin-bottom:6px;">Who's clocked in right now, per site and shift. Green border = fully staffed, red = short. Mark a guard absent if they're not coming in — a reliever can then clock in to cover them.</div>
       <div class="btn-row"><button class="btn" id="refreshCoverageBtnCtrl" style="width:auto; padding:7px 14px;"><svg class="icon" viewBox="0 0 24 24"><path d="M20 11A8 8 0 1 0 18.6 15.5"/><path d="M20 5v6h-6"/></svg> Refresh</button></div>
       <div class="coverage-grid" id="coverageGridCtrl"></div>
+    </div>
+  </div>
+
+  <div class="ctrl-view" id="ctrl-team">
+    <div class="panel">
+      <h2>Team</h2>
+      <div class="result-meta" style="margin-bottom:10px;">Everyone in the company — search by name, filter by site or role, and see contact details at a glance.</div>
+      <div class="inline-fields" style="margin-bottom:12px;">
+        <div class="f" style="flex:1 1 200px;"><label>Search</label><input type="text" id="teamSearch" placeholder="Name or employee #"></div>
+        <div class="f"><label>Site</label><select id="teamSiteFilter"><option value="">All sites</option></select></div>
+        <div class="f"><label>Role</label>
+          <select id="teamRoleFilter">
+            <option value="">All roles</option>
+            <option value="guard">Guard</option>
+            <option value="controller">Controller</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Name</th><th>Role</th><th>Site</th><th>Phone</th><th>Employee #</th></tr></thead>
+          <tbody id="teamTableBody"></tbody>
+        </table>
+      </div>
     </div>
   </div>
 </div>
@@ -1422,6 +1473,14 @@ function parseHM(hm){
   const [h,m] = hm.split(':').map(Number);
   return { h, m };
 }
+// A schedule only actually runs while both it and its route are switched
+// on — turning a route off should pause every schedule built on it without
+// having to also flip each schedule individually.
+function isScheduleLive(sched){
+  if (sched.active === false) return false;
+  const r = routes.find(rt => rt.id === sched.routeId);
+  return !!r && r.active !== false;
+}
 function generateInstances(sched, winStart, winEnd){
   const out = [];
   const start = parseHM(sched.shiftStart);
@@ -1561,6 +1620,12 @@ async function loadSites(){
     activeSiteId = sites[0] ? sites[0].id : null;
   }
 }
+let teamDirectory = [];
+async function loadTeamDirectory(){
+  const { data, error } = await sb.from('profiles').select('id, full_name, phone, role, site_id, employee_number').order('full_name');
+  if (error){ showToast('Could not load team', error.message, 'danger'); return; }
+  teamDirectory = data || [];
+}
 async function loadCheckpoints(){
   const { data, error } = await sb.from('checkpoints').select('*').order('created_at');
   if (error){ showToast('Could not load checkpoints', error.message, 'danger'); return; }
@@ -1576,6 +1641,7 @@ async function loadRoutes(){
     name: r.name,
     siteId: r.site_id,
     strictOrder: r.strict_order,
+    active: r.active !== false,
     cpIds: (rcRows || [])
       .filter(rc => rc.route_id === r.id)
       .sort((a,b) => a.position - b.position)
@@ -2745,8 +2811,8 @@ function renderRouteTable(){
     return;
   }
   body.innerHTML = scoped.map(r => `
-    <tr>
-      <td style="font-family:var(--sans);">${r.name}</td>
+    <tr${r.active === false ? ' style="opacity:0.55;"' : ''}>
+      <td style="font-family:var(--sans);">${r.name}${r.active === false ? ' <span class="result-meta">(off)</span>' : ''}</td>
       <td>
         <div style="display:flex; flex-direction:column; gap:4px;">
         ${r.cpIds.map((id,i) => `
@@ -2764,6 +2830,13 @@ function renderRouteTable(){
           <span class="slider-tog"></span>
         </label>
         <div class="result-meta" style="margin-top:2px;">${r.strictOrder ? 'Strict' : 'Flexible'}</div>
+      </td>
+      <td>
+        <label class="switch" title="${r.active === false ? 'Route is off — no patrols expected' : 'Route is on'}">
+          <input type="checkbox" class="route-active-toggle" data-route-active="${r.id}" ${r.active !== false ? 'checked' : ''}>
+          <span class="slider-tog"></span>
+        </label>
+        <div class="result-meta" style="margin-top:2px;">${r.active === false ? 'Off' : 'On'}</div>
       </td>
       <td><button class="del-btn" data-del-route="${r.id}" aria-label="Delete route"><i>&times;</i></button></td>
     </tr>
@@ -2797,6 +2870,21 @@ function renderRouteTable(){
     if (error){ r.strictOrder = prev; e.target.checked = prev; showToast('Could not update order mode', error.message, 'danger'); }
     else showToast('Route updated', `${r.name} now ${e.target.checked ? 'requires' : "doesn't require"} checkpoints in strict order.`, 'success');
   }));
+  body.querySelectorAll('.route-active-toggle').forEach(tog => tog.addEventListener('change', async e => {
+    const r = routes.find(rt => rt.id === e.target.dataset.routeActive);
+    if (!r) return;
+    const prev = r.active;
+    r.active = e.target.checked;
+    const { error } = await sb.from('routes').update({ active: e.target.checked }).eq('id', r.id);
+    if (error){
+      r.active = prev; e.target.checked = prev;
+      showToast('Could not update route', error.message, 'danger');
+      return;
+    }
+    showToast('Route updated', e.target.checked ? `${r.name} is on — its schedules resume.` : `${r.name} is off — no patrols expected while it's off.`, 'success');
+    renderRouteTable();
+    renderAll();
+  }));
   body.querySelectorAll('[data-del-route]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const r = routes.find(rt => rt.id === btn.dataset.delRoute);
@@ -2819,6 +2907,45 @@ function renderSiteSwitchers(){
     el.value = activeSiteId;
   });
 }
+
+function renderTeamTable(){
+  const body = document.getElementById('teamTableBody');
+  if (!body) return;
+  populateFilterSiteSelect('teamSiteFilter', teamSiteFilterVal);
+  const q = (document.getElementById('teamSearch').value || '').toLowerCase().trim();
+  const siteFilter = document.getElementById('teamSiteFilter').value;
+  const roleFilter = document.getElementById('teamRoleFilter').value;
+
+  let rows = teamDirectory.slice();
+  if (siteFilter) rows = rows.filter(p => p.site_id === siteFilter);
+  if (roleFilter) rows = rows.filter(p => p.role === roleFilter);
+  if (q) rows = rows.filter(p =>
+    (p.full_name || '').toLowerCase().includes(q) || (p.employee_number || '').toLowerCase().includes(q)
+  );
+
+  if (!rows.length){
+    body.innerHTML = `<tr><td colspan="5" style="font-family:var(--sans); color:var(--muted);">${teamDirectory.length ? 'No one matches this search/filter.' : 'No team members yet.'}</td></tr>`;
+    return;
+  }
+  body.innerHTML = rows.map(p => {
+    const site = sites.find(s => s.id === p.site_id);
+    return `
+      <tr>
+        <td style="font-family:var(--sans); font-weight:600;">${p.full_name || '—'}</td>
+        <td><span class="role-pill">${p.role}</span></td>
+        <td>${site ? site.name : '—'}</td>
+        <td>${p.phone || '—'}</td>
+        <td>${p.employee_number || '—'}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+let teamSiteFilterVal = '';
+document.getElementById('teamSearch').addEventListener('input', renderTeamTable);
+document.getElementById('teamSiteFilter').addEventListener('change', e => { teamSiteFilterVal = e.target.value; renderTeamTable(); });
+document.getElementById('teamRoleFilter').addEventListener('change', renderTeamTable);
+
 
 function renderSiteTable(){
   const body = document.getElementById('siteTableBody');
@@ -3367,10 +3494,20 @@ function notifContextLine(n, site){
   return parts.join(' · ');
 }
 
-function renderNotificationsInto(activeId, resolvedId){
+let notifFilters = { admin: { site: '', kind: '' }, ctrl: { site: '', kind: '' } };
+
+function populateFilterSiteSelect(id, currentVal){
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = '<option value="">All sites</option>' + sites.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+  el.value = currentVal || '';
+}
+
+function renderNotificationsInto(activeId, resolvedId, filterKey){
   const activeEl = document.getElementById(activeId);
   const resolvedEl = document.getElementById(resolvedId);
   if (!activeEl && !resolvedEl) return;
+  const filters = (filterKey && notifFilters[filterKey]) || { site: '', kind: '' };
 
   // Active alerts are scoped to the shift under way, same as the counter tiles in
   // renderControllerStats() and the feed in renderLog() — an unresolved alert from
@@ -3378,9 +3515,15 @@ function renderNotificationsInto(activeId, resolvedId){
   // still exists in the DB (and in admin → reports) for follow-up, it just isn't
   // surfaced as a live alert for the current shift anymore.
   const shiftStart = currentShiftStart(nowMs());
-  const active = notifications.filter(n => !n.cleared_at && !isGreenExpired(n) && new Date(n.occurred_at).getTime() >= shiftStart);
-  const resolved = notifications
-    .filter(n => n.cleared_at || isGreenExpired(n))
+  let active = notifications.filter(n => !n.cleared_at && !isGreenExpired(n) && new Date(n.occurred_at).getTime() >= shiftStart);
+  let resolved = notifications.filter(n => n.cleared_at || isGreenExpired(n));
+
+  if (filters.site){ active = active.filter(n => n.site_id === filters.site); resolved = resolved.filter(n => n.site_id === filters.site); }
+  if (filters.kind){ active = active.filter(n => n.kind === filters.kind); resolved = resolved.filter(n => n.kind === filters.kind); }
+
+  // Sort/slice happens after filtering, so a filtered view still shows up to
+  // 20 matching items instead of the 20 most recent unfiltered ones.
+  resolved = resolved
     .sort((a,b) => new Date(b.cleared_at || b.occurred_at) - new Date(a.cleared_at || a.occurred_at))
     .slice(0, 20);
 
@@ -3414,7 +3557,7 @@ function renderNotificationsInto(activeId, resolvedId){
           </div>
         </div>
       `;
-    }).join('') : '<div class="empty">No alerts right now.</div>';
+    }).join('') : `<div class="empty">${(filters.site || filters.kind) ? 'No alerts match this filter.' : 'No alerts right now.'}</div>`;
 
     activeEl.querySelectorAll('[data-notif-submit]').forEach(btn => {
       btn.addEventListener('click', () => submitNotificationComment(btn.dataset.notifSubmit, activeEl));
@@ -3433,7 +3576,7 @@ function renderNotificationsInto(activeId, resolvedId){
           ${comment ? `<br><span class="result-meta">"${comment.body}" — ${(comment.profiles && comment.profiles.full_name) || 'Someone'}</span>` : (n.severity === 'green' ? '<br><span class="result-meta">Auto-cleared</span>' : '')}
         </div>
       `;
-    }).join('') : '<div class="empty">Nothing resolved yet.</div>';
+    }).join('') : `<div class="empty">${(filters.site || filters.kind) ? 'No resolved alerts match this filter.' : 'Nothing resolved yet.'}</div>`;
   }
 }
 
@@ -3453,10 +3596,19 @@ async function submitNotificationComment(notifId, containerEl){
 }
 
 function renderNotifications(){
-  renderNotificationsInto(null, 'adminNotifResolved');
-  renderNotificationsInto('ctrlNotifActive', null);
+  populateFilterSiteSelect('adminNotifSiteFilter', notifFilters.admin.site);
+  populateFilterSiteSelect('ctrlNotifSiteFilter', notifFilters.ctrl.site);
+  renderNotificationsInto(null, 'adminNotifResolved', 'admin');
+  renderNotificationsInto('ctrlNotifActive', null, 'ctrl');
   renderControllerStats();
 }
+
+['admin','ctrl'].forEach(key => {
+  const siteEl = document.getElementById(key + 'NotifSiteFilter');
+  const kindEl = document.getElementById(key + 'NotifKindFilter');
+  if (siteEl) siteEl.addEventListener('change', () => { notifFilters[key].site = siteEl.value; renderNotifications(); });
+  if (kindEl) kindEl.addEventListener('change', () => { notifFilters[key].kind = kindEl.value; renderNotifications(); });
+});
 
 // Detect newly-resolved whole-patrol instances (missed / late / on-time) and record them.
 // Best-effort: runs whenever an admin or controller session is open.
@@ -3465,7 +3617,7 @@ async function sweepPatrolInstanceNotifications(){
   const now = nowMs();
   const windowStart = now - 6*60*60*1000;
   const rows = [];
-  schedules.filter(s => s.active !== false).forEach(sched => {
+  schedules.filter(isScheduleLive).forEach(sched => {
     const insts = generateInstances(sched, windowStart, now);
     insts.forEach(inst => {
       const st = instanceStatus(inst, now).status;
@@ -3521,16 +3673,37 @@ function renderSchedTable(){
   body.innerHTML = scoped.map(s => {
     const r = routes.find(r => r.id === s.routeId);
     return `
-      <tr>
-        <td style="font-family:var(--sans);">${r ? r.name : '—'}</td>
+      <tr${s.active === false ? ' style="opacity:0.55;"' : ''}>
+        <td style="font-family:var(--sans);">${r ? r.name : '—'}${s.active === false ? ' <span class="result-meta">(off)</span>' : ''}</td>
         <td>every ${s.intervalMinutes}m</td>
         <td>${s.shiftStart}–${s.shiftEnd}</td>
         <td>${s.durationMinutes}m</td>
         <td>${s.graceMinutes}m</td>
+        <td>
+          <label class="switch" title="${s.active === false ? 'Schedule is off — no patrols expected' : 'Schedule is on'}">
+            <input type="checkbox" class="sched-active-toggle" data-sched-active="${s.id}" ${s.active !== false ? 'checked' : ''}>
+            <span class="slider-tog"></span>
+          </label>
+        </td>
         <td><button class="del-btn" data-del-sched="${s.id}" aria-label="Delete schedule"><i>&times;</i></button></td>
       </tr>
     `;
   }).join('');
+  body.querySelectorAll('.sched-active-toggle').forEach(tog => tog.addEventListener('change', async e => {
+    const s = schedules.find(sc => sc.id === e.target.dataset.schedActive);
+    if (!s) return;
+    const prev = s.active;
+    s.active = e.target.checked;
+    const { error } = await sb.from('schedules').update({ active: e.target.checked }).eq('id', s.id);
+    if (error){
+      s.active = prev; e.target.checked = prev;
+      showToast('Could not update schedule', error.message, 'danger');
+      return;
+    }
+    showToast('Schedule updated', e.target.checked ? 'This patrol schedule is on again.' : 'This patrol schedule is off — no patrols expected until turned back on.', 'success');
+    renderSchedTable();
+    renderAll();
+  }));
   body.querySelectorAll('[data-del-sched]').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (!confirm('Delete this schedule? Guards will no longer be prompted to run this patrol. This can\'t be undone.')) return;
@@ -3546,7 +3719,7 @@ function renderSchedTable(){
 function allInstancesForSite(winStart, winEnd){
   const scoped = schedules.filter(s => {
     const r = routes.find(r => r.id === s.routeId);
-    return r && r.siteId === activeSiteId;
+    return r && r.siteId === activeSiteId && isScheduleLive(s);
   });
   let out = [];
   scoped.forEach(s => out = out.concat(generateInstances(s, winStart, winEnd)));
@@ -3679,7 +3852,7 @@ function currentDutyRouteNextInstance(){
   const dutySiteId = activeDutySiteId || guardSiteId;
   if (!dutySiteId) return null;
   const siteRouteIds = new Set(routes.filter(r => r.siteId === dutySiteId).map(r => r.id));
-  const siteScheds = schedules.filter(s => siteRouteIds.has(s.routeId) && s.active !== false);
+  const siteScheds = schedules.filter(s => siteRouteIds.has(s.routeId) && isScheduleLive(s));
   if (!siteScheds.length) return null;
 
   const now = nowMs();
@@ -4045,7 +4218,7 @@ document.getElementById('manualScanBtn').addEventListener('click', async () => {
   setManualScanStatus('Getting your location…', false);
   SOUND.tagScan();
   const record = await processScan(qrId);
-  lastDecodedAt = Date.now();
+  lastDecodedAtByQr[qrId] = Date.now();
   decodeLocked = false;
   btn.disabled = false;
   setManualScanStatus('', false);
@@ -4437,13 +4610,35 @@ function renderSiteShiftsTable(){
   if (label) label.textContent = site ? site.name : 'this site';
   const rows = siteShifts.filter(s => s.siteId === activeSiteId);
   body.innerHTML = rows.length ? rows.map(s => `
-    <tr>
-      <td style="font-family:var(--sans); font-weight:600;">${s.name}</td>
+    <tr${s.active === false ? ' style="opacity:0.55;"' : ''}>
+      <td style="font-family:var(--sans); font-weight:600;">${s.name}${s.active === false ? ' <span class="result-meta">(off)</span>' : ''}</td>
       <td>${s.startTime}–${s.endTime}</td>
       <td>${s.required}</td>
+      <td>
+        <label class="switch" title="${s.active === false ? 'Shift is off — no coverage expected' : 'Shift is on'}">
+          <input type="checkbox" class="shift-active-toggle" data-shift-active="${s.id}" ${s.active !== false ? 'checked' : ''}>
+          <span class="slider-tog"></span>
+        </label>
+      </td>
       <td><button class="del-btn" data-del-shift="${s.id}" aria-label="Delete shift"><i>&times;</i></button></td>
     </tr>
-  `).join('') : '<tr><td colspan="4" style="font-family:var(--sans); color:var(--muted);">No shifts configured for this site yet.</td></tr>';
+  `).join('') : '<tr><td colspan="5" style="font-family:var(--sans); color:var(--muted);">No shifts configured for this site yet.</td></tr>';
+  body.querySelectorAll('.shift-active-toggle').forEach(tog => tog.addEventListener('change', async e => {
+    const s = siteShifts.find(sh => sh.id === e.target.dataset.shiftActive);
+    if (!s) return;
+    const prev = s.active;
+    s.active = e.target.checked;
+    const { error } = await sb.from('site_shifts').update({ active: e.target.checked }).eq('id', s.id);
+    if (error){
+      s.active = prev; e.target.checked = prev;
+      showToast('Could not update shift', error.message, 'danger');
+      return;
+    }
+    showToast('Shift updated', e.target.checked ? `${s.name} is on again.` : `${s.name} is off — no coverage expected while it's off.`, 'success');
+    renderSiteShiftsTable();
+    renderCoverageGrid('coverageGridAdmin');
+    renderCoverageGrid('coverageGridCtrl');
+  }));
   body.querySelectorAll('[data-del-shift]').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (!confirm('Delete this shift definition? Past attendance records are kept.')) return;
@@ -4654,7 +4849,7 @@ const camPlaceholder = document.getElementById('camPlaceholder');
 const scanFrame = document.getElementById('scanFrame');
 const camToggleBtn = document.getElementById('camToggleBtn');
 
-let lastDecodedAt = 0, decodeLocked = false;
+let lastDecodedAtByQr = {}, decodeLocked = false;
 const AUTO_SCAN_COOLDOWN_MS = 3000;
 
 function handleDecoded(qrId){
@@ -4663,11 +4858,15 @@ function handleDecoded(qrId){
   // Auto-scan fires on every video frame with a readable code in it, so without a
   // cooldown the same physical tap could trigger two scans a fraction of a second
   // apart — the second one landing as a spurious rejection since the checkpoint's
-  // already done. Space auto-scans a flat 3s apart regardless of tag, giving the
-  // guard time to move the tag out of frame. (The manual "Scan now" button below
-  // is a deliberate one-off tap and isn't subject to this.)
-  if (now - lastDecodedAt < AUTO_SCAN_COOLDOWN_MS) return;
-  lastDecodedAt = now;
+  // already done. The cooldown is keyed per tag, not global: a repeat of the SAME
+  // tag within 3s is ignored (that's the duplicate this guards against), but a
+  // DIFFERENT tag scanned a moment later - a guard moving quickly between two
+  // nearby checkpoints - fires immediately instead of being dropped for up to 3s
+  // and then possibly re-firing once the guard's already moved past it.
+  // (The manual "Scan now" button below is a deliberate one-off tap and isn't
+  // subject to this at all.)
+  if (now - (lastDecodedAtByQr[qrId] || 0) < AUTO_SCAN_COOLDOWN_MS) return;
+  lastDecodedAtByQr[qrId] = now;
   decodeLocked = true;
   SOUND.tagScan();
   processScan(qrId).then(record => {
@@ -5550,6 +5749,10 @@ document.querySelectorAll('[data-ctrl-view]').forEach(btn => {
     if (btn.dataset.ctrlView === 'attendance'){
       await loadSiteShifts(); await loadAttendanceRecent(); await loadAbsencesRecent();
       renderCoverageGrid('coverageGridCtrl');
+    }
+    if (btn.dataset.ctrlView === 'team'){
+      await loadTeamDirectory();
+      renderTeamTable();
     }
   });
 });
