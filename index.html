@@ -68,6 +68,7 @@
 
   /* Attendance / clock-in */
   .attendance-card{background:var(--panel-2); border:1px solid var(--border); border-radius:10px; padding:12px; margin:12px 0;}
+  @keyframes panicPulse{0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,0.5);}50%{box-shadow:0 0 0 6px rgba(220,38,38,0);}}
   .attendance-status-pill{display:inline-block; padding:3px 9px; border-radius:20px; font-size:11px; font-weight:600; font-family:var(--sans);}
   .attendance-status-pill.off{background:var(--panel); color:var(--muted); border:1px solid var(--border);}
   .attendance-status-pill.on{background:var(--success-dim); color:var(--success);}
@@ -345,12 +346,12 @@
           <div class="field-label" style="margin-top:0;">Site</div>
           <div id="guardSiteName" style="font-family:var(--mono); font-size:13px; padding:2px 0 10px; font-weight:600;">—</div>
 
-          <div class="attendance-card" id="attendanceCard" style="display:none;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-              <span style="font-family:var(--sans); font-weight:700; font-size:12.5px;">Attendance</span>
+          <details class="attendance-card" id="attendanceCard" style="display:none;">
+            <summary style="cursor:pointer; font-family:var(--sans); font-weight:700; font-size:12.5px; list-style:none; display:flex; justify-content:space-between; align-items:center;">
+              <span>Attendance</span>
               <span class="attendance-status-pill off" id="attendanceStatusPill">Not clocked in</span>
-            </div>
-            <div class="result-meta" id="attendanceDetail" style="margin-bottom:8px;"></div>
+            </summary>
+            <div class="result-meta" id="attendanceDetail" style="margin:8px 0;"></div>
 
             <div id="attendanceClockInWrap">
               <div class="field-label" style="margin-top:0;">Shift</div>
@@ -371,7 +372,7 @@
               <button class="btn" id="attendanceClockOutBtn" style="width:100%;">Clock out</button>
               <div class="result-meta" id="attendanceClockOutNote" style="margin-top:4px;"></div>
             </div>
-          </div>
+          </details>
 
           <details class="attendance-card" id="teammatesCard" style="display:none;">
             <summary style="cursor:pointer; font-family:var(--sans); font-weight:700; font-size:12.5px; list-style:none;">Teammates at this site</summary>
@@ -417,6 +418,12 @@
           <div class="btn-row" style="position:sticky; bottom:8px; background:var(--panel); padding-top:6px; margin-top:10px;">
             <button class="btn btn-primary" id="manualScanBtn">Scan now</button>
           </div>
+
+          <button id="panicBtn" style="width:100%; margin-top:10px; padding:16px; border-radius:12px; border:none; background:var(--danger); color:#fff; font-family:var(--sans); font-weight:800; font-size:15px; letter-spacing:0.3px; position:relative; overflow:hidden; touch-action:manipulation; user-select:none;">
+            <span id="panicBtnFill" style="position:absolute; inset:0; background:rgba(255,255,255,0.35); width:0%; transition:none;"></span>
+            <span id="panicBtnLabel" style="position:relative;">🚨 Hold for panic alert</span>
+          </button>
+          <div class="result-meta" id="panicNote" style="margin-top:4px;">Sends your location straight to admins and controllers, and rings their dashboard until they see it.</div>
         </div>
       </div>
     </div>
@@ -454,6 +461,7 @@
           <div class="f"><label>Alert type</label>
             <select id="adminNotifKindFilter">
               <option value="">All types</option>
+              <option value="panic">Panic button</option>
               <option value="missed_patrol">Missed patrol</option>
               <option value="late_patrol">Late patrol</option>
               <option value="radius_alert">Position alert</option>
@@ -965,6 +973,7 @@
         <div class="f"><label>Alert type</label>
           <select id="ctrlNotifKindFilter">
             <option value="">All types</option>
+            <option value="panic">Panic button</option>
             <option value="missed_patrol">Missed patrol</option>
             <option value="late_patrol">Late patrol</option>
             <option value="radius_alert">Position alert</option>
@@ -1409,8 +1418,8 @@ function isValidPhone(val){
 // ---------------- Sound notifications ----------------
 let soundOn = true;
 let audioCtx = null;
-function beep(freq, duration, type, vol){
-  if (!soundOn) return;
+function beep(freq, duration, type, vol, force){
+  if (!soundOn && !force) return;
   try{
     audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
     if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -1424,23 +1433,23 @@ function beep(freq, duration, type, vol){
     osc.stop(audioCtx.currentTime + duration/1000);
   } catch(e){ /* audio unavailable — fail silently */ }
 }
-function playTone(seq){
+function playTone(seq, force){
   let t = 0;
   seq.forEach(s => {
-    setTimeout(() => beep(s.freq, s.duration, s.type, s.vol), t);
+    setTimeout(() => beep(s.freq, s.duration, s.type, s.vol, force), t);
     t += s.delay != null ? s.delay : s.duration + 50;
   });
   return t;
 }
-function ring(seq, totalMs){
-  if (!soundOn) return;
+function ring(seq, totalMs, force){
+  if (!soundOn && !force) return;
   const cycle = seq.reduce((acc, s) => acc + (s.delay != null ? s.delay : s.duration + 50), 0) + 350;
   let elapsed = 0;
-  playTone(seq);
+  playTone(seq, force);
   const timer = setInterval(() => {
     elapsed += cycle;
-    if (elapsed >= totalMs || !soundOn){ clearInterval(timer); return; }
-    playTone(seq);
+    if (elapsed >= totalMs || (!soundOn && !force)){ clearInterval(timer); return; }
+    playTone(seq, force);
   }, cycle);
 }
 const SOUND = {
@@ -1455,7 +1464,15 @@ const SOUND = {
     playTone([{freq:300,duration:160},{freq:180,duration:160},{freq:180,duration:220}]);
     if (navigator.vibrate) navigator.vibrate([120,70,120]);
   },
-  lateReminder:   () => ring([{freq:420,duration:200},{freq:420,duration:200},{freq:420,duration:200}], 30000)
+  lateReminder:   () => ring([{freq:420,duration:200},{freq:420,duration:200},{freq:420,duration:200}], 30000),
+  // Deliberately harsh and impossible to mistake for anything else — rings for
+  // a full 6 seconds (comfortably over the 5s minimum) so it can't be missed
+  // by a controller who glanced away, and pairs with a strong vibration
+  // pattern on the guard's own device as confirmation the alert went out.
+  panic: () => {
+    ring([{freq:1000,duration:180},{freq:700,duration:180}], 6000, true);
+    if (navigator.vibrate) navigator.vibrate([300,150,300,150,300,150,300]);
+  }
 };
 
 function showToast(title, sub, kind){
@@ -2516,7 +2533,15 @@ function subscribeRealtime(){
   if (notificationsChannel){ sb.removeChannel(notificationsChannel); notificationsChannel = null; }
   if (profile && (profile.role === 'admin' || profile.role === 'controller')){
     notificationsChannel = sb.channel('notifications-live')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'patrol_notifications' }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'patrol_notifications' }, payload => {
+        // A panic alert rings the dashboard the instant it arrives, before
+        // even waiting on the reload below — this is the one alert type
+        // that must not depend on someone happening to be looking at the
+        // screen right when it comes in.
+        if (payload.eventType === 'INSERT' && payload.new && payload.new.kind === 'panic'){
+          SOUND.panic();
+          showToast('🚨 PANIC ALERT', payload.new.title, 'danger');
+        }
         loadNotifications().then(renderNotifications);
       })
       .subscribe();
@@ -3488,6 +3513,12 @@ function notifContextLine(n, site){
     const siteName = site ? site.name : '';
     const isUninformative = !rawDetail || rawDetail === '—' || rawDetail.toLowerCase() === siteName.toLowerCase();
     parts.push(isUninformative ? 'No distance recorded for this alert' : rawDetail);
+  } else if (n.kind === 'panic'){
+    // The detail text is either "Location: <url>" or an explicit "not
+    // available" note (set server-side in trigger_panic) - turn the URL
+    // into a real tappable link instead of leaving it as plain text.
+    const m = rawDetail.match(/^Location:\s*(https?:\/\/\S+)/);
+    parts.push(m ? `<a href="${m[1]}" target="_blank" rel="noopener" style="color:inherit; text-decoration:underline;">Open guard's location in Maps</a>` : (rawDetail || 'Location was not available.'));
   } else if (rawDetail){
     parts.push(rawDetail);
   }
@@ -3545,9 +3576,9 @@ function renderNotificationsInto(activeId, resolvedId, filterKey){
         `;
       }
       return `
-        <div class="panel" style="padding:10px 12px; border-left:4px solid ${color};">
+        <div class="panel" style="padding:10px 12px; border-left:4px solid ${color};${n.kind === 'panic' ? ' background:rgba(220,38,38,0.12); animation:panicPulse 1.4s ease-in-out infinite;' : ''}">
           <div style="display:flex; justify-content:space-between; gap:8px;">
-            <div style="font-family:var(--sans); font-weight:600; font-size:12.5px;">${n.title}</div>
+            <div style="font-family:var(--sans); font-weight:${n.kind === 'panic' ? '800' : '600'}; font-size:${n.kind === 'panic' ? '13.5px' : '12.5px'};">${n.kind === 'panic' ? '🚨 ' : ''}${n.title}</div>
             <span class="result-meta">${timeAgo(n.occurred_at)}</span>
           </div>
           <div class="result-meta">${notifContextLine(n, site)}</div>
@@ -4177,6 +4208,86 @@ function setManualScanStatus(text, isError){
     }, 30000);
   }
 }
+
+// ---------------- Panic button ----------------
+// Hold-to-confirm rather than a single tap: a brush against a pocket or
+// camera strap shouldn't be able to fire this. Holding for the full
+// duration is still fast enough in a genuine emergency, and a partial
+// hold cancels cleanly with no side effects.
+const PANIC_HOLD_MS = 900;
+let panicHoldTimer = null, panicHoldStart = 0, panicHoldRaf = null;
+let lastPanicAt = 0;
+const PANIC_COOLDOWN_MS = 20000; // avoid literal double-fires from two quick holds; doesn't block a genuinely repeated press after this
+
+function panicHoldTick(){
+  const fillEl = document.getElementById('panicBtnFill');
+  const elapsed = Date.now() - panicHoldStart;
+  const pct = Math.min(100, (elapsed / PANIC_HOLD_MS) * 100);
+  if (fillEl) fillEl.style.width = pct + '%';
+  if (pct < 100) panicHoldRaf = requestAnimationFrame(panicHoldTick);
+}
+
+function startPanicHold(){
+  if (panicHoldTimer) return;
+  if (Date.now() - lastPanicAt < PANIC_COOLDOWN_MS){
+    showToast('Alert already sent', 'Your last panic alert went out moments ago.', 'warn');
+    return;
+  }
+  document.getElementById('panicBtnLabel').textContent = 'Keep holding…';
+  panicHoldStart = Date.now();
+  panicHoldRaf = requestAnimationFrame(panicHoldTick);
+  panicHoldTimer = setTimeout(() => {
+    cancelPanicHold(true);
+    triggerPanic();
+  }, PANIC_HOLD_MS);
+}
+
+function cancelPanicHold(completed){
+  if (panicHoldTimer){ clearTimeout(panicHoldTimer); panicHoldTimer = null; }
+  if (panicHoldRaf){ cancelAnimationFrame(panicHoldRaf); panicHoldRaf = null; }
+  const fillEl = document.getElementById('panicBtnFill');
+  const labelEl = document.getElementById('panicBtnLabel');
+  if (fillEl) fillEl.style.width = '0%';
+  if (labelEl && !completed) labelEl.textContent = '🚨 Hold for panic alert';
+}
+
+async function triggerPanic(){
+  lastPanicAt = Date.now();
+  const labelEl = document.getElementById('panicBtnLabel');
+  labelEl.textContent = 'Sending alert…';
+  SOUND.panic(); // fire immediately for the guard's own confirmation - don't wait on location/network
+
+  let lat = null, lng = null;
+  try{
+    const pos = await new Promise((resolve, reject) => {
+      if (!navigator.geolocation) return reject(new Error('no geolocation'));
+      navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 5000, maximumAge: 3000 });
+    });
+    lat = pos.coords.latitude;
+    lng = pos.coords.longitude;
+  } catch(e){ /* send without location rather than block the alert on it */ }
+
+  try{
+    const { error } = await sb.rpc('trigger_panic', { p_lat: lat, p_lng: lng });
+    if (error){
+      labelEl.textContent = '🚨 Hold for panic alert';
+      showToast('Could not send panic alert', error.message, 'danger');
+      return;
+    }
+    labelEl.textContent = '✓ Alert sent — help is on the way';
+    setTimeout(() => { labelEl.textContent = '🚨 Hold for panic alert'; }, 8000);
+  } catch(err){
+    labelEl.textContent = '🚨 Hold for panic alert';
+    showToast('Could not send panic alert', err.message, 'danger');
+  }
+}
+
+const panicBtnEl = document.getElementById('panicBtn');
+panicBtnEl.addEventListener('pointerdown', startPanicHold);
+panicBtnEl.addEventListener('pointerup', () => cancelPanicHold(false));
+panicBtnEl.addEventListener('pointerleave', () => cancelPanicHold(false));
+panicBtnEl.addEventListener('pointercancel', () => cancelPanicHold(false));
+panicBtnEl.addEventListener('contextmenu', e => e.preventDefault()); // long-press shouldn't open a context menu on mobile
 
 document.getElementById('manualScanBtn').addEventListener('click', async () => {
   const btn = document.getElementById('manualScanBtn');
