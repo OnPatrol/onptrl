@@ -372,13 +372,13 @@
               <button class="btn" id="attendanceClockOutBtn" style="width:100%;">Clock out</button>
               <div class="result-meta" id="attendanceClockOutNote" style="margin-top:4px;"></div>
             </div>
-          </details>
 
-          <details class="attendance-card" id="teammatesCard" style="display:none;">
-            <summary style="cursor:pointer; font-family:var(--sans); font-weight:700; font-size:12.5px; list-style:none;">Teammates at this site</summary>
-            <div class="result-meta" style="margin:8px 0;">On a shared device, a teammate can clock in with just their own face scan — no separate login needed.</div>
-            <div id="teammatesList"></div>
-            <div class="result-meta error-text" id="teammatesError" style="display:none; margin-top:6px;"></div>
+            <div id="teammatesSection" style="display:none; margin-top:14px; padding-top:12px; border-top:1px solid var(--border);">
+              <div style="font-family:var(--sans); font-weight:700; font-size:12.5px; margin-bottom:4px;">Teammates at this site</div>
+              <div class="result-meta" style="margin:0 0 8px;">On a shared device, a teammate can clock in or out with just their own face scan — no separate login needed.</div>
+              <div id="teammatesList"></div>
+              <div class="result-meta error-text" id="teammatesError" style="display:none; margin-top:6px;"></div>
+            </div>
           </details>
 
           <div class="result-meta error-text" id="guardNotClockedInNotice" style="display:none; margin:0 0 10px;">You must clock in above before you can scan checkpoints on this patrol.</div>
@@ -4522,14 +4522,19 @@ function renderAttendanceCard(){
 // the face match server-side (their enrolled face_descriptor never reaches this
 // client). Clock-out doesn't need a face check, so it's a normal table update.
 async function renderTeammatesCard(){
-  const cardEl = document.getElementById('teammatesCard');
-  if (!cardEl || profile.role !== 'guard') return;
-  cardEl.style.display = guardSiteId ? 'block' : 'none';
-  if (!guardSiteId) return;
+  const sectionEl = document.getElementById('teammatesSection');
+  if (!sectionEl || profile.role !== 'guard') return;
+  // Use wherever the guard is actually on duty right now, not their home
+  // site — a reliever working away from home should see (and be able to
+  // clock in/out) the colleagues physically at that site, not the ones back
+  // at their own home site.
+  const dutySiteId = activeDutySiteId || guardSiteId;
+  sectionEl.style.display = dutySiteId ? 'block' : 'none';
+  if (!dutySiteId) return;
 
-  const dir = await loadGuardDirectory(guardSiteId);
+  const dir = await loadGuardDirectory(dutySiteId);
   const listEl = document.getElementById('teammatesList');
-  const homeSiteShifts = siteShifts.filter(s => s.siteId === guardSiteId);
+  const homeSiteShifts = siteShifts.filter(s => s.siteId === dutySiteId);
   const teammates = dir.filter(g => g.id !== session.user.id);
 
   if (!teammates.length){
@@ -4539,7 +4544,7 @@ async function renderTeammatesCard(){
 
   listEl.innerHTML = teammates.map(g => {
     const att = attendance.find(a => a.guardId === g.id && a.status === 'on_duty');
-    if (att && att.siteId === guardSiteId){
+    if (att && att.siteId === dutySiteId){
       const shift = siteShifts.find(s => s.id === att.shiftId);
       return `
         <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--border);">
@@ -4587,12 +4592,13 @@ async function renderTeammatesCard(){
 async function clockInTeammate(guardId){
   const errEl = document.getElementById('teammatesError');
   errEl.style.display = 'none';
+  const dutySiteId = activeDutySiteId || guardSiteId;
   const shiftSel = document.querySelector(`[data-teammate-shift-select="${guardId}"]`);
   const shiftId = shiftSel ? shiftSel.value : null;
   if (!shiftId){ errEl.textContent = 'No shift available to clock into at this site.'; errEl.style.display = 'block'; return; }
   const shift = siteShifts.find(s => s.id === shiftId);
   const shiftDate = currentShiftDateFor(shift, nowMs());
-  const dir = guardDirectoryCache[guardSiteId] || [];
+  const dir = guardDirectoryCache[dutySiteId] || [];
   const guard = dir.find(g => g.id === guardId);
 
   const faceResult = await openFaceModal(`Face scan for ${guard ? guard.full_name : 'teammate'}`);
@@ -4600,8 +4606,8 @@ async function clockInTeammate(guardId){
 
   const { data, error } = await sb.functions.invoke('clock-in-teammate', {
     body: {
-      target_guard_id: guardId, site_id: guardSiteId, shift_id: shiftId, shift_date: shiftDate,
-      is_reliever: false, descriptor: faceResult.descriptor
+      target_guard_id: guardId, site_id: dutySiteId, shift_id: shiftId, shift_date: shiftDate,
+      is_reliever: !!(guard && guard.site_id !== dutySiteId), descriptor: faceResult.descriptor
     }
   });
   if (error || (data && data.error)){
