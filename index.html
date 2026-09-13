@@ -129,10 +129,11 @@
   .btn-row .btn{flex:1;}
   #manualScanBtn{padding:20px 16px; font-size:17px; font-weight:800; border-radius:12px; letter-spacing:0.3px;}
   .field-label{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; margin:16px 0 6px;}
-  select, input[type=text], input[type=password], input[type=email], input[type=date], input[type=time]{
+  select, input[type=text], input[type=password], input[type=email], input[type=date], input[type=time], textarea{
     width:100%; background:var(--panel-2); border:1px solid var(--border); color:var(--text);
     padding:9px 10px; border-radius:8px; font-size:13px; font-family:var(--sans);
   }
+  textarea{resize:vertical; font-family:inherit; margin-bottom:8px;}
   .code-text{font-family:var(--mono);}
   .auth-gate{z-index:100;}
   .auth-gate .detail-modal{max-width:380px;}
@@ -419,11 +420,17 @@
             <button class="btn btn-primary" id="manualScanBtn">Scan now</button>
           </div>
 
+          <div id="panicActingAsWrap" style="display:none; margin-top:10px;">
+            <div class="field-label" style="margin-top:0;">Who's pressing this?</div>
+            <select id="panicActingAsSelect" style="margin-bottom:0;"></select>
+          </div>
           <button id="panicBtn" style="width:100%; margin-top:10px; padding:16px; border-radius:12px; border:none; background:var(--danger); color:#fff; font-family:var(--sans); font-weight:800; font-size:15px; letter-spacing:0.3px; position:relative; overflow:hidden; touch-action:manipulation; user-select:none;">
             <span id="panicBtnFill" style="position:absolute; inset:0; background:rgba(255,255,255,0.35); width:0%; transition:none;"></span>
             <span id="panicBtnLabel" style="position:relative;">🚨 Hold for panic alert</span>
           </button>
           <div class="result-meta" id="panicNote" style="margin-top:4px;">Sends your location straight to admins and controllers, and rings their dashboard until they see it.</div>
+
+          <button id="reportIncidentBtn" class="btn" style="width:100%; margin-top:14px; padding:14px; font-weight:700;">📋 Report an incident</button>
         </div>
       </div>
     </div>
@@ -449,6 +456,7 @@
       <button class="tab-btn" data-admin-view="invites">Admin invites</button>
       <button class="tab-btn" data-admin-view="users">Users</button>
       <button class="tab-btn" data-admin-view="attendance">Attendance</button>
+      <button class="tab-btn" data-admin-view="incidents">Incidents</button>
       <button class="tab-btn" data-admin-view="reports">Reports</button>
     </div>
 
@@ -841,6 +849,29 @@
       </div>
     </div>
 
+    <div class="admin-view" id="admin-incidents">
+      <div class="panel">
+        <h2>Incident reports</h2>
+        <div class="result-meta" style="margin-bottom:10px;">Filed by guards in the field. The report itself is never editable — comments (yours and controllers') are attached alongside it here.</div>
+        <div class="inline-fields" style="margin-bottom:12px;">
+          <div class="f"><label>Site</label><select id="adminIncidentSiteFilter"><option value="">All sites</option></select></div>
+          <div class="f"><label>Type</label>
+            <select id="adminIncidentTypeFilter"><option value="">All types</option></select>
+          </div>
+          <div class="f"><label>Severity</label>
+            <select id="adminIncidentSeverityFilter">
+              <option value="">All severities</option>
+              <option value="critical">🔴 Critical</option>
+              <option value="high">🟠 High</option>
+              <option value="medium">🟡 Medium</option>
+              <option value="low">🟢 Low</option>
+            </select>
+          </div>
+        </div>
+        <div id="adminIncidentsList"></div>
+      </div>
+    </div>
+
     <div class="admin-view" id="admin-reports">
       <div class="panel">
         <h2>Export attendance</h2>
@@ -962,6 +993,7 @@
     <button class="tab-btn" data-ctrl-view="patrols">Patrols</button>
     <button class="tab-btn" data-ctrl-view="attendance">Attendance</button>
     <button class="tab-btn" data-ctrl-view="team">Team</button>
+    <button class="tab-btn" data-ctrl-view="incidents">Incidents</button>
   </div>
 
   <div class="ctrl-view active" id="ctrl-dashboard">
@@ -1063,6 +1095,29 @@
           <tbody id="teamTableBody"></tbody>
         </table>
       </div>
+    </div>
+  </div>
+
+  <div class="ctrl-view" id="ctrl-incidents">
+    <div class="panel">
+      <h2>Incident reports</h2>
+      <div class="result-meta" style="margin-bottom:10px;">Filed by guards in the field. You can read, add a comment (a correction or a revised account), and mark one reviewed — the original report itself can't be changed.</div>
+      <div class="inline-fields" style="margin-bottom:12px;">
+        <div class="f"><label>Site</label><select id="ctrlIncidentSiteFilter"><option value="">All sites</option></select></div>
+        <div class="f"><label>Type</label>
+          <select id="ctrlIncidentTypeFilter"><option value="">All types</option></select>
+        </div>
+        <div class="f"><label>Severity</label>
+          <select id="ctrlIncidentSeverityFilter">
+            <option value="">All severities</option>
+            <option value="critical">🔴 Critical</option>
+            <option value="high">🟠 High</option>
+            <option value="medium">🟡 Medium</option>
+            <option value="low">🟢 Low</option>
+          </select>
+        </div>
+      </div>
+      <div id="ctrlIncidentsList"></div>
     </div>
   </div>
 </div>
@@ -1209,6 +1264,67 @@
     <div id="patrolDetailBody" style="margin-top:14px;"></div>
   </div>
 </div>
+
+<div class="qr-modal-bg" id="patrolAssignmentModalBg">
+  <div class="detail-modal">
+    <h2 style="margin:0 0 4px; font-size:16px;">Who's on patrol?</h2>
+    <div class="result-meta" style="margin-bottom:14px;">More than one guard is on duty here. Pick who's actually walking this round — this can't be changed once set, so any tags scanned or panic alerts raised during it are recorded under the right name.</div>
+    <div id="patrolAssignmentError" class="result-meta" style="color:var(--danger); display:none; margin-bottom:10px; font-family:var(--sans);"></div>
+    <div id="patrolAssignmentList"></div>
+  </div>
+</div>
+
+<div class="qr-modal-bg" id="incidentModalBg">
+  <div class="detail-modal" style="max-width:480px;">
+    <h2 style="margin:0 0 4px; font-size:16px;">Report an incident</h2>
+    <div class="result-meta" style="margin-bottom:12px;">Once submitted, the report itself can't be edited — add to it later with actions taken or a resolution, or ask a controller/admin to add a comment.</div>
+    <div id="incidentFormError" class="result-meta" style="color:var(--danger); display:none; margin-bottom:10px; font-family:var(--sans);"></div>
+
+    <div id="incidentReportingAsWrap" style="display:none; margin-bottom:10px;">
+      <div class="field-label" style="margin-top:0;">Reporting as</div>
+      <select id="incidentReportingAsSelect"></select>
+    </div>
+
+    <div class="field-label" style="margin-top:0;">Incident type</div>
+    <div id="incidentTypeGrid" style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:12px;"></div>
+
+    <div class="field-label">Severity</div>
+    <div id="incidentSeverityGrid" style="display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-bottom:12px;"></div>
+
+    <div class="attendance-card" style="margin:0 0 12px;">
+      <div style="font-family:var(--sans); font-weight:700; font-size:12px; margin-bottom:6px;">Attached automatically</div>
+      <div class="result-meta" id="incidentAutoInfo" style="line-height:1.7;"></div>
+    </div>
+
+    <div class="field-label" style="margin-top:0;">Description</div>
+    <textarea id="incidentDescription" rows="3" placeholder="What happened?"></textarea>
+
+    <div class="field-label">Actions taken</div>
+    <textarea id="incidentActionsTaken" rows="2" placeholder="What did you do about it?"></textarea>
+
+    <div class="field-label">Resolution <span style="text-transform:none; color:var(--muted);">(optional — fill in once it's resolved)</span></div>
+    <textarea id="incidentResolution" rows="2" placeholder="Leave blank if still ongoing"></textarea>
+
+    <div class="field-label">Photos</div>
+    <input type="file" id="incidentPhotoInput" accept="image/*" capture="environment" multiple style="margin-bottom:8px;">
+    <div id="incidentPhotoPreviews" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px;"></div>
+
+    <div class="btn-row" style="margin-top:14px;">
+      <button class="btn" id="incidentCancelBtn">Cancel</button>
+      <button class="btn btn-primary" id="incidentSubmitBtn">Submit report</button>
+    </div>
+  </div>
+</div>
+
+<div class="qr-modal-bg" id="incidentDetailModalBg">
+  <div class="detail-modal" style="max-width:520px;">
+    <div id="incidentDetailBody"></div>
+    <div class="btn-row" style="margin-top:14px;">
+      <button class="btn" onclick="document.getElementById('incidentDetailModalBg').classList.remove('show')">Close</button>
+    </div>
+  </div>
+</div>
+
 
 <div class="qr-modal-bg" id="platformDeleteModalBg">
   <div class="detail-modal">
@@ -1357,6 +1473,23 @@ const SUPABASE_KEY = 'sb_publishable_BqKUmCs6Eu-AbP6uKXZh0w_lsBDgJnT';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 let session = null, profile = null;
+const INCIDENT_TYPES = [
+  { value: 'theft', label: 'Theft' },
+  { value: 'break_in', label: 'Break-in' },
+  { value: 'fire', label: 'Fire' },
+  { value: 'medical', label: 'Medical' },
+  { value: 'assault', label: 'Assault' },
+  { value: 'suspicious_person', label: 'Suspicious person' },
+  { value: 'property_damage', label: 'Property damage' },
+  { value: 'access_violation', label: 'Access violation' },
+  { value: 'other', label: 'Other' }
+];
+const INCIDENT_SEVERITIES = [
+  { value: 'low', label: 'Low', emoji: '🟢' },
+  { value: 'medium', label: 'Medium', emoji: '🟡' },
+  { value: 'high', label: 'High', emoji: '🟠' },
+  { value: 'critical', label: 'Critical', emoji: '🔴' }
+];
 
 // ---------------- Local state (mirrors the DB; loaded async) ----------------
 let sites = [];
@@ -1895,6 +2028,7 @@ async function loadAllData(){
     activeDutySiteId = (myAttendance && myAttendance.siteId) || guardSiteId;
     renderAttendanceCard();
     renderTeammatesCard();
+    renderPanicActingAsSelector();
   }
 }
 
@@ -2971,6 +3105,165 @@ document.getElementById('teamSearch').addEventListener('input', renderTeamTable)
 document.getElementById('teamSiteFilter').addEventListener('change', e => { teamSiteFilterVal = e.target.value; renderTeamTable(); });
 document.getElementById('teamRoleFilter').addEventListener('change', renderTeamTable);
 
+// ---------------- Incidents (admin + controller) ----------------
+let incidents = [];
+let incidentFilters = { admin: { site: '', type: '', severity: '' }, ctrl: { site: '', type: '', severity: '' } };
+const INCIDENT_TYPE_LABELS = Object.fromEntries(INCIDENT_TYPES.map(t => [t.value, t.label]));
+const INCIDENT_SEVERITY_META = Object.fromEntries(INCIDENT_SEVERITIES.map(s => [s.value, s]));
+
+function populateIncidentTypeFilter(id, currentVal){
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = '<option value="">All types</option>' + INCIDENT_TYPES.map(t => `<option value="${t.value}">${t.label}</option>`).join('');
+  el.value = currentVal || '';
+}
+
+async function loadAndRenderIncidents(who){
+  const list = document.getElementById(who + 'IncidentsList');
+  list.innerHTML = '<div class="result-meta">Loading...</div>';
+  if (!teamDirectory.length) await loadTeamDirectory(); // guard names for the list/detail views
+  const { data, error } = await sb.from('incidents').select('*').order('occurred_at', { ascending: false });
+  if (error){ list.innerHTML = `<div class="result-meta" style="color:var(--danger);">${error.message}</div>`; return; }
+  incidents = data || [];
+  renderIncidentsList(who);
+}
+
+function renderIncidentsList(who){
+  const list = document.getElementById(who + 'IncidentsList');
+  if (!list) return;
+  const f = incidentFilters[who];
+  populateFilterSiteSelect(who + 'IncidentSiteFilter', f.site);
+  populateIncidentTypeFilter(who + 'IncidentTypeFilter', f.type);
+  document.getElementById(who + 'IncidentSiteFilter').value = f.site || '';
+  document.getElementById(who + 'IncidentTypeFilter').value = f.type || '';
+  document.getElementById(who + 'IncidentSeverityFilter').value = f.severity || '';
+
+  let rows = incidents.slice();
+  if (f.site) rows = rows.filter(i => i.site_id === f.site);
+  if (f.type) rows = rows.filter(i => i.incident_type === f.type);
+  if (f.severity) rows = rows.filter(i => i.severity === f.severity);
+
+  if (!rows.length){
+    list.innerHTML = `<div class="empty">${incidents.length ? 'No incidents match this filter.' : 'No incidents reported yet.'}</div>`;
+    return;
+  }
+  list.innerHTML = rows.map(inc => {
+    const site = sites.find(s => s.id === inc.site_id);
+    const guardEntry = teamDirectory.find(p => p.id === inc.guard_id);
+    const sev = INCIDENT_SEVERITY_META[inc.severity] || { emoji: '', label: inc.severity };
+    const sevColor = inc.severity === 'critical' ? 'var(--danger)' : inc.severity === 'high' ? '#f59e0b' : inc.severity === 'medium' ? '#eab308' : '#22c55e';
+    return `
+      <div class="panel" style="padding:10px 12px; border-left:4px solid ${sevColor}; margin-bottom:10px; cursor:pointer;" data-open-incident="${inc.id}">
+        <div style="display:flex; justify-content:space-between; gap:8px;">
+          <div style="font-family:var(--sans); font-weight:700; font-size:13px;">${sev.emoji} ${INCIDENT_TYPE_LABELS[inc.incident_type] || inc.incident_type}</div>
+          <span class="result-meta">${timeAgo(inc.occurred_at)}</span>
+        </div>
+        <div class="result-meta">${site ? site.name : '—'} · ${guardEntry ? guardEntry.full_name : 'Unknown guard'} · ${inc.status === 'reviewed' ? '✓ Reviewed' : 'Submitted'}</div>
+        <div class="result-meta" style="margin-top:4px; color:var(--text);">${(inc.description || '').slice(0, 120)}${(inc.description || '').length > 120 ? '…' : ''}</div>
+      </div>
+    `;
+  }).join('');
+
+  list.querySelectorAll('[data-open-incident]').forEach(el => {
+    el.addEventListener('click', () => openIncidentDetail(el.dataset.openIncident, who));
+  });
+}
+
+['admin','ctrl'].forEach(who => {
+  const siteEl = document.getElementById(who + 'IncidentSiteFilter');
+  const typeEl = document.getElementById(who + 'IncidentTypeFilter');
+  const sevEl = document.getElementById(who + 'IncidentSeverityFilter');
+  if (siteEl) siteEl.addEventListener('change', () => { incidentFilters[who].site = siteEl.value; renderIncidentsList(who); });
+  if (typeEl) typeEl.addEventListener('change', () => { incidentFilters[who].type = typeEl.value; renderIncidentsList(who); });
+  if (sevEl) sevEl.addEventListener('change', () => { incidentFilters[who].severity = sevEl.value; renderIncidentsList(who); });
+});
+
+async function openIncidentDetail(incidentId, who){
+  const inc = incidents.find(i => i.id === incidentId);
+  if (!inc) return;
+  const site = sites.find(s => s.id === inc.site_id);
+  const guardEntry = teamDirectory.find(p => p.id === inc.guard_id);
+  const route = routes.find(r => r.id === inc.route_id);
+  const cp = checkpoints.find(c => c.id === inc.checkpoint_id);
+  const sev = INCIDENT_SEVERITY_META[inc.severity] || { emoji: '', label: inc.severity };
+
+  let photoUrls = [];
+  if (inc.photo_paths && inc.photo_paths.length){
+    const results = await Promise.all(inc.photo_paths.map(p => sb.storage.from('incident-photos').createSignedUrl(p, 3600)));
+    photoUrls = results.map(r => r.data ? r.data.signedUrl : null).filter(Boolean);
+  }
+
+  const { data: comments } = await sb.from('incident_comments').select('*').eq('incident_id', incidentId).order('created_at');
+
+  const body = document.getElementById('incidentDetailBody');
+  body.innerHTML = `
+    <h2 style="margin:0 0 4px; font-size:16px;">${sev.emoji} ${INCIDENT_TYPE_LABELS[inc.incident_type] || inc.incident_type}</h2>
+    <div class="result-meta" style="margin-bottom:10px;">${site ? site.name : '—'} · ${new Date(inc.occurred_at).toLocaleString([], { hour12: false })} · ${inc.status === 'reviewed' ? '✓ Reviewed' : 'Submitted'}</div>
+
+    <div class="attendance-card" style="margin:0 0 12px;">
+      <div class="result-meta" style="line-height:1.7;">
+        Guard: ${guardEntry ? guardEntry.full_name : 'Unknown'}<br>
+        GPS: ${inc.lat != null ? inc.lat.toFixed(5) + ', ' + inc.lng.toFixed(5) : 'Not available'}<br>
+        Device: ${inc.device_info || '—'}<br>
+        Patrol: ${route ? route.name : 'No scheduled patrol'}<br>
+        Checkpoint: ${cp ? cp.name : 'None'}
+      </div>
+    </div>
+
+    <div class="field-label" style="margin-top:0;">Description</div>
+    <div class="result-meta" style="color:var(--text); margin-bottom:10px;">${inc.description || '—'}</div>
+    <div class="field-label">Actions taken</div>
+    <div class="result-meta" style="color:var(--text); margin-bottom:10px;">${inc.actions_taken || '—'}</div>
+    <div class="field-label">Resolution</div>
+    <div class="result-meta" style="color:var(--text); margin-bottom:10px;">${inc.resolution || 'Not yet resolved'}</div>
+
+    ${photoUrls.length ? `
+      <div class="field-label">Photos</div>
+      <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;">
+        ${photoUrls.map(u => `<a href="${u}" target="_blank" rel="noopener"><img src="${u}" style="width:72px; height:72px; object-fit:cover; border-radius:6px; border:1px solid var(--border);"></a>`).join('')}
+      </div>
+    ` : ''}
+
+    <div class="field-label">Comments</div>
+    <div id="incidentCommentsList" style="margin-bottom:10px;">
+      ${(comments || []).length ? comments.map(c => {
+        const author = teamDirectory.find(p => p.id === c.author_id);
+        return `<div class="result-meta" style="margin-bottom:6px; padding-bottom:6px; border-bottom:1px solid var(--border);"><b style="color:var(--text);">${author ? author.full_name : 'Someone'}</b> · ${timeAgo(c.created_at)}<br>${c.comment}</div>`;
+      }).join('') : '<div class="result-meta">No comments yet.</div>'}
+    </div>
+
+    <input type="text" id="incidentCommentInput" placeholder="Add a comment — a correction or a revised account…" style="margin-bottom:8px;">
+    <div class="btn-row">
+      <button class="btn btn-primary" id="incidentAddCommentBtn" style="width:auto; padding:8px 14px;">Post comment</button>
+      ${inc.status !== 'reviewed' ? `<button class="btn" id="incidentMarkReviewedBtn" style="width:auto; padding:8px 14px;">Mark reviewed</button>` : ''}
+    </div>
+  `;
+
+  document.getElementById('incidentAddCommentBtn').addEventListener('click', async () => {
+    const input = document.getElementById('incidentCommentInput');
+    const text = input.value.trim();
+    if (!text) return;
+    const { error } = await sb.from('incident_comments').insert({ incident_id: incidentId, author_id: session.user.id, comment: text });
+    if (error){ showToast('Could not post comment', error.message, 'danger'); return; }
+    input.value = '';
+    openIncidentDetail(incidentId, who);
+  });
+
+  const reviewBtn = document.getElementById('incidentMarkReviewedBtn');
+  if (reviewBtn){
+    reviewBtn.addEventListener('click', async () => {
+      const { error } = await sb.from('incidents').update({ status: 'reviewed' }).eq('id', incidentId);
+      if (error){ showToast('Could not update status', error.message, 'danger'); return; }
+      inc.status = 'reviewed';
+      showToast('Marked reviewed', '', 'success');
+      document.getElementById('incidentDetailModalBg').classList.remove('show');
+      renderIncidentsList(who);
+    });
+  }
+
+  document.getElementById('incidentDetailModalBg').classList.add('show');
+}
+
 
 function renderSiteTable(){
   const body = document.getElementById('siteTableBody');
@@ -3910,6 +4203,8 @@ function renderGuardPatrolCard(){
   const card = document.getElementById('guardPatrolCard');
   if (!card) return;
 
+  ensurePatrolAssignment(); // fire-and-forget — shows the modal itself if a round needs an answer
+
   const gate = guardPatrolGate();
   const blockedNotice = document.getElementById('guardScanBlockedNotice');
   const notClockedInNotice = document.getElementById('guardNotClockedInNotice');
@@ -3919,6 +4214,9 @@ function renderGuardPatrolCard(){
   if (notClockedInNotice) notClockedInNotice.style.display = clockedIn ? 'none' : 'block';
   if (blockedNotice && scanBtn){
     blockedNotice.style.display = (clockedIn && !gate.inProgress) ? 'block' : 'none';
+    blockedNotice.textContent = gate.needsAssignment
+      ? "Select who's on patrol above before scanning."
+      : 'No patrol in progress — checkpoint scanning is disabled until your patrol starts.';
     scanBtn.disabled = !clockedIn || !gate.inProgress;
   }
   if (camBtn) camBtn.disabled = !clockedIn;
@@ -4001,6 +4299,7 @@ function renderAll(){
   renderGuardSiteName();
   renderAttendanceCard();
   renderTeammatesCard();
+  renderPanicActingAsSelector();
   renderManageSiteBasicInfo();
   renderCpTable();
   renderStats();
@@ -4038,8 +4337,13 @@ function guardPatrolGate(){
   const dutyInfo = currentDutyRouteNextInstance();
   const dutyRoute = dutyInfo ? routes.find(r => r.id === dutyInfo.inst.routeId) : null;
   const instSt = dutyInfo ? instanceStatus(dutyInfo.inst, nowMs()) : null;
-  const inProgress = !!(instSt && instSt.scannable);
-  return { dutyInfo, dutyRoute, instSt, inProgress };
+  const rawInProgress = !!(instSt && instSt.scannable);
+  // On a multi-guard site, nothing is scannable for this round until "who's
+  // on patrol" has been answered - see ensurePatrolAssignment().
+  const needsAssignment = rawInProgress && !patrolAssignmentsCache[dutyInfo.inst.id] &&
+    onDutyGuardsAtSite(activeDutySiteId || guardSiteId).length >= 2;
+  const inProgress = rawInProgress && !needsAssignment;
+  return { dutyInfo, dutyRoute, instSt, inProgress, needsAssignment };
 }
 
 async function processScan(qrId){
@@ -4095,13 +4399,24 @@ async function processScan(qrId){
   }
 
   const siteId = cp ? cp.siteId : dutySiteId;
+
+  // Attribute this scan to whoever was locked in as "on patrol" for this exact
+  // round (if the site has more than one guard and an answer was given) rather
+  // than blindly to the logged-in session — that's the one who's actually
+  // walking it on a shared device.
+  const lockedAssignment = dutyInfo ? patrolAssignmentsCache[dutyInfo.inst.id] : null;
+  const actingGuardId = lockedAssignment ? lockedAssignment.guardId : session.user.id;
+  const actingAttendance = actingGuardId === session.user.id
+    ? myAttendance
+    : attendance.find(a => a.guardId === actingGuardId && a.status === 'on_duty' && a.siteId === dutySiteId) || myAttendance;
+
   const insertPayload = {
     site_id: siteId,
     checkpoint_id: cp ? cp.id : null,
     raw_qr_id: qrId,
     route_id: dutyInfo ? dutyInfo.inst.routeId : null,
-    guard_id: session.user.id,
-    attendance_id: myAttendance.id,
+    guard_id: actingGuardId,
+    attendance_id: actingAttendance.id,
     result,
     distance_m: distance,
     is_mock: false,
@@ -4132,7 +4447,7 @@ async function processScan(qrId){
     // number, raise this alert to red instead of the usual orange so it actually
     // stands out, rather than the threshold sitting unused.
     const shiftStart = currentShiftStart(nowMs());
-    const priorRejections = scans.filter(s => s.siteId === siteId && s.guardId === session.user.id &&
+    const priorRejections = scans.filter(s => s.siteId === siteId && s.guardId === actingGuardId &&
       (s.result === 'REJECTED_OUT_OF_RANGE' || s.result === 'REJECTED_NO_LOCATION') && s.timestamp >= shiftStart).length;
     const rejectionCount = priorRejections + 1;
     const threshold = Math.max(1, alertSettings.escalation || 3);
@@ -4214,6 +4529,333 @@ function setManualScanStatus(text, isError){
 // camera strap shouldn't be able to fire this. Holding for the full
 // duration is still fast enough in a genuine emergency, and a partial
 // hold cancels cleanly with no side effects.
+// Everyone currently on duty at a given site, self first — shared by the
+// panic "who's pressing this" selector and the per-patrol "who's on patrol"
+// lock below, so both agree on the same roster.
+function onDutyGuardsAtSite(siteId){
+  const onDutyHere = [{ id: session.user.id, full_name: profile.full_name || 'You' }];
+  const dir = guardDirectoryCache[siteId] || [];
+  attendance.forEach(a => {
+    if (a.status === 'on_duty' && a.siteId === siteId && a.guardId !== session.user.id){
+      const g = dir.find(x => x.id === a.guardId);
+      if (g && !onDutyHere.some(o => o.id === g.id)) onDutyHere.push({ id: g.id, full_name: g.full_name });
+    }
+  });
+  return onDutyHere;
+}
+
+// Who's actually pressing the panic button, on a shared device with more than
+// one guard on duty. Defaults to whoever's logged in; only shown at all when
+// there's someone else on duty at the same site to pick from, so the normal
+// one-guard case has zero added friction. Remembers the last pick for the
+// rest of the session — you don't have to reselect yourself every time.
+// Superseded automatically by the per-patrol "who's on patrol" lock whenever
+// one is active — see renderPanicActingAsSelector below.
+let panicActingAsGuardId = null;
+function renderPanicActingAsSelector(){
+  const wrap = document.getElementById('panicActingAsWrap');
+  const sel = document.getElementById('panicActingAsSelect');
+  if (!wrap || !sel || profile.role !== 'guard') return;
+  const dutySiteId = activeDutySiteId || guardSiteId;
+  const onDutyHere = onDutyGuardsAtSite(dutySiteId);
+
+  // A locked-in "who's on patrol" answer for the current round takes over
+  // completely — the server already prefers it regardless, so showing a
+  // separate editable dropdown here would just be confusing.
+  const dutyInfo = currentDutyRouteNextInstance();
+  const lockedAssignment = dutyInfo ? patrolAssignmentsCache[dutyInfo.inst.id] : null;
+  if (lockedAssignment){
+    wrap.style.display = 'block';
+    sel.innerHTML = `<option value="${lockedAssignment.guardId}">${lockedAssignment.guardName} (locked in for this patrol)</option>`;
+    sel.disabled = true;
+    panicActingAsGuardId = lockedAssignment.guardId;
+    return;
+  }
+  sel.disabled = false;
+
+  if (onDutyHere.length < 2){
+    wrap.style.display = 'none';
+    panicActingAsGuardId = session.user.id;
+    return;
+  }
+  wrap.style.display = 'block';
+  if (!onDutyHere.some(o => o.id === panicActingAsGuardId)) panicActingAsGuardId = session.user.id;
+  sel.innerHTML = onDutyHere.map(o => `<option value="${o.id}" ${o.id === panicActingAsGuardId ? 'selected' : ''}>${o.id === session.user.id ? o.full_name + ' (you, logged in)' : o.full_name}</option>`).join('');
+}
+document.getElementById('panicActingAsSelect').addEventListener('change', e => { panicActingAsGuardId = e.target.value; });
+
+// ---------------- "Who's on patrol?" per-round lock ----------------
+// On sites with more than one guard, each new scheduled patrol round needs an
+// answer to "who's actually walking this one" before any tag can be accepted -
+// once answered, it's never editable again for that round (enforced by the
+// database, not just the UI: patrol_assignments has no update/delete policy).
+// This is what makes checkpoint scans and panic alerts attribute correctly to
+// whichever guard is physically on patrol, not just whoever's session is
+// logged in on a shared device.
+let patrolAssignmentsCache = {};   // inst.id -> {guardId, guardName}
+let patrolAssignmentPromptInstId = null; // inst.id currently showing the modal, if any
+
+async function ensurePatrolAssignment(){
+  if (!profile || profile.role !== 'guard' || !myAttendance) return;
+  const dutyInfo = currentDutyRouteNextInstance();
+  if (!dutyInfo) return;
+  const inst = dutyInfo.inst;
+  const st = instanceStatus(inst, nowMs());
+  // No need to ask before the round is actually starting - "upcoming" (more
+  // than the due-soon window away) doesn't need an answer yet.
+  if (st.status === 'upcoming') return;
+  if (patrolAssignmentsCache[inst.id]) return;
+  if (patrolAssignmentPromptInstId === inst.id) return; // modal already up for this exact round
+
+  const dutySiteId = activeDutySiteId || guardSiteId;
+  const onDutyHere = onDutyGuardsAtSite(dutySiteId);
+  if (onDutyHere.length < 2) return; // single-guard site - nothing to disambiguate
+
+  // Someone else on this device (or a previous load) may have already
+  // answered for this exact round - check before prompting again.
+  const { data: existing, error: existingErr } = await sb
+    .from('patrol_assignments')
+    .select('guard_id')
+    .eq('route_id', inst.routeId)
+    .eq('expected_time', new Date(inst.expectedTime).toISOString())
+    .maybeSingle();
+  if (!existingErr && existing){
+    const g = onDutyHere.find(o => o.id === existing.guard_id);
+    patrolAssignmentsCache[inst.id] = { guardId: existing.guard_id, guardName: g ? g.full_name : 'A guard' };
+    renderGuardPatrolCard();
+    renderPanicActingAsSelector();
+    return;
+  }
+
+  showPatrolAssignmentModal(inst, onDutyHere);
+}
+
+function showPatrolAssignmentModal(inst, onDutyHere){
+  patrolAssignmentPromptInstId = inst.id;
+  const modal = document.getElementById('patrolAssignmentModalBg');
+  const list = document.getElementById('patrolAssignmentList');
+  const errEl = document.getElementById('patrolAssignmentError');
+  errEl.style.display = 'none';
+  list.innerHTML = onDutyHere.map(o => `<button type="button" class="btn btn-primary" style="width:100%; margin-bottom:8px;" data-assign-guard="${o.id}">${o.id === session.user.id ? o.full_name + ' (you)' : o.full_name}</button>`).join('');
+  list.querySelectorAll('[data-assign-guard]').forEach(btn => {
+    btn.addEventListener('click', () => confirmPatrolAssignment(inst, btn.dataset.assignGuard, onDutyHere));
+  });
+  modal.classList.add('show');
+}
+
+async function confirmPatrolAssignment(inst, guardId, onDutyHere){
+  const errEl = document.getElementById('patrolAssignmentError');
+  errEl.style.display = 'none';
+  const dutySiteId = activeDutySiteId || guardSiteId;
+  const { error } = await sb.from('patrol_assignments').insert({
+    route_id: inst.routeId,
+    expected_time: new Date(inst.expectedTime).toISOString(),
+    site_id: dutySiteId,
+    guard_id: guardId
+  });
+  // A unique-constraint conflict just means someone else answered this exact
+  // round a moment before us - that's fine, go read back their answer.
+  if (error && !/duplicate key|unique constraint/i.test(error.message)){
+    errEl.textContent = 'Could not save — ' + error.message;
+    errEl.style.display = 'block';
+    return;
+  }
+  const { data: row } = await sb
+    .from('patrol_assignments')
+    .select('guard_id')
+    .eq('route_id', inst.routeId)
+    .eq('expected_time', new Date(inst.expectedTime).toISOString())
+    .maybeSingle();
+  const finalGuardId = row ? row.guard_id : guardId;
+  const g = onDutyHere.find(o => o.id === finalGuardId);
+  patrolAssignmentsCache[inst.id] = { guardId: finalGuardId, guardName: g ? g.full_name : 'A guard' };
+  patrolAssignmentPromptInstId = null;
+  document.getElementById('patrolAssignmentModalBg').classList.remove('show');
+  renderGuardPatrolCard();
+  renderPanicActingAsSelector();
+}
+
+// ---------------- Incident reporting (guard) ----------------
+let incidentSelectedType = null;
+let incidentSelectedSeverity = null;
+let incidentStagedPhotos = [];   // File[]
+let incidentGpsPos = null;       // {lat,lng} or null
+let incidentReportingAsGuardId = null;
+
+function incidentDeviceLabel(){
+  const ua = navigator.userAgent || '';
+  const platform = /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iOS' : /Windows/.test(ua) ? 'Windows' : /Mac/.test(ua) ? 'Mac' : 'Unknown device';
+  const browser = /Chrome/.test(ua) ? 'Chrome' : /Firefox/.test(ua) ? 'Firefox' : /Safari/.test(ua) ? 'Safari' : '';
+  return [platform, browser].filter(Boolean).join(' · ');
+}
+
+async function openIncidentModal(){
+  incidentSelectedType = null;
+  incidentSelectedSeverity = null;
+  incidentStagedPhotos = [];
+  incidentGpsPos = null;
+  document.getElementById('incidentFormError').style.display = 'none';
+  document.getElementById('incidentDescription').value = '';
+  document.getElementById('incidentActionsTaken').value = '';
+  document.getElementById('incidentResolution').value = '';
+  document.getElementById('incidentPhotoInput').value = '';
+  document.getElementById('incidentPhotoPreviews').innerHTML = '';
+
+  const dutySiteId = activeDutySiteId || guardSiteId;
+  const dutyInfo = currentDutyRouteNextInstance();
+  const lockedAssignment = dutyInfo ? patrolAssignmentsCache[dutyInfo.inst.id] : null;
+  const onDutyHere = onDutyGuardsAtSite(dutySiteId);
+  const reportingWrap = document.getElementById('incidentReportingAsWrap');
+  const reportingSel = document.getElementById('incidentReportingAsSelect');
+  if (lockedAssignment){
+    incidentReportingAsGuardId = lockedAssignment.guardId;
+    reportingWrap.style.display = 'block';
+    reportingSel.innerHTML = `<option value="${lockedAssignment.guardId}">${lockedAssignment.guardName} (locked in for this patrol)</option>`;
+    reportingSel.disabled = true;
+  } else if (onDutyHere.length >= 2){
+    incidentReportingAsGuardId = session.user.id;
+    reportingWrap.style.display = 'block';
+    reportingSel.disabled = false;
+    reportingSel.innerHTML = onDutyHere.map(o => `<option value="${o.id}" ${o.id === session.user.id ? 'selected' : ''}>${o.id === session.user.id ? o.full_name + ' (you, logged in)' : o.full_name}</option>`).join('');
+  } else {
+    incidentReportingAsGuardId = session.user.id;
+    reportingWrap.style.display = 'none';
+  }
+
+  document.getElementById('incidentTypeGrid').innerHTML = INCIDENT_TYPES.map(t =>
+    `<button type="button" class="btn" data-incident-type="${t.value}" style="padding:9px 6px; font-size:12.5px;">${t.label}</button>`
+  ).join('');
+  document.getElementById('incidentSeverityGrid').innerHTML = INCIDENT_SEVERITIES.map(s =>
+    `<button type="button" class="btn" data-incident-severity="${s.value}" style="padding:9px 4px; font-size:12px;">${s.emoji} ${s.label}</button>`
+  ).join('');
+
+  renderIncidentAutoInfo();
+  document.getElementById('incidentModalBg').classList.add('show');
+
+  const pos = await getGuardPosition();
+  if (pos){ incidentGpsPos = { lat: pos.lat, lng: pos.lng }; renderIncidentAutoInfo(); }
+}
+
+function renderIncidentAutoInfo(){
+  const el = document.getElementById('incidentAutoInfo');
+  const dutySiteId = activeDutySiteId || guardSiteId;
+  const site = sites.find(s => s.id === dutySiteId);
+  const dutyInfo = currentDutyRouteNextInstance();
+  const route = dutyInfo ? routes.find(r => r.id === dutyInfo.inst.routeId) : null;
+  const lastScan = scans.filter(s => s.siteId === dutySiteId && s.result === 'ACCEPTED').sort((a,b) => b.timestamp - a.timestamp)[0];
+  const lastCp = lastScan ? checkpoints.find(c => c.qrId === lastScan.qrId) : null;
+
+  el.innerHTML = [
+    `Site: ${site ? site.name : '—'}`,
+    `GPS: ${incidentGpsPos ? incidentGpsPos.lat.toFixed(5) + ', ' + incidentGpsPos.lng.toFixed(5) : 'Getting location…'}`,
+    `Time: ${new Date().toLocaleString([], { hour12: false })}`,
+    `Device: ${incidentDeviceLabel()}`,
+    `Patrol: ${route ? route.name : 'No scheduled patrol right now'}`,
+    `Checkpoint: ${lastCp ? lastCp.name + ' (last scanned)' : 'None scanned yet this shift'}`
+  ].join('<br>');
+}
+
+document.getElementById('incidentTypeGrid').addEventListener('click', e => {
+  const btn = e.target.closest('[data-incident-type]');
+  if (!btn) return;
+  incidentSelectedType = btn.dataset.incidentType;
+  document.querySelectorAll('#incidentTypeGrid [data-incident-type]').forEach(b => b.classList.toggle('btn-primary', b === btn));
+});
+document.getElementById('incidentSeverityGrid').addEventListener('click', e => {
+  const btn = e.target.closest('[data-incident-severity]');
+  if (!btn) return;
+  incidentSelectedSeverity = btn.dataset.incidentSeverity;
+  document.querySelectorAll('#incidentSeverityGrid [data-incident-severity]').forEach(b => b.classList.toggle('btn-primary', b === btn));
+});
+document.getElementById('incidentReportingAsSelect').addEventListener('change', e => { incidentReportingAsGuardId = e.target.value; });
+
+document.getElementById('incidentPhotoInput').addEventListener('change', e => {
+  incidentStagedPhotos = incidentStagedPhotos.concat(Array.from(e.target.files || []));
+  renderIncidentPhotoPreviews();
+});
+function renderIncidentPhotoPreviews(){
+  const wrap = document.getElementById('incidentPhotoPreviews');
+  wrap.innerHTML = incidentStagedPhotos.map((f, i) => `
+    <div style="position:relative; width:64px; height:64px;">
+      <img src="${URL.createObjectURL(f)}" style="width:100%; height:100%; object-fit:cover; border-radius:6px; border:1px solid var(--border);">
+      <button type="button" data-remove-photo="${i}" style="position:absolute; top:-6px; right:-6px; background:var(--danger); color:#fff; border:none; border-radius:50%; width:20px; height:20px; font-size:12px; line-height:1;">×</button>
+    </div>
+  `).join('');
+  wrap.querySelectorAll('[data-remove-photo]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      incidentStagedPhotos.splice(Number(btn.dataset.removePhoto), 1);
+      renderIncidentPhotoPreviews();
+    });
+  });
+}
+
+document.getElementById('incidentCancelBtn').addEventListener('click', () => {
+  document.getElementById('incidentModalBg').classList.remove('show');
+});
+
+document.getElementById('reportIncidentBtn').addEventListener('click', openIncidentModal);
+
+document.getElementById('incidentSubmitBtn').addEventListener('click', async () => {
+  const errEl = document.getElementById('incidentFormError');
+  errEl.style.display = 'none';
+  if (!incidentSelectedType){ errEl.textContent = 'Select an incident type.'; errEl.style.display = 'block'; return; }
+  if (!incidentSelectedSeverity){ errEl.textContent = 'Select a severity.'; errEl.style.display = 'block'; return; }
+  const description = document.getElementById('incidentDescription').value.trim();
+  if (!description){ errEl.textContent = 'Add a description of what happened.'; errEl.style.display = 'block'; return; }
+
+  const btn = document.getElementById('incidentSubmitBtn');
+  btn.disabled = true;
+  btn.textContent = 'Submitting…';
+  try{
+    const dutySiteId = activeDutySiteId || guardSiteId;
+    const dutyInfo = currentDutyRouteNextInstance();
+    const lastScan = scans.filter(s => s.siteId === dutySiteId && s.result === 'ACCEPTED').sort((a,b) => b.timestamp - a.timestamp)[0];
+    const lastCp = lastScan ? checkpoints.find(c => c.qrId === lastScan.qrId) : null;
+    const actingAttendance = incidentReportingAsGuardId === session.user.id
+      ? myAttendance
+      : attendance.find(a => a.guardId === incidentReportingAsGuardId && a.status === 'on_duty' && a.siteId === dutySiteId) || myAttendance;
+
+    const incidentId = crypto.randomUUID();
+    const photoPaths = [];
+    for (let i = 0; i < incidentStagedPhotos.length; i++){
+      const file = incidentStagedPhotos[i];
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const path = `${profile.org_id}/${incidentId}/${Date.now()}-${i}.${ext}`;
+      const { error: upErr } = await sb.storage.from('incident-photos').upload(path, file);
+      if (upErr){ throw new Error('Photo upload failed: ' + upErr.message); }
+      photoPaths.push(path);
+    }
+
+    const { error } = await sb.from('incidents').insert({
+      id: incidentId,
+      site_id: dutySiteId,
+      guard_id: incidentReportingAsGuardId,
+      incident_type: incidentSelectedType,
+      severity: incidentSelectedSeverity,
+      description,
+      actions_taken: document.getElementById('incidentActionsTaken').value.trim(),
+      resolution: document.getElementById('incidentResolution').value.trim(),
+      photo_paths: photoPaths,
+      lat: incidentGpsPos ? incidentGpsPos.lat : null,
+      lng: incidentGpsPos ? incidentGpsPos.lng : null,
+      device_info: incidentDeviceLabel(),
+      route_id: dutyInfo ? dutyInfo.inst.routeId : null,
+      checkpoint_id: lastCp ? lastCp.id : null,
+      attendance_id: actingAttendance ? actingAttendance.id : null
+    });
+    if (error) throw error;
+
+    document.getElementById('incidentModalBg').classList.remove('show');
+    showToast('Incident report submitted', 'Admins and controllers can see it now.', 'success');
+  } catch(err){
+    errEl.textContent = err.message;
+    errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Submit report';
+  }
+});
+
 const PANIC_HOLD_MS = 900;
 let panicHoldTimer = null, panicHoldStart = 0, panicHoldRaf = null;
 let lastPanicAt = 0;
@@ -4268,7 +4910,7 @@ async function triggerPanic(){
   } catch(e){ /* send without location rather than block the alert on it */ }
 
   try{
-    const { error } = await sb.rpc('trigger_panic', { p_lat: lat, p_lng: lng });
+    const { error } = await sb.rpc('trigger_panic', { p_lat: lat, p_lng: lng, p_acting_as_guard_id: panicActingAsGuardId || session.user.id });
     if (error){
       labelEl.textContent = '🚨 Hold for panic alert';
       showToast('Could not send panic alert', error.message, 'danger');
@@ -4619,6 +5261,7 @@ async function clockInTeammate(guardId){
 
   await loadAttendanceRecent();
   renderTeammatesCard();
+  renderPanicActingAsSelector();
   renderAttendanceCard();
   showToast('Clocked in', result.newly_enrolled ? `${guard ? guard.full_name : 'Guard'} enrolled their face and is now on duty.` : `${guard ? guard.full_name : 'Guard'} is now on duty.`, 'success');
 }
@@ -4637,6 +5280,7 @@ async function clockOutTeammate(attendanceId, shiftId, shiftDate){
   if (error){ errEl.textContent = 'Could not clock out — ' + error.message; errEl.style.display = 'block'; return; }
   await loadAttendanceRecent();
   renderTeammatesCard();
+  renderPanicActingAsSelector();
   renderAttendanceCard();
   showToast('Clocked out', '', 'success');
 }
@@ -4700,6 +5344,7 @@ document.getElementById('attendanceClockInBtn').addEventListener('click', async 
   renderGuardSiteName();
   renderAttendanceCard();
   renderTeammatesCard();
+  renderPanicActingAsSelector();
   renderGuardPatrolCard();
   showToast('Clocked in', isReliever ? `Relieving at ${sites.find(s=>s.id===siteId)?.name || 'site'}` : '', 'success');
 });
@@ -4714,6 +5359,7 @@ document.getElementById('attendanceClockOutBtn').addEventListener('click', async
   renderGuardSiteName();
   renderAttendanceCard();
   renderTeammatesCard();
+  renderPanicActingAsSelector();
   renderGuardPatrolCard();
   showToast('Clocked out', '', 'success');
 });
@@ -5853,6 +6499,9 @@ document.querySelectorAll('[data-admin-view]').forEach(btn => {
     if (btn.dataset.adminView === 'manage'){
       await refreshManageSitePanels();
     }
+    if (btn.dataset.adminView === 'incidents'){
+      await loadAndRenderIncidents('admin');
+    }
   });
 });
 
@@ -5870,6 +6519,9 @@ document.querySelectorAll('[data-ctrl-view]').forEach(btn => {
     if (btn.dataset.ctrlView === 'team'){
       await loadTeamDirectory();
       renderTeamTable();
+    }
+    if (btn.dataset.ctrlView === 'incidents'){
+      await loadAndRenderIncidents('ctrl');
     }
   });
 });
