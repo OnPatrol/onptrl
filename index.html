@@ -447,6 +447,7 @@
     <div class="result-meta" style="margin:-8px 0 16px;">These four update live and only cover the last 48 hours. For totals over a longer or specific date range, use <b>Patrol reports</b> below — it queries full history, not this rolling window.</div>
 
     <div class="tabs" style="margin-bottom:16px; display:inline-flex;">
+      <button class="tab-btn" data-admin-view="siteoverview">Overview</button>
       <button class="tab-btn active" data-admin-view="notifications">Notifications</button>
       <button class="tab-btn" data-admin-view="sites">Sites</button>
       <button class="tab-btn" data-admin-view="manage">Manage site</button>
@@ -458,6 +459,25 @@
       <button class="tab-btn" data-admin-view="attendance">Attendance</button>
       <button class="tab-btn" data-admin-view="incidents">Incidents</button>
       <button class="tab-btn" data-admin-view="reports">Reports</button>
+    </div>
+
+    <div class="admin-view" id="admin-siteoverview">
+      <div class="panel">
+        <h2>Overview</h2>
+        <div class="result-meta" style="margin-bottom:14px;">Org-wide progress across every site for the shift under way.</div>
+        <div id="adminOverviewGauges" style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:22px;"></div>
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:6px;">
+          <div style="font-family:var(--sans); font-weight:700; font-size:13px;">Sites by tag-scan completion</div>
+          <div style="display:flex; align-items:center; gap:6px;">
+            <span class="result-meta">SLA threshold</span>
+            <input type="number" id="adminOverviewSlaInput" value="90" min="1" max="100" style="width:60px; padding:4px 6px;">
+            <span class="result-meta">%</span>
+          </div>
+        </div>
+        <div class="result-meta" style="margin-bottom:10px;">Tap a band to see which sites are in it. Sites with no scheduled patrols yet this shift aren't counted.</div>
+        <div id="adminOverviewDonutWrap" style="display:flex; justify-content:center; margin:6px 0 14px;"></div>
+        <div id="adminOverviewBandDetail"></div>
+      </div>
     </div>
 
     <div class="admin-view active" id="admin-notifications">
@@ -684,15 +704,15 @@
         <div id="siteContactsAddWrap" style="display:none; margin-top:10px;">
           <div class="cp-row">
             <input type="text" id="newContactName" placeholder="Name">
-            <input type="text" id="newContactRole" placeholder="Role (e.g. Site Manager)" list="contactRoleSuggestions">
+            <select id="newContactRole">
+              <option value="site_manager">Site Manager</option>
+              <option value="facilities_manager">Facilities Manager</option>
+              <option value="security_supervisor">Security Supervisor</option>
+              <option value="emergency_contact">Emergency Contact</option>
+              <option value="building_owner">Building Owner</option>
+              <option value="other">Other</option>
+            </select>
           </div>
-          <datalist id="contactRoleSuggestions">
-            <option value="Site Manager">
-            <option value="Facilities Manager">
-            <option value="Security Supervisor">
-            <option value="Emergency Contact">
-            <option value="Building Owner">
-          </datalist>
           <div class="cp-row" style="margin-top:8px;">
             <input type="text" id="newContactPhone" placeholder="Phone">
             <input type="text" id="newContactEmail" placeholder="Email">
@@ -987,6 +1007,7 @@
   </div>
 
   <div class="tabs" style="margin-bottom:16px; display:inline-flex;">
+    <button class="tab-btn" data-ctrl-view="siteoverview">Overview</button>
     <button class="tab-btn active" data-ctrl-view="dashboard">Dashboard</button>
     <button class="tab-btn" data-ctrl-view="sites">Sites</button>
     <button class="tab-btn" data-ctrl-view="log">Live activity log</button>
@@ -994,6 +1015,25 @@
     <button class="tab-btn" data-ctrl-view="attendance">Attendance</button>
     <button class="tab-btn" data-ctrl-view="team">Team</button>
     <button class="tab-btn" data-ctrl-view="incidents">Incidents</button>
+  </div>
+
+  <div class="ctrl-view" id="ctrl-siteoverview">
+    <div class="panel">
+      <h2>Overview</h2>
+      <div class="result-meta" style="margin-bottom:14px;">Org-wide progress across every site for the shift under way.</div>
+      <div id="ctrlOverviewGauges" style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:22px;"></div>
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:6px;">
+        <div style="font-family:var(--sans); font-weight:700; font-size:13px;">Sites by tag-scan completion</div>
+        <div style="display:flex; align-items:center; gap:6px;">
+          <span class="result-meta">SLA threshold</span>
+          <input type="number" id="ctrlOverviewSlaInput" value="90" min="1" max="100" style="width:60px; padding:4px 6px;">
+          <span class="result-meta">%</span>
+        </div>
+      </div>
+      <div class="result-meta" style="margin-bottom:10px;">Tap a band to see which sites are in it. Sites with no scheduled patrols yet this shift aren't counted.</div>
+      <div id="ctrlOverviewDonutWrap" style="display:flex; justify-content:center; margin:6px 0 14px;"></div>
+      <div id="ctrlOverviewBandDetail"></div>
+    </div>
   </div>
 
   <div class="ctrl-view active" id="ctrl-dashboard">
@@ -2628,6 +2668,8 @@ async function loadProfileAndApp(){
       renderLog(); // re-filters to the current shift, in case the shift boundary just passed
       renderCoverageGrid('coverageGridAdmin'); // so Day/Night tiles swap automatically at shift boundaries
       renderCoverageGrid('coverageGridCtrl');
+      if (document.getElementById('admin-siteoverview')?.classList.contains('active')) renderSiteOverview('admin');
+      if (document.getElementById('ctrl-siteoverview')?.classList.contains('active')) renderSiteOverview('ctrl');
     }, 30000);
   }
 }
@@ -2843,6 +2885,173 @@ function currentShiftStart(atMs){
   }
   return start.getTime();
 }
+
+// ---------------- Site overview (gauges + SLA distribution) ----------------
+function polarToCartesian(cx, cy, r, angleDeg){
+  const rad = (angleDeg - 90) * Math.PI / 180;
+  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+}
+function describeArc(cx, cy, r, startAngle, endAngle){
+  const start = polarToCartesian(cx, cy, r, endAngle);
+  const end = polarToCartesian(cx, cy, r, startAngle);
+  const largeArc = endAngle - startAngle <= 180 ? '0' : '1';
+  return `M ${start.x} ${start.y} A ${r} ${r} 0 ${largeArc} 0 ${end.x} ${end.y}`;
+}
+
+// A hand-rolled semicircle gauge (0-100), red->orange->yellow->green bands with a
+// needle — no charting library needed for something this simple, and it matches
+// the app's own dark theme instead of whatever a library's defaults look like.
+function buildGaugeSVG(value, max, title){
+  const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
+  const cx = 100, cy = 95, r = 78, sw = 16;
+  const bands = [
+    { from: 0, to: 50, color: '#E5484D' },
+    { from: 50, to: 70, color: '#E8862A' },
+    { from: 70, to: 90, color: '#EAB308' },
+    { from: 90, to: 100, color: '#3FB878' }
+  ];
+  const arcs = bands.map(b => `<path d="${describeArc(cx, cy, r, b.from * 1.8, b.to * 1.8)}" stroke="${b.color}" stroke-width="${sw}" fill="none" stroke-linecap="butt"/>`).join('');
+  const needleAngle = pct * 1.8;
+  const tip = polarToCartesian(cx, cy, r - sw/2 - 6, needleAngle);
+  const pctLabel = max > 0 ? Math.round(pct) + '%' : '—';
+  return `
+    <svg viewBox="0 0 200 130" style="width:100%; max-width:220px;">
+      ${arcs}
+      <line x1="${cx}" y1="${cy}" x2="${tip.x}" y2="${tip.y}" stroke="var(--text)" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="${cx}" cy="${cy}" r="6" fill="var(--text)"/>
+      <text x="${cx}" y="${cy + 26}" text-anchor="middle" font-size="18" font-weight="800" fill="var(--text)" font-family="var(--sans)">${pctLabel}</text>
+    </svg>
+    <div style="text-align:center; font-family:var(--sans); font-weight:700; font-size:12.5px; margin-top:-6px;">${title}</div>
+    <div class="result-meta" style="text-align:center;">${value} / ${max}</div>
+  `;
+}
+
+// Every checkpoint on a route counts as one "expected tag" per round; a round only
+// counts toward "expected" once it's actually due (not while still "upcoming") so
+// the numbers reflect what should have happened by now, not the whole shift ahead.
+function computeSiteShiftStats(site){
+  const shiftStart = currentShiftStart(nowMs());
+  const now = nowMs();
+  const siteRouteIds = new Set(routes.filter(r => r.siteId === site.id && r.active !== false).map(r => r.id));
+  const siteScheds = schedules.filter(s => siteRouteIds.has(s.routeId) && isScheduleLive(s));
+
+  let expectedTags = 0, expectedPatrols = 0, completedPatrols = 0;
+  siteScheds.forEach(sched => {
+    const route = routes.find(r => r.id === sched.routeId);
+    const cpCount = route ? route.cpIds.length : 0;
+    const insts = generateInstances(sched, shiftStart, now).filter(i => i.expectedTime <= now);
+    insts.forEach(inst => {
+      expectedPatrols++;
+      expectedTags += cpCount;
+      const st = instanceStatus(inst, now);
+      if (st.status === 'completed' || st.status === 'completed_late') completedPatrols++;
+    });
+  });
+
+  const acceptedTags = scans.filter(s => s.siteId === site.id && s.result === 'ACCEPTED' && s.timestamp >= shiftStart).length;
+  const pct = expectedTags > 0 ? Math.min(100, (acceptedTags / expectedTags) * 100) : null;
+  return { site, expectedTags, acceptedTags, expectedPatrols, completedPatrols, pct };
+}
+
+let overviewSelectedBand = { admin: null, ctrl: null };
+
+function renderSiteOverview(who){
+  const gaugesEl = document.getElementById(who + 'OverviewGauges');
+  if (!gaugesEl) return;
+
+  const perSite = sites.map(computeSiteShiftStats);
+  const totalExpectedTags = perSite.reduce((a, s) => a + s.expectedTags, 0);
+  const totalAcceptedTags = perSite.reduce((a, s) => a + s.acceptedTags, 0);
+  const totalExpectedPatrols = perSite.reduce((a, s) => a + s.expectedPatrols, 0);
+  const totalCompletedPatrols = perSite.reduce((a, s) => a + s.completedPatrols, 0);
+
+  gaugesEl.innerHTML = `
+    <div>${buildGaugeSVG(totalAcceptedTags, totalExpectedTags, 'Tags scanned')}</div>
+    <div>${buildGaugeSVG(totalCompletedPatrols, totalExpectedPatrols, 'Completed patrols')}</div>
+  `;
+
+  const slaInput = document.getElementById(who + 'OverviewSlaInput');
+  const sla = Math.max(1, Math.min(100, Number(slaInput.value) || 90));
+
+  const rated = perSite.filter(s => s.pct !== null);
+  const bands = [
+    { label: '0–25%', from: 0, to: 25, color: '#E5484D' },
+    { label: '25–50%', from: 25, to: 50, color: '#E8862A' },
+    { label: '50–75%', from: 50, to: 75, color: '#EAB308' },
+    { label: `75–${sla}%`, from: 75, to: sla, color: '#F5A623' },
+    { label: `${sla}–100% (passing)`, from: sla, to: 100.0001, color: '#3FB878' }
+  ].filter(b => b.to > b.from); // collapses if sla <= 75
+
+  const bandSites = bands.map(b => rated.filter(s => s.pct >= b.from && s.pct < b.to));
+  const belowSlaCount = rated.filter(s => s.pct < sla).length;
+
+  const donutEl = document.getElementById(who + 'OverviewDonutWrap');
+  if (!rated.length){
+    donutEl.innerHTML = '<div class="result-meta">No sites have a scheduled patrol due yet this shift.</div>';
+  } else {
+    const cx = 110, cy = 110, r = 88, sw = 34;
+    let cursor = 0;
+    const slices = bands.map((b, i) => {
+      const count = bandSites[i].length;
+      const sweep = rated.length ? (count / rated.length) * 360 : 0;
+      const path = count > 0 ? `<path data-band="${i}" d="${describeArc(cx, cy, r, cursor, cursor + Math.max(sweep, 0.01))}" stroke="${b.color}" stroke-width="${sw}" fill="none" style="cursor:pointer; opacity:${overviewSelectedBand[who] === i || overviewSelectedBand[who] == null ? '1' : '0.35'};"/>` : '';
+      cursor += sweep;
+      return path;
+    }).join('');
+    donutEl.innerHTML = `
+      <svg viewBox="0 0 220 220" style="width:100%; max-width:260px;">
+        ${slices}
+        <text x="${cx}" y="${cy - 6}" text-anchor="middle" font-size="26" font-weight="800" fill="var(--text)" font-family="var(--sans)">${belowSlaCount}</text>
+        <text x="${cx}" y="${cy + 16}" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="var(--sans)">below ${sla}% SLA</text>
+      </svg>
+    `;
+    donutEl.querySelectorAll('[data-band]').forEach(el => {
+      el.addEventListener('click', () => {
+        const idx = Number(el.dataset.band);
+        overviewSelectedBand[who] = overviewSelectedBand[who] === idx ? null : idx;
+        renderSiteOverview(who);
+      });
+    });
+  }
+
+  const detailEl = document.getElementById(who + 'OverviewBandDetail');
+  const legendHtml = bands.map((b, i) => `
+    <div data-band-legend="${i}" style="display:flex; align-items:center; gap:6px; padding:5px 8px; border-radius:8px; cursor:pointer; background:${overviewSelectedBand[who] === i ? 'var(--panel-2)' : 'transparent'};">
+      <span style="width:10px; height:10px; border-radius:3px; background:${b.color}; flex:0 0 auto;"></span>
+      <span class="result-meta" style="color:var(--text);">${b.label}</span>
+      <span class="result-meta">(${bandSites[i].length})</span>
+    </div>
+  `).join('');
+
+  const shown = overviewSelectedBand[who] != null ? bandSites[overviewSelectedBand[who]] : null;
+  const notRated = perSite.filter(s => s.pct === null);
+  detailEl.innerHTML = `
+    <div style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:10px;">${legendHtml}</div>
+    ${shown ? `
+      <div class="attendance-card" style="margin:0;">
+        ${shown.length ? shown.map(s => `
+          <div style="display:flex; justify-content:space-between; padding:4px 0; font-size:12.5px; font-family:var(--sans);">
+            <span>${s.site.name}</span>
+            <span class="result-meta">${s.acceptedTags}/${s.expectedTags} tags (${Math.round(s.pct)}%)</span>
+          </div>
+        `).join('') : '<div class="result-meta">No sites in this band.</div>'}
+      </div>
+    ` : ''}
+    ${notRated.length ? `<div class="result-meta" style="margin-top:10px;">${notRated.length} site${notRated.length === 1 ? '' : 's'} not shown — no patrol due yet this shift: ${notRated.map(s => s.site.name).join(', ')}</div>` : ''}
+  `;
+  detailEl.querySelectorAll('[data-band-legend]').forEach(el => {
+    el.addEventListener('click', () => {
+      const idx = Number(el.dataset.bandLegend);
+      overviewSelectedBand[who] = overviewSelectedBand[who] === idx ? null : idx;
+      renderSiteOverview(who);
+    });
+  });
+}
+
+['admin','ctrl'].forEach(who => {
+  const slaEl = document.getElementById(who + 'OverviewSlaInput');
+  if (slaEl) slaEl.addEventListener('change', () => renderSiteOverview(who));
+});
 
 // Controller's tiles reset at each shift boundary, and the alert-related ones count
 // down in real time as the controller clears them — separate from the admin's
@@ -3194,6 +3403,7 @@ async function openIncidentDetail(incidentId, who){
   }
 
   const { data: comments } = await sb.from('incident_comments').select('*').eq('incident_id', incidentId).order('created_at');
+  const { data: incidentSiteContacts } = await sb.from('site_contacts').select('*').eq('site_id', inc.site_id);
 
   const body = document.getElementById('incidentDetailBody');
   body.innerHTML = `
@@ -3237,7 +3447,11 @@ async function openIncidentDetail(incidentId, who){
       <button class="btn btn-primary" id="incidentAddCommentBtn" style="width:auto; padding:8px 14px;">Post comment</button>
       ${inc.status !== 'reviewed' ? `<button class="btn" id="incidentMarkReviewedBtn" style="width:auto; padding:8px 14px;">Mark reviewed</button>` : ''}
     </div>
+
+    ${who === 'admin' ? renderIncidentClientEmailSection(inc, incidentSiteContacts || []) : ''}
   `;
+
+  if (who === 'admin') wireIncidentClientEmailSection(inc, incidentId, who, incidentSiteContacts || []);
 
   document.getElementById('incidentAddCommentBtn').addEventListener('click', async () => {
     const input = document.getElementById('incidentCommentInput');
@@ -3264,6 +3478,93 @@ async function openIncidentDetail(incidentId, who){
   document.getElementById('incidentDetailModalBg').classList.add('show');
 }
 
+// Only relevant once there's actually something conclusive to tell the
+// client — gated on the guard having filled in a resolution, and only for
+// admins (controllers can read/comment but this is an admin-level action).
+function renderIncidentClientEmailSection(inc, contacts){
+  const emailable = contacts.filter(c => c.email);
+  const alreadySent = inc.client_emailed_at
+    ? `<div class="result-meta" style="margin-bottom:8px;">Last emailed to client on ${new Date(inc.client_emailed_at).toLocaleString([], { hour12: false })} — ${(inc.client_emailed_to || []).map(r => r.name).join(', ')}.</div>`
+    : '';
+
+  if (!inc.resolution){
+    return `
+      <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--border);">
+        <div style="font-family:var(--sans); font-weight:700; font-size:12.5px; margin-bottom:4px;">Email to client</div>
+        <div class="result-meta">Available once a resolution has been recorded — the guard adds this from their own report.</div>
+      </div>
+    `;
+  }
+  if (!emailable.length){
+    return `
+      <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--border);">
+        <div style="font-family:var(--sans); font-weight:700; font-size:12.5px; margin-bottom:4px;">Email to client</div>
+        ${alreadySent}
+        <div class="result-meta">No contacts with an email address are on file for this site yet — add one under Manage site → Site contacts.</div>
+      </div>
+    `;
+  }
+
+  return `
+    <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--border);">
+      <div style="font-family:var(--sans); font-weight:700; font-size:12.5px; margin-bottom:4px;">Email to client</div>
+      ${alreadySent}
+      <div class="result-meta" style="margin-bottom:6px;">Send to:</div>
+      ${emailable.map(c => `
+        <label style="display:flex; align-items:center; gap:8px; font-size:13px; margin-bottom:6px; font-family:var(--sans);">
+          <input type="checkbox" data-email-contact="${c.id}" ${c.incident_email_default ? 'checked' : ''}>
+          ${escapeHtmlForPrint(c.name)} <span class="result-meta">(${CONTACT_ROLE_LABELS[c.role] || c.role})</span>
+        </label>
+      `).join('')}
+      <label style="display:flex; align-items:center; gap:8px; font-size:13px; margin:10px 0 6px; font-family:var(--sans);">
+        <input type="checkbox" id="incidentEmailIncludePhotos" ${inc.photo_paths && inc.photo_paths.length ? 'checked' : ''} ${inc.photo_paths && inc.photo_paths.length ? '' : 'disabled'}>
+        Attach photos ${inc.photo_paths && inc.photo_paths.length ? '' : '<span class="result-meta">(none on this report)</span>'}
+      </label>
+      <label style="display:flex; align-items:center; gap:8px; font-size:13px; margin-bottom:10px; font-family:var(--sans);">
+        <input type="checkbox" id="incidentEmailIncludeComments" checked>
+        Include controller/admin comments
+      </label>
+      <div id="incidentEmailError" class="result-meta" style="color:var(--danger); display:none; margin-bottom:8px;"></div>
+      <button class="btn btn-primary" id="incidentSendEmailBtn" style="width:auto; padding:8px 14px;">Send to client</button>
+    </div>
+  `;
+}
+
+function wireIncidentClientEmailSection(inc, incidentId, who, contacts){
+  const btn = document.getElementById('incidentSendEmailBtn');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const errEl = document.getElementById('incidentEmailError');
+    errEl.style.display = 'none';
+    const contactIds = Array.from(document.querySelectorAll('[data-email-contact]:checked')).map(el => el.dataset.emailContact);
+    if (!contactIds.length){ errEl.textContent = 'Select at least one recipient.'; errEl.style.display = 'block'; return; }
+    const includePhotos = document.getElementById('incidentEmailIncludePhotos').checked;
+    const includeComments = document.getElementById('incidentEmailIncludeComments').checked;
+
+    btn.disabled = true;
+    btn.textContent = 'Sending…';
+    try{
+      const { data, error } = await sb.functions.invoke('send-incident-email', {
+        body: { incident_id: incidentId, contact_ids: contactIds, include_photos: includePhotos, include_comments: includeComments }
+      });
+      if (error || data?.error){
+        errEl.textContent = await functionErrorMessage(data, error, 'Could not send email.');
+        errEl.style.display = 'block';
+        return;
+      }
+      showToast('Email sent', `Sent to ${(data.sent_to || []).join(', ')}`, 'success');
+      inc.client_emailed_at = new Date().toISOString();
+      inc.client_emailed_to = contacts.filter(c => contactIds.includes(c.id)).map(c => ({ name: c.name, email: c.email }));
+      openIncidentDetail(incidentId, who);
+    } catch(err){
+      errEl.textContent = err.message;
+      errEl.style.display = 'block';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Send to client';
+    }
+  });
+}
 
 function renderSiteTable(){
   const body = document.getElementById('siteTableBody');
@@ -3704,10 +4005,15 @@ async function refreshManageSitePanels(){
 }
 
 // ---------------- Site contacts (site management personnel) ----------------
+const CONTACT_ROLE_LABELS = {
+  site_manager: 'Site Manager', facilities_manager: 'Facilities Manager',
+  security_supervisor: 'Security Supervisor', emergency_contact: 'Emergency Contact',
+  building_owner: 'Building Owner', other: 'Other'
+};
 async function loadSiteContactsFor(siteId){
   const { data, error } = await sb.from('site_contacts').select('*').eq('site_id', siteId).order('created_at');
   if (error){ showToast('Could not load site contacts', error.message, 'danger'); siteContacts = []; return; }
-  siteContacts = (data || []).map(c => ({ id: c.id, name: c.name, role: c.role, phone: c.phone, email: c.email }));
+  siteContacts = (data || []).map(c => ({ id: c.id, name: c.name, role: c.role, phone: c.phone, email: c.email, incidentEmailDefault: !!c.incident_email_default }));
 }
 
 function renderSiteContacts(){
@@ -3718,7 +4024,7 @@ function renderSiteContacts(){
   listEl.innerHTML = siteContacts.length ? siteContacts.map(c => `
     <div class="site-contact-row">
       <div style="flex:1; min-width:0;">
-        <div class="site-contact-name">${escapeHtmlForPrint(c.name)} <span class="site-contact-role">· ${escapeHtmlForPrint(c.role)}</span></div>
+        <div class="site-contact-name">${escapeHtmlForPrint(c.name)} <span class="site-contact-role">· ${CONTACT_ROLE_LABELS[c.role] || c.role}</span></div>
         <div class="result-meta" style="margin-top:2px;">${[c.phone, c.email].filter(Boolean).map(escapeHtmlForPrint).join(' · ') || '—'}</div>
       </div>
       ${isAdmin ? `<button class="del-btn" data-del-contact="${c.id}" aria-label="Remove contact"><i>&times;</i></button>` : ''}
@@ -3740,7 +4046,7 @@ function renderSiteContacts(){
 
 document.getElementById('addSiteContactBtn').addEventListener('click', async () => {
   const name = document.getElementById('newContactName').value.trim();
-  const role = document.getElementById('newContactRole').value.trim();
+  const role = document.getElementById('newContactRole').value;
   const phone = document.getElementById('newContactPhone').value.trim();
   const email = document.getElementById('newContactEmail').value.trim();
   if (!name || !role){ showToast('Name and role are required', '', 'warn'); return; }
@@ -3750,7 +4056,6 @@ document.getElementById('addSiteContactBtn').addEventListener('click', async () 
   });
   if (error){ showToast('Could not add contact', error.message, 'danger'); return; }
   document.getElementById('newContactName').value = '';
-  document.getElementById('newContactRole').value = '';
   document.getElementById('newContactPhone').value = '';
   document.getElementById('newContactEmail').value = '';
   await loadSiteContactsFor(activeSiteId);
@@ -6502,6 +6807,9 @@ document.querySelectorAll('[data-admin-view]').forEach(btn => {
     if (btn.dataset.adminView === 'incidents'){
       await loadAndRenderIncidents('admin');
     }
+    if (btn.dataset.adminView === 'siteoverview'){
+      renderSiteOverview('admin');
+    }
   });
 });
 
@@ -6522,6 +6830,9 @@ document.querySelectorAll('[data-ctrl-view]').forEach(btn => {
     }
     if (btn.dataset.ctrlView === 'incidents'){
       await loadAndRenderIncidents('ctrl');
+    }
+    if (btn.dataset.ctrlView === 'siteoverview'){
+      renderSiteOverview('ctrl');
     }
   });
 });
