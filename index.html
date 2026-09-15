@@ -116,6 +116,15 @@
     position:absolute; inset:15%; border:2px solid var(--accent); border-radius:12px; z-index:2;
     box-shadow:0 0 0 2000px rgba(0,0,0,0.35);
   }
+  /* Lives over the camera feed itself instead of as a separate paragraph above the
+     buttons — appears once a patrol starts, and disappears for good the moment the
+     first tag of that round is scanned (see hasScannedThisPatrol()). */
+  .cam-box .cam-instruction{
+    position:absolute; left:8px; right:8px; top:8px; z-index:5;
+    padding:9px 12px; border-radius:10px; background:rgba(0,0,0,0.6);
+    color:var(--success); font-family:var(--sans); font-size:12px; font-weight:600;
+    text-align:center; line-height:1.45; backdrop-filter:blur(2px);
+  }
   .btn{
     background:var(--panel-2); color:var(--text); border:1px solid var(--border); border-radius:9px;
     padding:11px 16px; font-size:13px; font-weight:600; cursor:pointer; font-family:var(--sans); width:100%;
@@ -382,13 +391,12 @@
             </div>
           </details>
 
-          <div class="result-meta error-text" id="guardNotClockedInNotice" style="display:none; margin:0 0 10px;">You must clock in above before you can scan checkpoints on this patrol.</div>
-
           <div class="cam-box" id="camBox">
             <div class="cam-placeholder" id="camPlaceholder">Camera off.<br>Tap "Start camera", then "Scan checkpoint" to read a QR tag.</div>
             <video id="video" playsinline></video>
             <canvas id="canvas" style="display:none;"></canvas>
             <div class="scan-frame" id="scanFrame" style="display:none;"></div>
+            <div class="cam-instruction" id="camInstruction" style="display:none;">Hold the tag about 15–20cm from the camera and keep it steady — it scans automatically. If it doesn't pick it up, tap "Scan" below.</div>
             <div class="result-card" id="resultCard">
               <div class="result-title" id="resultTitle"></div>
               <div class="result-meta" id="resultMeta"></div>
@@ -413,11 +421,8 @@
             <div class="cp-progress" id="guardPatrolCps"></div>
           </div>
 
-          <div class="field-label">Scan checkpoint</div>
-          <div class="result-meta" style="margin:-2px 0 6px;">Hold the tag about 15–20cm from the camera and keep it steady — it scans automatically. If it doesn't pick it up, tap "Scan now" to read the current frame.</div>
-          <div class="result-meta error-text" id="guardScanBlockedNotice" style="display:none; margin:-2px 0 6px;">No patrol in progress — checkpoint scanning is disabled until your patrol starts.</div>
           <div class="btn-row" style="position:sticky; bottom:8px; background:var(--panel); padding-top:6px; margin-top:10px;">
-            <button class="btn btn-primary" id="manualScanBtn">Scan now</button>
+            <button class="btn btn-primary" id="manualScanBtn"><svg class="icon" viewBox="0 0 24 24"><path d="M4 8V6a2 2 0 0 1 2-2h2M4 16v2a2 2 0 0 0 2 2h2M20 8V6a2 2 0 0 0-2-2h-2M20 16v2a2 2 0 0 1-2 2h-2"/></svg>Scan</button>
           </div>
 
           <div id="panicActingAsWrap" style="display:none; margin-top:10px;">
@@ -426,11 +431,13 @@
           </div>
           <button id="panicBtn" style="width:100%; margin-top:10px; padding:16px; border-radius:12px; border:none; background:var(--danger); color:#fff; font-family:var(--sans); font-weight:800; font-size:15px; letter-spacing:0.3px; position:relative; overflow:hidden; touch-action:manipulation; user-select:none;">
             <span id="panicBtnFill" style="position:absolute; inset:0; background:rgba(255,255,255,0.35); width:0%; transition:none;"></span>
-            <span id="panicBtnLabel" style="position:relative;">🚨 Hold for panic alert</span>
+            <span style="position:relative; display:inline-flex; align-items:center; justify-content:center; gap:6px;">
+              <svg class="icon" viewBox="0 0 24 24" style="width:18px; height:18px;"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><path d="M12 9v4M12 17h.01"/></svg>
+              <span id="panicBtnLabel">Hold for panic alert</span>
+            </span>
           </button>
-          <div class="result-meta" id="panicNote" style="margin-top:4px;">Sends your location straight to admins and controllers, and rings their dashboard until they see it.</div>
 
-          <button id="reportIncidentBtn" class="btn" style="width:100%; margin-top:14px; padding:14px; font-weight:700;">📋 Report an incident</button>
+          <button id="reportIncidentBtn" class="btn" style="width:100%; margin-top:14px; padding:14px; font-weight:700;"><svg class="icon" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><path d="M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v0a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2Z"/><path d="M9 13h6M9 17h6"/></svg>Report an incident</button>
         </div>
       </div>
     </div>
@@ -3032,7 +3039,7 @@ function renderSiteOverview(who){
         ${shown.length ? shown.map(s => `
           <div style="display:flex; justify-content:space-between; padding:4px 0; font-size:12.5px; font-family:var(--sans);">
             <span>${s.site.name}</span>
-            <span class="result-meta">${s.acceptedTags}/${s.expectedTags} tags (${Math.round(s.pct)}%)</span>
+            <span class="result-meta">${s.completedPatrols}/${s.expectedPatrols} patrols, ${s.acceptedTags}/${s.expectedTags} tags (${Math.round(s.pct)}%)</span>
           </div>
         `).join('') : '<div class="result-meta">No sites in this band.</div>'}
       </div>
@@ -4511,20 +4518,19 @@ function renderGuardPatrolCard(){
   ensurePatrolAssignment(); // fire-and-forget — shows the modal itself if a round needs an answer
 
   const gate = guardPatrolGate();
-  const blockedNotice = document.getElementById('guardScanBlockedNotice');
-  const notClockedInNotice = document.getElementById('guardNotClockedInNotice');
   const scanBtn = document.getElementById('manualScanBtn');
   const camBtn = document.getElementById('camToggleBtn');
   const clockedIn = !!myAttendance;
-  if (notClockedInNotice) notClockedInNotice.style.display = clockedIn ? 'none' : 'block';
-  if (blockedNotice && scanBtn){
-    blockedNotice.style.display = (clockedIn && !gate.inProgress) ? 'block' : 'none';
-    blockedNotice.textContent = gate.needsAssignment
-      ? "Select who's on patrol above before scanning."
-      : 'No patrol in progress — checkpoint scanning is disabled until your patrol starts.';
-    scanBtn.disabled = !clockedIn || !gate.inProgress;
-  }
+  if (scanBtn) scanBtn.disabled = !clockedIn || !gate.inProgress;
   if (camBtn) camBtn.disabled = !clockedIn;
+
+  // Green in-camera hint: only while there's an active round with nothing scanned
+  // on it yet — gone for good the moment the first tag lands, back for the next round.
+  const camInstructionEl = document.getElementById('camInstruction');
+  if (camInstructionEl){
+    const showInstruction = clockedIn && gate.inProgress && !hasScannedThisPatrol(gate.dutyInfo ? gate.dutyInfo.inst : null);
+    camInstructionEl.style.display = showInstruction ? 'block' : 'none';
+  }
 
   const found = gate.dutyInfo;
   if (!found){ card.style.display = 'none'; return; }
@@ -4649,6 +4655,16 @@ function guardPatrolGate(){
     onDutyGuardsAtSite(activeDutySiteId || guardSiteId).length >= 2;
   const inProgress = rawInProgress && !needsAssignment;
   return { dutyInfo, dutyRoute, instSt, inProgress, needsAssignment };
+}
+
+// Whether at least one tag has already been scanned for this specific round —
+// drives the in-camera green hint (it's shown until the first tag, then gone
+// until the next round starts). Local-only rejections (no patrol, already
+// scanned, etc.) never reach `scans` at all, so this only counts real attempts.
+function hasScannedThisPatrol(inst){
+  if (!inst) return false;
+  const dutySiteId = activeDutySiteId || guardSiteId;
+  return scans.some(s => s.siteId === dutySiteId && s.timestamp >= inst.expectedTime);
 }
 
 async function processScan(qrId){
@@ -5195,7 +5211,7 @@ function cancelPanicHold(completed){
   const fillEl = document.getElementById('panicBtnFill');
   const labelEl = document.getElementById('panicBtnLabel');
   if (fillEl) fillEl.style.width = '0%';
-  if (labelEl && !completed) labelEl.textContent = '🚨 Hold for panic alert';
+  if (labelEl && !completed) labelEl.textContent = 'Hold for panic alert';
 }
 
 async function triggerPanic(){
@@ -5217,14 +5233,14 @@ async function triggerPanic(){
   try{
     const { error } = await sb.rpc('trigger_panic', { p_lat: lat, p_lng: lng, p_acting_as_guard_id: panicActingAsGuardId || session.user.id });
     if (error){
-      labelEl.textContent = '🚨 Hold for panic alert';
+      labelEl.textContent = 'Hold for panic alert';
       showToast('Could not send panic alert', error.message, 'danger');
       return;
     }
     labelEl.textContent = '✓ Alert sent — help is on the way';
-    setTimeout(() => { labelEl.textContent = '🚨 Hold for panic alert'; }, 8000);
+    setTimeout(() => { labelEl.textContent = 'Hold for panic alert'; }, 8000);
   } catch(err){
-    labelEl.textContent = '🚨 Hold for panic alert';
+    labelEl.textContent = 'Hold for panic alert';
     showToast('Could not send panic alert', err.message, 'danger');
   }
 }
@@ -5252,7 +5268,9 @@ document.getElementById('manualScanBtn').addEventListener('click', async () => {
   // same rejection feedback (message, red text, sound) without touching the camera decode.
   const gate = guardPatrolGate();
   if (!gate.inProgress){
-    setManualScanStatus('No patrol in progress — scanning is disabled until your patrol starts.', true);
+    setManualScanStatus(gate.needsAssignment
+      ? "Select who's on patrol above before scanning."
+      : 'No patrol in progress — scanning is disabled until your patrol starts.', true);
     SOUND.tagRejected();
     return;
   }
