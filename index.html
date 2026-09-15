@@ -3000,7 +3000,11 @@ function renderSiteOverview(who){
     let cursor = 0;
     const slices = bands.map((b, i) => {
       const count = bandSites[i].length;
-      const sweep = rated.length ? (count / rated.length) * 360 : 0;
+      // Capped just under 360° — an SVG arc command can't actually draw a
+      // full circle (its start and end point are mathematically the same
+      // spot), so a band holding 100% of sites would otherwise render as an
+      // invisible zero-length arc instead of a full ring.
+      const sweep = rated.length ? Math.min((count / rated.length) * 360, 359.9) : 0;
       const path = count > 0 ? `<path data-band="${i}" d="${describeArc(cx, cy, r, cursor, cursor + Math.max(sweep, 0.01))}" stroke="${b.color}" stroke-width="${sw}" fill="none" style="cursor:pointer; opacity:${overviewSelectedBand[who] === i || overviewSelectedBand[who] == null ? '1' : '0.35'};"/>` : '';
       cursor += sweep;
       return path;
