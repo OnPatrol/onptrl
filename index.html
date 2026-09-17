@@ -1660,7 +1660,12 @@ function showToast(title, sub, kind){
   if (!wrap) return;
   const el = document.createElement('div');
   el.className = 'toast' + (kind ? ' ' + kind : '');
-  el.innerHTML = `<div class="toast-title">${title}</div><div class="toast-sub">${sub || ''}</div>`;
+  // Escaped here once, centrally — title/sub often carry guard names, error
+  // messages, or other text that ultimately originates from user input
+  // (a guard's own full name, a typed comment, a server error string), and
+  // this was being inserted into innerHTML completely unescaped everywhere
+  // this function is called.
+  el.innerHTML = `<div class="toast-title">${escapeHtmlForPrint(title)}</div><div class="toast-sub">${escapeHtmlForPrint(sub || '')}</div>`;
   wrap.appendChild(el);
   setTimeout(() => el.remove(), 6000);
 }
@@ -1911,7 +1916,8 @@ function guardLabel(siteId, guardId){
   const dir = guardDirectoryCache[siteId] || [];
   const g = dir.find(x => x.id === guardId);
   if (!g) return 'Guard';
-  return g.full_name ? `${g.full_name}${g.employee_number ? ' · #' + g.employee_number : ''}` : (g.employee_number || 'Guard');
+  const label = g.full_name ? `${g.full_name}${g.employee_number ? ' · #' + g.employee_number : ''}` : (g.employee_number || 'Guard');
+  return escapeHtmlForPrint(label);
 }
 // Which calendar date "bucket" a shift instance covering `atMs` belongs to — the
 // date the shift STARTED, so an overnight shift (e.g. 18:00-06:00) checked at
@@ -2117,19 +2123,20 @@ function renderUsersTable(){
   body.innerHTML = sorted.map(u => {
     const site = sites.find(s => s.id === u.site_id);
     const isSelf = session && u.id === session.user.id;
+    const safeLabel = escapeHtmlForPrint(u.full_name || u.email);
     return `
       <tr>
-        <td style="font-family:var(--sans); font-weight:600;">${u.full_name || '—'}</td>
-        <td>${u.role === 'guard' ? `<input type="text" data-emp-num="${u.id}" value="${(u.employee_number || '').replace(/"/g,'&quot;')}" placeholder="—" style="width:90px; padding:5px 7px; font-size:11px;">` : '<span class="result-meta">—</span>'}</td>
-        <td><input type="tel" data-phone="${u.id}" value="${(u.phone || '').replace(/"/g,'&quot;')}" placeholder="—" style="width:120px; padding:5px 7px; font-size:11px;"></td>
-        <td style="font-family:var(--sans); color:var(--muted);">${u.email}</td>
-        <td>${u.role || '—'}</td>
-        <td style="font-family:var(--sans);">${site ? site.name : '—'}</td>
+        <td style="font-family:var(--sans); font-weight:600;">${escapeHtmlForPrint(u.full_name || '—')}</td>
+        <td>${u.role === 'guard' ? `<input type="text" data-emp-num="${u.id}" value="${escapeHtmlForPrint(u.employee_number || '')}" placeholder="—" style="width:90px; padding:5px 7px; font-size:11px;">` : '<span class="result-meta">—</span>'}</td>
+        <td><input type="tel" data-phone="${u.id}" value="${escapeHtmlForPrint(u.phone || '')}" placeholder="—" style="width:120px; padding:5px 7px; font-size:11px;"></td>
+        <td style="font-family:var(--sans); color:var(--muted);">${escapeHtmlForPrint(u.email)}</td>
+        <td>${escapeHtmlForPrint(u.role || '—')}</td>
+        <td style="font-family:var(--sans);">${escapeHtmlForPrint(site ? site.name : '—')}</td>
         <td>${u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</td>
         <td style="display:flex; gap:6px; flex-wrap:wrap;">
-          <button class="btn" data-reset-pw="${u.id}" data-user-label="${(u.full_name || u.email).replace(/"/g,'&quot;')}" style="width:auto; padding:5px 10px; font-size:11px;">Reset password</button>
-          ${u.role === 'guard' ? `<button class="btn" data-reset-face="${u.id}" data-user-label="${(u.full_name || u.email).replace(/"/g,'&quot;')}" style="width:auto; padding:5px 10px; font-size:11px;">Reset face</button>` : ''}
-          ${isSelf ? '' : `<button class="del-btn" data-del-user="${u.id}" data-user-label="${(u.full_name || u.email).replace(/"/g,'&quot;')}" aria-label="Delete user"><i>&times;</i></button>`}
+          <button class="btn" data-reset-pw="${u.id}" data-user-label="${safeLabel}" style="width:auto; padding:5px 10px; font-size:11px;">Reset password</button>
+          ${u.role === 'guard' ? `<button class="btn" data-reset-face="${u.id}" data-user-label="${safeLabel}" style="width:auto; padding:5px 10px; font-size:11px;">Reset face</button>` : ''}
+          ${isSelf ? '' : `<button class="del-btn" data-del-user="${u.id}" data-user-label="${safeLabel}" aria-label="Delete user"><i>&times;</i></button>`}
         </td>
       </tr>
     `;
@@ -2601,7 +2608,7 @@ async function loadProfileAndApp(){
   document.getElementById('authGate').classList.remove('show');
   document.getElementById('userBadge').style.display = 'flex';
   document.getElementById('userBadgeText').innerHTML =
-    `${profile.full_name || session.user.email} <span class="role-pill">${profile.role}</span>`;
+    `${escapeHtmlForPrint(profile.full_name || session.user.email)} <span class="role-pill">${escapeHtmlForPrint(profile.role)}</span>`;
 
   const guardTabBtn = document.getElementById('guardTabBtn');
   const adminTabBtn = document.getElementById('adminTabBtn2');
@@ -2978,16 +2985,24 @@ function renderSiteOverview(who){
   `;
 
   const slaInput = document.getElementById(who + 'OverviewSlaInput');
-  const sla = Math.max(1, Math.min(100, Number(slaInput.value) || 90));
+  // NaN-safe: an empty or non-numeric field falls back to 90 rather than
+  // silently becoming 0 (which `Number(x) || 90` would do, since 0 is falsy).
+  const rawSla = Number(slaInput.value);
+  const sla = Math.max(1, Math.min(100, Number.isFinite(rawSla) && slaInput.value !== '' ? rawSla : 90));
 
   const rated = perSite.filter(s => s.pct !== null);
+  // Each fixed breakpoint (25/50/75) is clamped to never exceed the SLA
+  // threshold itself — otherwise, setting the threshold below 75% would make
+  // the 50–75% band and the "passing" band overlap, double-counting any site
+  // that falls in the overlap into two slices at once.
+  const b1 = Math.min(25, sla), b2 = Math.min(50, sla), b3 = Math.min(75, sla);
   const bands = [
-    { label: '0–25%', from: 0, to: 25, color: '#E5484D' },
-    { label: '25–50%', from: 25, to: 50, color: '#E8862A' },
-    { label: '50–75%', from: 50, to: 75, color: '#EAB308' },
-    { label: `75–${sla}%`, from: 75, to: sla, color: '#F5A623' },
+    { label: `0–${b1}%`, from: 0, to: b1, color: '#E5484D' },
+    { label: `${b1}–${b2}%`, from: b1, to: b2, color: '#E8862A' },
+    { label: `${b2}–${b3}%`, from: b2, to: b3, color: '#EAB308' },
+    { label: `${b3}–${sla}%`, from: b3, to: sla, color: '#F5A623' },
     { label: `${sla}–100% (passing)`, from: sla, to: 100.0001, color: '#3FB878' }
-  ].filter(b => b.to > b.from); // collapses if sla <= 75
+  ].filter(b => b.to > b.from); // collapses any band a lower SLA threshold makes redundant
 
   const bandSites = bands.map(b => rated.filter(s => s.pct >= b.from && s.pct < b.to));
   const belowSlaCount = rated.filter(s => s.pct < sla).length;
@@ -3110,10 +3125,10 @@ function renderLog(){
           <div class="log-bar ${ok ? 'accepted' : 'rejected'}"></div>
           <div class="log-main">
             <div class="log-top">
-              <span>${site ? site.name : 'Unknown site'} · ${s.qrId} · ${s.cpName || 'unknown'}</span>
+              <span>${escapeHtmlForPrint(site ? site.name : 'Unknown site')} · ${escapeHtmlForPrint(s.qrId)} · ${escapeHtmlForPrint(s.cpName || 'unknown')}</span>
               <span class="badge ${ok ? 'accepted' : 'rejected'}">${s.result.replace('REJECTED_','').replace(/_/g,' ')}</span>
             </div>
-            <div class="log-sub">${time} · ${s.distance != null ? s.distance.toFixed(0)+'m from checkpoint' : ''} ${s.result === 'REJECTED_OUT_OF_ORDER' && s.expectedQrId ? `· expected ${s.expectedQrId} next` : ''}</div>
+            <div class="log-sub">${time} · ${s.distance != null ? s.distance.toFixed(0)+'m from checkpoint' : ''} ${s.result === 'REJECTED_OUT_OF_ORDER' && s.expectedQrId ? `· expected ${escapeHtmlForPrint(s.expectedQrId)} next` : ''}</div>
           </div>
         </div>
       `;
@@ -3310,11 +3325,11 @@ function renderTeamTable(){
     const site = sites.find(s => s.id === p.site_id);
     return `
       <tr>
-        <td style="font-family:var(--sans); font-weight:600;">${p.full_name || '—'}</td>
-        <td><span class="role-pill">${p.role}</span></td>
-        <td>${site ? site.name : '—'}</td>
-        <td>${p.phone || '—'}</td>
-        <td>${p.employee_number || '—'}</td>
+        <td style="font-family:var(--sans); font-weight:600;">${escapeHtmlForPrint(p.full_name || '—')}</td>
+        <td><span class="role-pill">${escapeHtmlForPrint(p.role)}</span></td>
+        <td>${escapeHtmlForPrint(site ? site.name : '—')}</td>
+        <td>${escapeHtmlForPrint(p.phone || '—')}</td>
+        <td>${escapeHtmlForPrint(p.employee_number || '—')}</td>
       </tr>
     `;
   }).join('');
@@ -3375,11 +3390,11 @@ function renderIncidentsList(who){
     return `
       <div class="panel" style="padding:10px 12px; border-left:4px solid ${sevColor}; margin-bottom:10px; cursor:pointer;" data-open-incident="${inc.id}">
         <div style="display:flex; justify-content:space-between; gap:8px;">
-          <div style="font-family:var(--sans); font-weight:700; font-size:13px;">${sev.emoji} ${INCIDENT_TYPE_LABELS[inc.incident_type] || inc.incident_type}</div>
+          <div style="font-family:var(--sans); font-weight:700; font-size:13px;">${sev.emoji} ${escapeHtmlForPrint(INCIDENT_TYPE_LABELS[inc.incident_type] || inc.incident_type)}</div>
           <span class="result-meta">${timeAgo(inc.occurred_at)}</span>
         </div>
-        <div class="result-meta">${site ? site.name : '—'} · ${guardEntry ? guardEntry.full_name : 'Unknown guard'} · ${inc.status === 'reviewed' ? '✓ Reviewed' : 'Submitted'}</div>
-        <div class="result-meta" style="margin-top:4px; color:var(--text);">${(inc.description || '').slice(0, 120)}${(inc.description || '').length > 120 ? '…' : ''}</div>
+        <div class="result-meta">${escapeHtmlForPrint(site ? site.name : '—')} · ${escapeHtmlForPrint(guardEntry ? guardEntry.full_name : 'Unknown guard')} · ${inc.status === 'reviewed' ? '✓ Reviewed' : 'Submitted'}</div>
+        <div class="result-meta" style="margin-top:4px; color:var(--text);">${escapeHtmlForPrint((inc.description || '').slice(0, 120))}${(inc.description || '').length > 120 ? '…' : ''}</div>
       </div>
     `;
   }).join('');
@@ -3418,25 +3433,25 @@ async function openIncidentDetail(incidentId, who){
 
   const body = document.getElementById('incidentDetailBody');
   body.innerHTML = `
-    <h2 style="margin:0 0 4px; font-size:16px;">${sev.emoji} ${INCIDENT_TYPE_LABELS[inc.incident_type] || inc.incident_type}</h2>
-    <div class="result-meta" style="margin-bottom:10px;">${site ? site.name : '—'} · ${new Date(inc.occurred_at).toLocaleString([], { hour12: false })} · ${inc.status === 'reviewed' ? '✓ Reviewed' : 'Submitted'}</div>
+    <h2 style="margin:0 0 4px; font-size:16px;">${sev.emoji} ${escapeHtmlForPrint(INCIDENT_TYPE_LABELS[inc.incident_type] || inc.incident_type)}</h2>
+    <div class="result-meta" style="margin-bottom:10px;">${escapeHtmlForPrint(site ? site.name : '—')} · ${new Date(inc.occurred_at).toLocaleString([], { hour12: false })} · ${inc.status === 'reviewed' ? '✓ Reviewed' : 'Submitted'}</div>
 
     <div class="attendance-card" style="margin:0 0 12px;">
       <div class="result-meta" style="line-height:1.7;">
-        Guard: ${guardEntry ? guardEntry.full_name : 'Unknown'}<br>
+        Guard: ${escapeHtmlForPrint(guardEntry ? guardEntry.full_name : 'Unknown')}<br>
         GPS: ${inc.lat != null ? inc.lat.toFixed(5) + ', ' + inc.lng.toFixed(5) : 'Not available'}<br>
-        Device: ${inc.device_info || '—'}<br>
-        Patrol: ${route ? route.name : 'No scheduled patrol'}<br>
-        Checkpoint: ${cp ? cp.name : 'None'}
+        Device: ${escapeHtmlForPrint(inc.device_info || '—')}<br>
+        Patrol: ${escapeHtmlForPrint(route ? route.name : 'No scheduled patrol')}<br>
+        Checkpoint: ${escapeHtmlForPrint(cp ? cp.name : 'None')}
       </div>
     </div>
 
     <div class="field-label" style="margin-top:0;">Description</div>
-    <div class="result-meta" style="color:var(--text); margin-bottom:10px;">${inc.description || '—'}</div>
+    <div class="result-meta" style="color:var(--text); margin-bottom:10px;">${escapeHtmlForPrint(inc.description || '—')}</div>
     <div class="field-label">Actions taken</div>
-    <div class="result-meta" style="color:var(--text); margin-bottom:10px;">${inc.actions_taken || '—'}</div>
+    <div class="result-meta" style="color:var(--text); margin-bottom:10px;">${escapeHtmlForPrint(inc.actions_taken || '—')}</div>
     <div class="field-label">Resolution</div>
-    <div class="result-meta" style="color:var(--text); margin-bottom:10px;">${inc.resolution || 'Not yet resolved'}</div>
+    <div class="result-meta" style="color:var(--text); margin-bottom:10px;">${escapeHtmlForPrint(inc.resolution || 'Not yet resolved')}</div>
 
     ${photoUrls.length ? `
       <div class="field-label">Photos</div>
@@ -3449,7 +3464,7 @@ async function openIncidentDetail(incidentId, who){
     <div id="incidentCommentsList" style="margin-bottom:10px;">
       ${(comments || []).length ? comments.map(c => {
         const author = teamDirectory.find(p => p.id === c.author_id);
-        return `<div class="result-meta" style="margin-bottom:6px; padding-bottom:6px; border-bottom:1px solid var(--border);"><b style="color:var(--text);">${author ? author.full_name : 'Someone'}</b> · ${timeAgo(c.created_at)}<br>${c.comment}</div>`;
+        return `<div class="result-meta" style="margin-bottom:6px; padding-bottom:6px; border-bottom:1px solid var(--border);"><b style="color:var(--text);">${escapeHtmlForPrint(author ? author.full_name : 'Someone')}</b> · ${timeAgo(c.created_at)}<br>${escapeHtmlForPrint(c.comment)}</div>`;
       }).join('') : '<div class="result-meta">No comments yet.</div>'}
     </div>
 
@@ -3700,8 +3715,8 @@ async function openCtrlSiteDetailModal(siteId){
   guardsEl.innerHTML = (guards && guards.length) ? guards.map(g => `
     <div class="site-contact-row">
       <div style="flex:1; min-width:0;">
-        <div class="site-contact-name">${g.full_name || 'Guard'}</div>
-        <div class="result-meta">${g.employee_number ? '#' + g.employee_number : 'No employee number set'}${g.phone ? ' · ' + g.phone : ''}</div>
+        <div class="site-contact-name">${escapeHtmlForPrint(g.full_name || 'Guard')}</div>
+        <div class="result-meta">${escapeHtmlForPrint(g.employee_number ? '#' + g.employee_number : 'No employee number set')}${g.phone ? ' · ' + escapeHtmlForPrint(g.phone) : ''}</div>
       </div>
     </div>`).join('') : '<div class="result-meta">No guards assigned to this site yet.</div>';
 
@@ -3949,8 +3964,8 @@ async function renderManageSiteGuards(){
     ? dir.map(g => `
         <div class="site-contact-row">
           <div style="flex:1; min-width:0;">
-            <div class="site-contact-name">${g.full_name || 'Guard'}</div>
-            <div class="result-meta">${g.employee_number ? '#' + g.employee_number : 'No employee number set'}${g.phone ? ' · ' + g.phone : ''}</div>
+            <div class="site-contact-name">${escapeHtmlForPrint(g.full_name || 'Guard')}</div>
+            <div class="result-meta">${escapeHtmlForPrint(g.employee_number ? '#' + g.employee_number : 'No employee number set')}${g.phone ? ' · ' + escapeHtmlForPrint(g.phone) : ''}</div>
           </div>
         </div>`).join('')
     : '<div class="result-meta">No guards assigned to this site yet.</div>';
@@ -4113,7 +4128,7 @@ function isGreenExpired(n){
 // a bare title — the site alone was crowding out the actual reason before.
 function notifContextLine(n, site){
   const parts = [];
-  if (site) parts.push(site.name);
+  if (site) parts.push(escapeHtmlForPrint(site.name));
   const rawDetail = (n.detail || '').trim();
   if (n.kind === 'radius_alert'){
     // Position alerts specifically promise a distance/reason — never let one
@@ -4121,15 +4136,15 @@ function notifContextLine(n, site){
     // that's from stale data or a future write that forgot to fill it in.
     const siteName = site ? site.name : '';
     const isUninformative = !rawDetail || rawDetail === '—' || rawDetail.toLowerCase() === siteName.toLowerCase();
-    parts.push(isUninformative ? 'No distance recorded for this alert' : rawDetail);
+    parts.push(isUninformative ? 'No distance recorded for this alert' : escapeHtmlForPrint(rawDetail));
   } else if (n.kind === 'panic'){
     // The detail text is either "Location: <url>" or an explicit "not
     // available" note (set server-side in trigger_panic) - turn the URL
     // into a real tappable link instead of leaving it as plain text.
     const m = rawDetail.match(/^Location:\s*(https?:\/\/\S+)/);
-    parts.push(m ? `<a href="${m[1]}" target="_blank" rel="noopener" style="color:inherit; text-decoration:underline;">Open guard's location in Maps</a>` : (rawDetail || 'Location was not available.'));
+    parts.push(m ? `<a href="${m[1]}" target="_blank" rel="noopener" style="color:inherit; text-decoration:underline;">Open guard's location in Maps</a>` : escapeHtmlForPrint(rawDetail || 'Location was not available.'));
   } else if (rawDetail){
-    parts.push(rawDetail);
+    parts.push(escapeHtmlForPrint(rawDetail));
   }
   return parts.join(' · ');
 }
@@ -4176,7 +4191,7 @@ function renderNotificationsInto(activeId, resolvedId, filterKey){
         return `
           <div class="panel" style="padding:10px 12px; border-left:4px solid ${color};">
             <div style="display:flex; justify-content:space-between; gap:8px;">
-              <div style="font-family:var(--sans); font-weight:600; font-size:12.5px;">${n.title}</div>
+              <div style="font-family:var(--sans); font-weight:600; font-size:12.5px;">${escapeHtmlForPrint(n.title)}</div>
               <span class="result-meta">${timeAgo(n.occurred_at)}</span>
             </div>
             <div class="result-meta">${notifContextLine(n, site)}</div>
@@ -4187,7 +4202,7 @@ function renderNotificationsInto(activeId, resolvedId, filterKey){
       return `
         <div class="panel" style="padding:10px 12px; border-left:4px solid ${color};${n.kind === 'panic' ? ' background:rgba(220,38,38,0.12); animation:panicPulse 1.4s ease-in-out infinite;' : ''}">
           <div style="display:flex; justify-content:space-between; gap:8px;">
-            <div style="font-family:var(--sans); font-weight:${n.kind === 'panic' ? '800' : '600'}; font-size:${n.kind === 'panic' ? '13.5px' : '12.5px'};">${n.kind === 'panic' ? '🚨 ' : ''}${n.title}</div>
+            <div style="font-family:var(--sans); font-weight:${n.kind === 'panic' ? '800' : '600'}; font-size:${n.kind === 'panic' ? '13.5px' : '12.5px'};">${n.kind === 'panic' ? '🚨 ' : ''}${escapeHtmlForPrint(n.title)}</div>
             <span class="result-meta">${timeAgo(n.occurred_at)}</span>
           </div>
           <div class="result-meta">${notifContextLine(n, site)}</div>
@@ -4212,8 +4227,8 @@ function renderNotificationsInto(activeId, resolvedId, filterKey){
       return `
         <div class="comment-item">
           <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${severityColor(n.severity)}; margin-right:6px;"></span>
-          <b>${n.title}</b> · <span class="result-meta">${context ? context + ' · ' : ''}${timeAgo(n.cleared_at || n.occurred_at)}</span>
-          ${comment ? `<br><span class="result-meta">"${comment.body}" — ${(comment.profiles && comment.profiles.full_name) || 'Someone'}</span>` : (n.severity === 'green' ? '<br><span class="result-meta">Auto-cleared</span>' : '')}
+          <b>${escapeHtmlForPrint(n.title)}</b> · <span class="result-meta">${context ? context + ' · ' : ''}${timeAgo(n.cleared_at || n.occurred_at)}</span>
+          ${comment ? `<br><span class="result-meta">"${escapeHtmlForPrint(comment.body)}" — ${escapeHtmlForPrint((comment.profiles && comment.profiles.full_name) || 'Someone')}</span>` : (n.severity === 'green' ? '<br><span class="result-meta">Auto-cleared</span>' : '')}
         </div>
       `;
     }).join('') : `<div class="empty">${(filters.site || filters.kind) ? 'No resolved alerts match this filter.' : 'Nothing resolved yet.'}</div>`;
@@ -4398,11 +4413,11 @@ function openPatrolDetail(instId){
       ? ' <span style="color:var(--warn); font-family:var(--sans); font-size:10px;">(late)</span>' : '';
     const detailBits = [];
     if (s.distance != null) detailBits.push(`${s.distance.toFixed(0)}m from point`);
-    if (s.result === 'REJECTED_OUT_OF_ORDER' && s.expectedQrId) detailBits.push(`expected ${s.expectedQrId} next`);
+    if (s.result === 'REJECTED_OUT_OF_ORDER' && s.expectedQrId) detailBits.push(`expected ${escapeHtmlForPrint(s.expectedQrId)} next`);
     return `
       <tr>
         <td>${new Date(s.timestamp).toLocaleTimeString([], { hour12: false })}</td>
-        <td style="font-family:var(--sans);">${s.qrId} — ${s.cpName || 'unknown'}</td>
+        <td style="font-family:var(--sans);">${escapeHtmlForPrint(s.qrId)} — ${escapeHtmlForPrint(s.cpName || 'unknown')}</td>
         <td><span class="badge ${ok ? 'accepted' : 'rejected'}">${s.result.replace('REJECTED_','').replace(/_/g,' ')}</span>${lateFlag}</td>
         <td class="progress-mini">${detailBits.join(' · ') || '—'}</td>
       </tr>
@@ -4827,7 +4842,7 @@ function showResult(record){
     title.textContent = `Rejected — ${reasons[record.result] || (record.saveFailed ? 'Could not save scan' : record.result)}`;
   }
   const site = sites.find(x => x.id === record.siteId);
-  meta.innerHTML = `site: ${site ? site.name : 'n/a'}<br>qrId: ${record.qrId}<br>distance: ${record.distance != null ? record.distance.toFixed(1)+'m' : 'n/a'}<br>time: ${new Date(record.timestamp).toLocaleTimeString([], { hour12: false })}`;
+  meta.innerHTML = `site: ${escapeHtmlForPrint(site ? site.name : 'n/a')}<br>qrId: ${escapeHtmlForPrint(record.qrId)}<br>distance: ${record.distance != null ? record.distance.toFixed(1)+'m' : 'n/a'}<br>time: ${new Date(record.timestamp).toLocaleTimeString([], { hour12: false })}`;
 }
 
 // ---------------- Guard view interactions ----------------
@@ -4891,7 +4906,7 @@ function renderPanicActingAsSelector(){
   const lockedAssignment = dutyInfo ? patrolAssignmentsCache[dutyInfo.inst.id] : null;
   if (lockedAssignment){
     wrap.style.display = 'block';
-    sel.innerHTML = `<option value="${lockedAssignment.guardId}">${lockedAssignment.guardName} (locked in for this patrol)</option>`;
+    sel.innerHTML = `<option value="${lockedAssignment.guardId}">${escapeHtmlForPrint(lockedAssignment.guardName)} (locked in for this patrol)</option>`;
     sel.disabled = true;
     panicActingAsGuardId = lockedAssignment.guardId;
     return;
@@ -4905,7 +4920,7 @@ function renderPanicActingAsSelector(){
   }
   wrap.style.display = 'block';
   if (!onDutyHere.some(o => o.id === panicActingAsGuardId)) panicActingAsGuardId = session.user.id;
-  sel.innerHTML = onDutyHere.map(o => `<option value="${o.id}" ${o.id === panicActingAsGuardId ? 'selected' : ''}>${o.id === session.user.id ? o.full_name + ' (you, logged in)' : o.full_name}</option>`).join('');
+  sel.innerHTML = onDutyHere.map(o => `<option value="${o.id}" ${o.id === panicActingAsGuardId ? 'selected' : ''}>${o.id === session.user.id ? escapeHtmlForPrint(o.full_name) + ' (you, logged in)' : escapeHtmlForPrint(o.full_name)}</option>`).join('');
 }
 document.getElementById('panicActingAsSelect').addEventListener('change', e => { panicActingAsGuardId = e.target.value; });
 
@@ -4961,7 +4976,7 @@ function showPatrolAssignmentModal(inst, onDutyHere){
   const list = document.getElementById('patrolAssignmentList');
   const errEl = document.getElementById('patrolAssignmentError');
   errEl.style.display = 'none';
-  list.innerHTML = onDutyHere.map(o => `<button type="button" class="btn btn-primary" style="width:100%; margin-bottom:8px;" data-assign-guard="${o.id}">${o.id === session.user.id ? o.full_name + ' (you)' : o.full_name}</button>`).join('');
+  list.innerHTML = onDutyHere.map(o => `<button type="button" class="btn btn-primary" style="width:100%; margin-bottom:8px;" data-assign-guard="${o.id}">${o.id === session.user.id ? escapeHtmlForPrint(o.full_name) + ' (you)' : escapeHtmlForPrint(o.full_name)}</button>`).join('');
   list.querySelectorAll('[data-assign-guard]').forEach(btn => {
     btn.addEventListener('click', () => confirmPatrolAssignment(inst, btn.dataset.assignGuard, onDutyHere));
   });
@@ -5035,13 +5050,13 @@ async function openIncidentModal(){
   if (lockedAssignment){
     incidentReportingAsGuardId = lockedAssignment.guardId;
     reportingWrap.style.display = 'block';
-    reportingSel.innerHTML = `<option value="${lockedAssignment.guardId}">${lockedAssignment.guardName} (locked in for this patrol)</option>`;
+    reportingSel.innerHTML = `<option value="${lockedAssignment.guardId}">${escapeHtmlForPrint(lockedAssignment.guardName)} (locked in for this patrol)</option>`;
     reportingSel.disabled = true;
   } else if (onDutyHere.length >= 2){
     incidentReportingAsGuardId = session.user.id;
     reportingWrap.style.display = 'block';
     reportingSel.disabled = false;
-    reportingSel.innerHTML = onDutyHere.map(o => `<option value="${o.id}" ${o.id === session.user.id ? 'selected' : ''}>${o.id === session.user.id ? o.full_name + ' (you, logged in)' : o.full_name}</option>`).join('');
+    reportingSel.innerHTML = onDutyHere.map(o => `<option value="${o.id}" ${o.id === session.user.id ? 'selected' : ''}>${o.id === session.user.id ? escapeHtmlForPrint(o.full_name) + ' (you, logged in)' : escapeHtmlForPrint(o.full_name)}</option>`).join('');
   } else {
     incidentReportingAsGuardId = session.user.id;
     reportingWrap.style.display = 'none';
@@ -5439,7 +5454,7 @@ function populateAttendanceCoveringSelect(){
   coverSel.innerHTML = '<option value="">Not covering anyone specific</option>' +
     openAbsences.map(a => {
       const g = dir.find(x => x.id === a.guardId);
-      return `<option value="${a.id}">${g ? (g.full_name || 'Guard') : 'Guard'}${g && g.employee_number ? ' · #' + g.employee_number : ''}</option>`;
+      return `<option value="${a.id}">${escapeHtmlForPrint(g ? (g.full_name || 'Guard') : 'Guard')}${g && g.employee_number ? ' · #' + escapeHtmlForPrint(g.employee_number) : ''}</option>`;
     }).join('');
 }
 
@@ -5518,8 +5533,8 @@ async function renderTeammatesCard(){
       return `
         <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--border);">
           <div>
-            <div style="font-family:var(--sans); font-weight:600; font-size:12.5px;">${g.full_name}</div>
-            <div class="result-meta">On duty · ${shift ? shift.name : '—'} · since ${new Date(att.clockInAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12: false})}</div>
+            <div style="font-family:var(--sans); font-weight:600; font-size:12.5px;">${escapeHtmlForPrint(g.full_name)}</div>
+            <div class="result-meta">On duty · ${escapeHtmlForPrint(shift ? shift.name : '—')} · since ${new Date(att.clockInAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12: false})}</div>
           </div>
           <button class="btn" style="width:auto; padding:5px 10px; font-size:11px;" data-teammate-clockout="${att.id}" data-teammate-shift="${att.shiftId}" data-teammate-shiftdate="${att.shiftDate}">Clock out</button>
         </div>`;
@@ -5528,22 +5543,22 @@ async function renderTeammatesCard(){
       const site = sites.find(s => s.id === att.siteId);
       return `
         <div style="padding:6px 0; border-bottom:1px solid var(--border);">
-          <div style="font-family:var(--sans); font-weight:600; font-size:12.5px;">${g.full_name}</div>
-          <div class="result-meta">On duty at ${site ? site.name : 'another site'}</div>
+          <div style="font-family:var(--sans); font-weight:600; font-size:12.5px;">${escapeHtmlForPrint(g.full_name)}</div>
+          <div class="result-meta">On duty at ${escapeHtmlForPrint(site ? site.name : 'another site')}</div>
         </div>`;
     }
     if (!homeSiteShifts.length){
       return `
         <div style="padding:6px 0; border-bottom:1px solid var(--border);">
-          <div style="font-family:var(--sans); font-weight:600; font-size:12.5px;">${g.full_name}</div>
+          <div style="font-family:var(--sans); font-weight:600; font-size:12.5px;">${escapeHtmlForPrint(g.full_name)}</div>
           <div class="result-meta">Not clocked in · no shifts configured for this site</div>
         </div>`;
     }
-    const shiftOptions = homeSiteShifts.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+    const shiftOptions = homeSiteShifts.map(s => `<option value="${s.id}">${escapeHtmlForPrint(s.name)}</option>`).join('');
     return `
       <div style="padding:6px 0; border-bottom:1px solid var(--border);">
         <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-          <div style="font-family:var(--sans); font-weight:600; font-size:12.5px;">${g.full_name}</div>
+          <div style="font-family:var(--sans); font-weight:600; font-size:12.5px;">${escapeHtmlForPrint(g.full_name)}</div>
           <button class="btn btn-primary" style="width:auto; padding:5px 10px; font-size:11px;" data-teammate-clockin="${g.id}">Clock in</button>
         </div>
         <select data-teammate-shift-select="${g.id}" style="margin-top:6px; font-size:12px; width:100%;">${shiftOptions}</select>
@@ -5845,7 +5860,7 @@ async function openMarkAbsentModal(siteId, shiftId, shiftDate){
   const options = dir.filter(g => !onDutyIds.has(g.id) && !absentIds.has(g.id));
   const sel = document.getElementById('markAbsentGuardSelect');
   sel.innerHTML = options.length
-    ? options.map(g => `<option value="${g.id}">${g.full_name || 'Guard'}${g.employee_number ? ' · #' + g.employee_number : ''}</option>`).join('')
+    ? options.map(g => `<option value="${g.id}">${escapeHtmlForPrint(g.full_name || 'Guard')}${g.employee_number ? ' · #' + escapeHtmlForPrint(g.employee_number) : ''}</option>`).join('')
     : '<option value="">No eligible guards at this site</option>';
   document.getElementById('markAbsentModalBg').classList.add('show');
 }
@@ -5895,6 +5910,13 @@ async function exportAttendanceCsv(fromStr, toStr, statusElId, btn){
     const siteIds = [...new Set(rows.map(r => r.site_id).filter(Boolean))];
     await Promise.all(siteIds.map(id => loadGuardDirectory(id)));
 
+    // Guard names are self-provided at signup - a leading =, +, -, or @ gets
+    // interpreted as a live formula by Excel/Sheets when the CSV is opened,
+    // regardless of the CSV-level quoting below (that only protects the CSV
+    // structure itself, not what a spreadsheet app does with a cell's
+    // content). A leading apostrophe is the standard mitigation - it forces
+    // the cell to be read as plain text.
+    const csvSafe = v => /^[=+\-@]/.test(String(v)) ? "'" + v : v;
     const csvRows = [['Employee Number','Full Name','Site','Shift','Shift Date','Clock In','Clock Out','Reliever','Covering For']];
     rows.forEach(r => {
       const dir = guardDirectoryCache[r.site_id] || [];
@@ -5906,7 +5928,7 @@ async function exportAttendanceCsv(fromStr, toStr, statusElId, btn){
         g?.employee_number || '', g?.full_name || '', site ? site.name : '', shift ? shift.name : '',
         r.shift_date, new Date(r.clock_in_at).toLocaleString([], { hour12: false }), r.clock_out_at ? new Date(r.clock_out_at).toLocaleString([], { hour12: false }) : '',
         r.is_reliever ? 'Yes' : 'No', coveringG ? (coveringG.full_name || '') : ''
-      ]);
+      ].map(csvSafe));
     });
     const csv = csvRows.map(row => row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
