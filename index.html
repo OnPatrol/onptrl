@@ -1024,7 +1024,7 @@ tbody tr:hover td{background:rgba(255,255,255,.025);}
             <span class="result-meta">%</span>
           </div>
         </div>
-        <div class="result-meta" style="margin-bottom:10px;">Tap a band to see which sites are in it. Sites with no scheduled patrols yet this shift aren't counted.</div>
+        <div class="result-meta" style="margin-bottom:10px;">Tap a band to see which sites are in it. Bands score each site against the patrols due so far, so a site isn't marked down for rounds still to come. Sites with no patrol due yet this shift aren't counted.</div>
         <div id="adminOverviewDonutWrap" style="display:flex; justify-content:center; margin:6px 0 14px;"></div>
         <div id="adminOverviewBandDetail"></div>
       </div>
@@ -1559,7 +1559,7 @@ tbody tr:hover td{background:rgba(255,255,255,.025);}
           <span class="result-meta">%</span>
         </div>
       </div>
-      <div class="result-meta" style="margin-bottom:10px;">Tap a band to see which sites are in it. Sites with no scheduled patrols yet this shift aren't counted.</div>
+      <div class="result-meta" style="margin-bottom:10px;">Tap a band to see which sites are in it. Bands score each site against the patrols due so far, so a site isn't marked down for rounds still to come. Sites with no patrol due yet this shift aren't counted.</div>
       <div id="ctrlOverviewDonutWrap" style="display:flex; justify-content:center; margin:6px 0 14px;"></div>
       <div id="ctrlOverviewBandDetail"></div>
     </div>
@@ -2245,8 +2245,17 @@ function isScheduleLive(sched){
   const r = routes.find(rt => rt.id === sched.routeId);
   return !!r && r.active !== false;
 }
+// A patrol can't have been expected before the thing that schedules it existed.
+// The floor is the newest of: the site, its route, and the schedule itself — so a
+// site created minutes ago never shows "missed" rounds from days (or hours) earlier.
+function patrolCreationFloor(sched){
+  const r = routes.find(x => x.id === sched.routeId);
+  const site = r ? sites.find(x => x.id === r.siteId) : null;
+  return Math.max((site && site.createdAt) || 0, (r && r.createdAt) || 0, sched.createdAt || 0);
+}
 function generateInstances(sched, winStart, winEnd){
   const out = [];
+  const floorMs = patrolCreationFloor(sched);
   const start = parseHM(sched.shiftStart);
   const end = parseHM(sched.shiftEnd);
   const dayMs = 24*60*60*1000;
@@ -2258,7 +2267,7 @@ function generateInstances(sched, winStart, winEnd){
     if (shiftEnd <= shiftStart) shiftEnd += dayMs;
     const stepMs = sched.intervalMinutes * 60000;
     for (let t = shiftStart; t < shiftEnd; t += stepMs){
-      if (t >= winStart && t <= winEnd){
+      if (t >= winStart && t <= winEnd && t >= floorMs){
         out.push({ id: sched.id + '-' + t, scheduleId: sched.id, routeId: sched.routeId, expectedTime: t, intervalMinutes: sched.intervalMinutes, durationMinutes: sched.durationMinutes, graceMinutes: sched.graceMinutes });
       }
     }
@@ -2379,7 +2388,7 @@ function rowToScan(row){
 async function loadSites(){
   const { data, error } = await sb.from('sites').select('*').order('created_at');
   if (error){ showToast('Could not load sites', error.message, 'danger'); return; }
-  sites = (data || []).map(s => ({ id: s.id, name: s.name, address: s.address || '—', siteCode: s.site_code, lat: s.lat, lng: s.lng, perimeter: s.perimeter || null }));
+  sites = (data || []).map(s => ({ id: s.id, name: s.name, address: s.address || '—', siteCode: s.site_code, lat: s.lat, lng: s.lng, perimeter: s.perimeter || null, createdAt: s.created_at ? new Date(s.created_at).getTime() : null }));
   if (!activeSiteId || !sites.some(s => s.id === activeSiteId)){
     activeSiteId = sites[0] ? sites[0].id : null;
   }
@@ -2406,6 +2415,7 @@ async function loadRoutes(){
     siteId: r.site_id,
     strictOrder: r.strict_order,
     active: r.active !== false,
+    createdAt: r.created_at ? new Date(r.created_at).getTime() : null,
     cpIds: (rcRows || [])
       .filter(rc => rc.route_id === r.id)
       .sort((a,b) => a.position - b.position)
@@ -2419,7 +2429,8 @@ async function loadSchedules(){
   schedules = (data || []).map(s => ({
     id: s.id, routeId: s.route_id, intervalMinutes: s.interval_minutes,
     shiftStart: (s.shift_start || '00:00:00').slice(0,5), shiftEnd: (s.shift_end || '00:00:00').slice(0,5),
-    durationMinutes: s.duration_minutes, graceMinutes: s.grace_minutes, active: s.active
+    durationMinutes: s.duration_minutes, graceMinutes: s.grace_minutes, active: s.active,
+    createdAt: s.created_at ? new Date(s.created_at).getTime() : null
   }));
 }
 async function loadScans(){
@@ -3532,10 +3543,23 @@ function computeSiteShiftStats(site){
   const siteRouteIds = new Set(routes.filter(r => r.siteId === site.id && r.active !== false).map(r => r.id));
   const siteScheds = schedules.filter(s => siteRouteIds.has(s.routeId) && isScheduleLive(s));
 
+  // "Due" figures (expected*) only count rounds whose start time has passed — they drive
+  // the SLA bands so a site isn't marked down for rounds still to come. "Shift" figures
+  // (shift*) count every round scheduled across the whole shift, e.g. an hourly patrol of
+  // 5 tags over a 6-hour night = 6 patrols and 30 tags, shown as done/total.
+  const shiftEnd = shiftStart + 12 * 60 * 60 * 1000;
   let expectedTags = 0, expectedPatrols = 0, completedPatrols = 0;
+  let shiftPatrols = 0, shiftPatrolsDone = 0, shiftTags = 0, shiftTagsDone = 0;
   siteScheds.forEach(sched => {
     const route = routes.find(r => r.id === sched.routeId);
     const cpCount = route ? route.cpIds.length : 0;
+    generateInstances(sched, shiftStart, shiftEnd - 1).forEach(inst => {
+      const st = instanceStatus(inst, now);
+      shiftPatrols++;
+      shiftTags += cpCount;
+      shiftTagsDone += Math.min(st.doneCps.length, cpCount);
+      if (st.status === 'completed' || st.status === 'completed_late') shiftPatrolsDone++;
+    });
     const insts = generateInstances(sched, shiftStart, now).filter(i => i.expectedTime <= now);
     insts.forEach(inst => {
       expectedPatrols++;
@@ -3547,7 +3571,7 @@ function computeSiteShiftStats(site){
 
   const acceptedTags = scans.filter(s => s.siteId === site.id && s.result === 'ACCEPTED' && s.timestamp >= shiftStart).length;
   const pct = expectedTags > 0 ? Math.min(100, (acceptedTags / expectedTags) * 100) : null;
-  return { site, expectedTags, acceptedTags, expectedPatrols, completedPatrols, pct };
+  return { site, expectedTags, acceptedTags, expectedPatrols, completedPatrols, pct, shiftPatrols, shiftPatrolsDone, shiftTags, shiftTagsDone };
 }
 
 let overviewSelectedBand = { admin: null, ctrl: null };
@@ -3557,14 +3581,15 @@ function renderSiteOverview(who){
   if (!gaugesEl) return;
 
   const perSite = sites.map(computeSiteShiftStats);
-  const totalExpectedTags = perSite.reduce((a, s) => a + s.expectedTags, 0);
-  const totalAcceptedTags = perSite.reduce((a, s) => a + s.acceptedTags, 0);
-  const totalExpectedPatrols = perSite.reduce((a, s) => a + s.expectedPatrols, 0);
-  const totalCompletedPatrols = perSite.reduce((a, s) => a + s.completedPatrols, 0);
+  // Gauges show progress against the whole shift's schedule (done / total for the shift).
+  const totalExpectedTags = perSite.reduce((a, s) => a + s.shiftTags, 0);
+  const totalAcceptedTags = perSite.reduce((a, s) => a + s.shiftTagsDone, 0);
+  const totalExpectedPatrols = perSite.reduce((a, s) => a + s.shiftPatrols, 0);
+  const totalCompletedPatrols = perSite.reduce((a, s) => a + s.shiftPatrolsDone, 0);
 
   gaugesEl.innerHTML = `
-    <div>${buildGaugeSVG(totalAcceptedTags, totalExpectedTags, 'Tags scanned')}</div>
-    <div>${buildGaugeSVG(totalCompletedPatrols, totalExpectedPatrols, 'Completed patrols')}</div>
+    <div>${buildGaugeSVG(totalAcceptedTags, totalExpectedTags, 'Tags scanned this shift')}</div>
+    <div>${buildGaugeSVG(totalCompletedPatrols, totalExpectedPatrols, 'Patrols completed this shift')}</div>
   `;
 
   const slaInput = document.getElementById(who + 'OverviewSlaInput');
@@ -3641,7 +3666,7 @@ function renderSiteOverview(who){
         ${shown.length ? shown.map(s => `
           <div style="display:flex; justify-content:space-between; padding:4px 0; font-size:12.5px; font-family:var(--sans);">
             <span>${s.site.name}</span>
-            <span class="result-meta">${s.completedPatrols}/${s.expectedPatrols} patrols, ${s.acceptedTags}/${s.expectedTags} tags (${Math.round(s.pct)}%)</span>
+            <span class="result-meta">${s.shiftPatrolsDone}/${s.shiftPatrols} patrols, ${s.shiftTagsDone}/${s.shiftTags} tags this shift (${Math.round(s.pct)}% of what's due so far)</span>
           </div>
         `).join('') : '<div class="result-meta">No sites in this band.</div>'}
       </div>
@@ -6999,6 +7024,9 @@ async function computeReport(){
   const relevantRoutes = routes.filter(r => !siteFilter || r.siteId === siteFilter);
   const routeIds = new Set(relevantRoutes.map(r => r.id));
   const relevantScheds = schedules.filter(s => routeIds.has(s.routeId));
+  if (relevantScheds.some(s => patrolCreationFloor(s) > winStart)){
+    showToast('Range starts before setup', 'Patrols are only counted from when each site and schedule was created.', 'warn');
+  }
 
   // instanceStatus()/scansForInstance() read the module-level `scans` array, so
   // swap in the range-scoped data for this computation and put the live
