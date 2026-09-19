@@ -2843,6 +2843,9 @@ let authMode = 'signin';
 let authSignupRole = 'guard';
 let notificationInterval = null;
 let notifSweepInterval = null;
+let alertPollInterval = null;
+let livePolling = false;
+let notifChannelStatus = 'idle';
 
 function showAuthGate(message){
   document.getElementById('authGate').classList.add('show');
@@ -3030,6 +3033,7 @@ document.getElementById('authSubmitBtn').addEventListener('click', async () => {
 document.getElementById('signOutBtn').addEventListener('click', async () => {
   if (notificationInterval){ clearInterval(notificationInterval); notificationInterval = null; }
   if (notifSweepInterval){ clearInterval(notifSweepInterval); notifSweepInterval = null; }
+  if (alertPollInterval){ clearInterval(alertPollInterval); alertPollInterval = null; }
   await sb.auth.signOut();
 });
 
@@ -3279,6 +3283,13 @@ async function loadProfileAndApp(){
       if (document.getElementById('ctrl-siteoverview')?.classList.contains('active')) renderSiteOverview('ctrl');
     }, 30000);
   }
+  // Fast lane: every 5s raise due alerts and pull in anything new — controllers should
+  // never have to refresh to see an alert.
+  if (!alertPollInterval && (profile.role === 'admin' || profile.role === 'controller')){
+    alertPollInterval = setInterval(pollLiveData, 5000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) pollLiveData(); });
+    window.addEventListener('online', pollLiveData);
+  }
 }
 
 function initAuth(){
@@ -3321,13 +3332,14 @@ function subscribeRealtime(){
         // even waiting on the reload below — this is the one alert type
         // that must not depend on someone happening to be looking at the
         // screen right when it comes in.
-        if (payload.eventType === 'INSERT' && payload.new && payload.new.kind === 'panic'){
+        if (payload.eventType === 'INSERT' && payload.new && payload.new.kind === 'panic' && !seenNotifIds.has(payload.new.id)){
+          seenNotifIds.add(payload.new.id);
           SOUND.panic();
           showToast('Panic alert', payload.new.title, 'danger');
         }
         loadNotifications().then(renderNotifications);
       })
-      .subscribe();
+      .subscribe(status => { notifChannelStatus = status; });
   }
 }
 
@@ -3512,22 +3524,34 @@ function describeArc(cx, cy, r, startAngle, endAngle){
 function buildGaugeSVG(value, max, title){
   const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
   const cx = 100, cy = 95, r = 78, sw = 16;
-  const bands = [
-    { from: 0, to: 50, color: '#E5484D' },
-    { from: 50, to: 70, color: '#D9822B' },
-    { from: 70, to: 90, color: '#E3A13A' },
-    { from: 90, to: 100, color: '#38B27E' }
-  ];
-  const arcs = bands.map(b => `<path d="${describeArc(cx, cy, r, b.from * 1.8, b.to * 1.8)}" stroke="${b.color}" stroke-width="${sw}" fill="none" stroke-linecap="butt"/>`).join('');
-  const needleAngle = pct * 1.8;
-  const tip = polarToCartesian(cx, cy, r - sw/2 - 6, needleAngle);
+  // Angles here use polarToCartesian's convention (0° = straight up, clockwise), so a
+  // left-to-right semicircle over the top runs from -90° (0%) to +90° (100%).
+  const toAngle = p => -90 + p * 1.8;
+  // Smooth red -> amber -> green sweep, drawn as many short segments so it reads as a
+  // gradient. (Slight overlap between segments hides hairline seams.)
+  const stops = [[0, [229, 72, 77]], [0.5, [227, 161, 58]], [1, [56, 178, 126]]];
+  const colourAt = t => {
+    const i = t <= stops[1][0] ? 0 : 1;
+    const [t0, c0] = stops[i], [t1, c1] = stops[i + 1];
+    const k = (t - t0) / (t1 - t0);
+    return 'rgb(' + c0.map((v, n) => Math.round(v + (c1[n] - v) * k)).join(',') + ')';
+  };
+  const SEG = 48;
+  let arcs = '';
+  for (let i = 0; i < SEG; i++){
+    const from = (i / SEG) * 100, to = Math.min(100, ((i + 1) / SEG) * 100 + 0.6);
+    arcs += `<path d="${describeArc(cx, cy, r, toAngle(from), toAngle(to))}" stroke="${colourAt((i + 0.5) / SEG)}" stroke-width="${sw}" fill="none" stroke-linecap="butt"/>`;
+  }
+  const tip = polarToCartesian(cx, cy, r - sw/2 - 6, toAngle(pct));
   const pctLabel = max > 0 ? Math.round(pct) + '%' : '—';
   return `
     <svg viewBox="0 0 200 130" style="width:100%; max-width:220px;">
       ${arcs}
+      <text x="${cx - r}" y="${cy + 16}" text-anchor="middle" font-size="9" fill="var(--muted)" font-family="var(--sans)">0</text>
+      <text x="${cx + r}" y="${cy + 16}" text-anchor="middle" font-size="9" fill="var(--muted)" font-family="var(--sans)">100</text>
       <line x1="${cx}" y1="${cy}" x2="${tip.x}" y2="${tip.y}" stroke="var(--text)" stroke-width="3" stroke-linecap="round"/>
       <circle cx="${cx}" cy="${cy}" r="6" fill="var(--text)"/>
-      <text x="${cx}" y="${cy + 26}" text-anchor="middle" font-size="18" font-weight="800" fill="var(--text)" font-family="var(--sans)">${pctLabel}</text>
+      <text x="${cx}" y="${cy + 30}" text-anchor="middle" font-size="18" font-weight="800" fill="var(--text)" font-family="var(--sans)">${pctLabel}</text>
     </svg>
     <div style="text-align:center; font-family:var(--sans); font-weight:700; font-size:12.5px; margin-top:-6px;">${title}</div>
     <div class="result-meta" style="text-align:center;">${value} / ${max}</div>
@@ -4704,7 +4728,7 @@ function timeAgo(iso){
   return new Date(iso).toLocaleDateString();
 }
 
-async function loadNotifications(){
+async function loadNotifications(opts){
   if (!profile || (profile.role !== 'admin' && profile.role !== 'controller')){ notifications = []; return; }
   // Active (uncleared) alerts never expire on their own here — they must be resolved.
   // Resolved ones only stay in this working set for 24h; the full history lives in
@@ -4715,8 +4739,58 @@ async function loadNotifications(){
     .or(`cleared_at.is.null,cleared_at.gte.${cutoff}`)
     .order('occurred_at', { ascending: false })
     .limit(300);
-  if (error){ showToast('Could not load notifications', error.message, 'danger'); return; }
+  if (error){ if (!(opts && opts.quiet)) showToast('Could not load notifications', error.message, 'danger'); return; }
   notifications = data || [];
+  announceNewAlerts();
+}
+
+// ---- Live delivery: don't depend on the realtime socket alone ----
+// Realtime pushes alerts the moment they're written, but a dropped socket, a sleeping
+// laptop or a flaky connection can silently stop that. So controllers/admins ALSO poll
+// every few seconds (see pollLiveData) — whichever path sees an alert first announces it.
+const seenNotifIds = new Set();
+let seenNotifsSeeded = false;
+function announceNewAlerts(){
+  const fresh = notifications.filter(n => !seenNotifIds.has(n.id));
+  fresh.forEach(n => seenNotifIds.add(n.id));
+  if (!seenNotifsSeeded){ seenNotifsSeeded = true; return; }   // first load = history, not news
+  const news = fresh.filter(n => !n.cleared_at && n.severity !== 'green'
+    && nowMs() - new Date(n.occurred_at).getTime() < 15 * 60 * 1000);
+  news.filter(n => n.kind === 'panic').forEach(n => { SOUND.panic(); showToast('Panic alert', n.title, 'danger'); });
+  const others = news.filter(n => n.kind !== 'panic');
+  others.slice(0, 3).forEach(n => showToast(n.severity === 'red' ? 'New critical alert' : 'New warning', n.title, n.severity === 'red' ? 'danger' : 'warn'));
+  if (others.length > 3) showToast(`${others.length - 3} more new alerts`, 'See Attention required on the dashboard.', 'warn');
+}
+function notifSignature(){
+  return notifications.map(n => `${n.id}:${n.cleared_at || ''}:${(n.notification_comments || []).length}`).join('|');
+}
+async function pollNewScans(){
+  // Incremental: only scans written in the last couple of minutes, merged by id.
+  const since = new Date(nowMs() - 2 * 60 * 1000).toISOString();
+  const { data, error } = await sb.from('scans').select('*').gte('created_at', since).order('created_at', { ascending: true }).limit(500);
+  if (error || !data) return false;
+  let added = false;
+  data.forEach(row => {
+    if (!scans.some(x => x.id === row.id)){ scans.push(rowToScan(row)); added = true; }
+  });
+  if (added){
+    scans.sort((a, b) => a.timestamp - b.timestamp);
+    renderStats(); renderLog(); renderPatrolsAdmin();
+  }
+  return added;
+}
+async function pollLiveData(){
+  if (livePolling || !profile || (profile.role !== 'admin' && profile.role !== 'controller')) return;
+  if (navigator.onLine === false) return;
+  livePolling = true;
+  try{
+    await sweepPatrolInstanceNotifications();          // raises missed / late / completed alerts as soon as they fall due
+    const before = notifSignature();
+    await loadNotifications({ quiet: true });          // picks up anything the realtime socket didn't deliver
+    if (notifSignature() !== before) renderNotifications();
+    await pollNewScans();
+  }catch(e){ console.warn('live poll', e); }
+  finally{ livePolling = false; }
 }
 
 function isGreenExpired(n){
@@ -4821,6 +4895,21 @@ async function submitNotificationComment(notifId, containerEl){
 }
 
 function renderNotifications(){
+  // A re-render rebuilds the alert cards, so hold on to any comment a controller is
+  // part-way through typing (and where their cursor was) and put it straight back.
+  const saved = {}; let focusId = null, caret = null;
+  document.querySelectorAll('[data-notif-comment]').forEach(i => {
+    if (i.value) saved[i.dataset.notifComment] = i.value;
+    if (document.activeElement === i){ focusId = i.dataset.notifComment; caret = i.selectionStart; }
+  });
+  renderNotificationsCore();
+  document.querySelectorAll('[data-notif-comment]').forEach(i => {
+    const v = saved[i.dataset.notifComment];
+    if (v !== undefined) i.value = v;
+    if (focusId && i.dataset.notifComment === focusId){ i.focus(); try{ i.setSelectionRange(caret, caret); }catch(e){} }
+  });
+}
+function renderNotificationsCore(){
   populateFilterSiteSelect('adminNotifSiteFilter', notifFilters.admin.site);
   populateFilterSiteSelect('ctrlNotifSiteFilter', notifFilters.ctrl.site);
   renderNotificationsInto(null, 'adminNotifResolved', 'admin');
@@ -4859,8 +4948,10 @@ async function sweepPatrolInstanceNotifications(){
       }
     });
   });
-  if (!rows.length) return;
-  const { error } = await sb.from('patrol_notifications').upsert(rows, { onConflict: 'kind,route_id,occurred_at', ignoreDuplicates: true });
+  const have = new Set(notifications.map(n => `${n.kind}|${n.route_id}|${new Date(n.occurred_at).getTime()}`));
+  const fresh = rows.filter(r => !have.has(`${r.kind}|${r.route_id}|${new Date(r.occurred_at).getTime()}`));
+  if (!fresh.length) return;
+  const { error } = await sb.from('patrol_notifications').upsert(fresh, { onConflict: 'kind,route_id,occurred_at', ignoreDuplicates: true });
   if (!error){
     await loadNotifications();
     renderNotifications();
@@ -7764,6 +7855,8 @@ function uiSystemState(){
   if (navigator.onLine === false) return ['down', 'Offline'];
   let connected = true;
   try{ if (sb && sb.realtime && typeof sb.realtime.isConnected === 'function') connected = sb.realtime.isConnected(); }catch(e){}
+  const ops = profile.role === 'admin' || profile.role === 'controller';
+  if (connected && ops && notifChannelStatus !== 'SUBSCRIBED') return ['warn', 'Live feed degraded · polling every 5s'];
   return connected ? ['ok', 'All systems operational'] : ['warn', 'Reconnecting…'];
 }
 function uiTick(){
