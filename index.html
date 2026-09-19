@@ -1404,7 +1404,7 @@ tbody tr:hover td{background:rgba(255,255,255,.025);}
         <div class="table-scroll">
           <table>
             <thead><tr><th>Name</th><th>Employee #</th><th>Phone</th><th>Email</th><th>Role</th><th>Site</th><th>Joined</th><th></th></tr></thead>
-            <tbody id="usersTableBody"><tr><td colspan="8" style="font-family:var(--sans); color:var(--muted);">Loading…</td></tr></tbody>
+            <tbody id="usersTableBody"><tr><td colspan="7" style="font-family:var(--sans); color:var(--muted);">Loading…</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -2694,7 +2694,7 @@ function renderUsersTable(){
   const body = document.getElementById('usersTableBody');
   if (!body) return;
   if (!allUsers.length){
-    body.innerHTML = '<tr><td colspan="8" style="font-family:var(--sans); color:var(--muted);">No users yet.</td></tr>';
+    body.innerHTML = '<tr><td colspan="7" style="font-family:var(--sans); color:var(--muted);">No users yet.</td></tr>';
     return;
   }
   const searchEl = document.getElementById('userSearch');
@@ -2709,7 +2709,7 @@ function renderUsersTable(){
       || (site ? site.name.toLowerCase().includes(q) : false);
   }) : allUsers;
   if (!filtered.length){
-    body.innerHTML = '<tr><td colspan="8" style="font-family:var(--sans); color:var(--muted);">No users match.</td></tr>';
+    body.innerHTML = '<tr><td colspan="7" style="font-family:var(--sans); color:var(--muted);">No users match.</td></tr>';
     return;
   }
   const sorted = filtered.slice().sort((a,b) => (a.full_name || a.email).localeCompare(b.full_name || b.email));
@@ -7958,6 +7958,20 @@ function uiSyncShell(){
   uiSyncShell();
   uiTick();
   setInterval(uiTick, 1000);
+})();
+
+// ---------------- Manage site: one setup step open at a time ----------------
+// Opening a step collapses the others, then keeps the opened step's header in view.
+(function initManageAccordion(){
+  const steps = document.querySelectorAll('#admin-manage details.setup-step');
+  steps.forEach(step => {
+    step.addEventListener('toggle', () => {
+      if (!step.open) return;
+      steps.forEach(other => { if (other !== step && other.open) other.open = false; });
+      const head = step.querySelector('summary');
+      if (head) head.scrollIntoView({ block: 'nearest' });
+    });
+  });
 })();
 
 // ---------------- Boot ----------------
