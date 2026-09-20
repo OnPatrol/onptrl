@@ -1735,6 +1735,15 @@ tbody tr:hover td{background:rgba(255,255,255,.025);}
   </main>
 </div>
 
+<div class="qr-modal-bg auth-gate" id="welcomeGate" style="z-index:120;">
+  <div class="detail-modal" style="text-align:center;">
+    <img id="welcomeLogo" alt="OnPatrol" style="height:38px; width:auto; display:block; margin:0 auto 18px;">
+    <h2 id="welcomeTitle" style="margin:0 0 8px; font-size:20px; font-family:var(--sans);">Welcome to OnPatrol</h2>
+    <div id="welcomeCompany" style="display:none; font-size:16px; font-weight:600; color:var(--accent); margin-bottom:10px; font-family:var(--sans);"></div>
+    <div id="welcomeMsg" class="result-meta" style="margin-bottom:22px; font-family:var(--sans); font-size:13px; line-height:1.5;"></div>
+    <button class="btn btn-primary" id="welcomeBackBtn" style="width:100%;">Back to sign in</button>
+  </div>
+</div>
 <div class="toast-wrap" id="toastWrap"></div>
 <div id="offlineBanner" role="status" aria-live="polite"></div>
 
@@ -3364,6 +3373,71 @@ document.getElementById('resetPasswordSubmitBtn').addEventListener('click', asyn
 // ---------------- Auth ----------------
 let authMode = 'signin';
 let authSignupRole = 'guard';
+
+// ---- welcome page (where the email confirmation link lands) ----
+const WELCOME_MODE = new URLSearchParams(window.location.search).get('welcome') === '1';
+function welcomeRedirectUrl(){
+  return window.location.origin + window.location.pathname.replace(/index\.html$/, '') + '?welcome=1';
+}
+async function showWelcomePage(){
+  const gate = document.getElementById('welcomeGate');
+  const logo = document.querySelector('.brand-logo');
+  if (logo) document.getElementById('welcomeLogo').src = logo.getAttribute('src');
+  const titleEl = document.getElementById('welcomeTitle');
+  const companyEl = document.getElementById('welcomeCompany');
+  const msgEl = document.getElementById('welcomeMsg');
+  let msg = 'Your email is confirmed. Sign in to get started.';
+
+  const linkError = /error=|error_description=/.test(window.location.hash);
+  if (linkError){
+    titleEl.textContent = 'This link has expired';
+    msg = 'This confirmation link has expired or was already used. If you have already confirmed your email, just sign in.';
+  } else {
+    const r = await sb.auth.getSession().catch(() => ({ data: null }));
+    const sess = r && r.data && r.data.session;
+    const meta = (sess && sess.user && sess.user.user_metadata) || {};
+    const orgName = String(meta.org_name || '').trim();
+    if (sess && orgName){
+      // First admin: the company they typed at sign-up is created now (safe to repeat: it does nothing if they already have one).
+      const { data: prof } = await sb.from('profiles').select('org_id').eq('id', sess.user.id).single();
+      let ready = !!(prof && prof.org_id);
+      if (prof && !prof.org_id){
+        const { data: newOrgId, error: coErr } = await sb.rpc('create_organization', { p_org_name: orgName });
+        ready = !coErr && !!newOrgId;
+      }
+      clearPendingCompany();
+      companyEl.textContent = orgName;
+      companyEl.style.display = 'block';
+      msg = ready
+        ? "Your email is confirmed and your company is set up. You're its first admin — sign in to invite your team."
+        : 'Your email is confirmed, but we couldn\'t set up the company automatically. Sign in, tap "Have an admin code?", then "Create your company instead".';
+    } else if (sess){
+      const first = String(meta.full_name || '').trim().split(/\s+/)[0];
+      if (first) companyEl.textContent = first, companyEl.style.display = 'block';
+    }
+  }
+  msgEl.textContent = msg;
+  gate.classList.add('show');
+}
+document.getElementById('welcomeBackBtn').addEventListener('click', async () => {
+  try{ history.replaceState(null, '', window.location.pathname); }catch(e){}
+  await sb.auth.signOut().catch(() => {});
+  window.location.replace(window.location.pathname);
+});
+
+// ---- company creation that has to wait for email confirmation ----
+const PENDING_COMPANY_KEY = 'onpatrol_pending_company';
+function savePendingCompany(email, orgName){
+  try{ localStorage.setItem(PENDING_COMPANY_KEY, JSON.stringify({ email: String(email).toLowerCase(), orgName, at: Date.now() })); }catch(e){}
+}
+function readPendingCompany(){
+  try{
+    const v = JSON.parse(localStorage.getItem(PENDING_COMPANY_KEY) || 'null');
+    if (!v || !v.orgName || Date.now() - v.at > 14 * 24 * 60 * 60 * 1000) return null;
+    return v;
+  }catch(e){ return null; }
+}
+function clearPendingCompany(){ try{ localStorage.removeItem(PENDING_COMPANY_KEY); }catch(e){} }
 let notificationInterval = null;
 let notifSweepInterval = null;
 let alertPollInterval = null;
@@ -3492,7 +3566,11 @@ document.getElementById('authSubmitBtn').addEventListener('click', async () => {
       const orgName = document.getElementById('authOrgName').value.trim();
       const controllerCode = document.getElementById('authControllerCode').value.trim();
       const siteCode = document.getElementById('authSiteCode').value.trim();
-      const { data, error } = await sb.auth.signUp({ email, password, options: { data: { full_name: fullName, phone } } });
+      const creatingCompany = wantsAdmin && authCreatingOrg;
+      const { data, error } = await sb.auth.signUp({ email, password, options: {
+        emailRedirectTo: welcomeRedirectUrl(),
+        data: { full_name: fullName, phone, signup_role: authSignupRole, org_name: creatingCompany ? orgName : undefined }
+      } });
       if (error) throw error;
 
       if (data.session){
@@ -3531,7 +3609,12 @@ document.getElementById('authSubmitBtn').addEventListener('click', async () => {
         }
       }
       if (!data.session){
-        errEl.textContent = wantsAdmin
+        // Email confirmation is on, so there is no login yet and the company cannot be created yet.
+        // Remember the company name; it is created automatically at the first sign-in on this device.
+        if (wantsAdmin && authCreatingOrg) savePendingCompany(email, orgName);
+        errEl.textContent = wantsAdmin && authCreatingOrg
+          ? `Account created — tap the confirmation link in your email. "${orgName}" is set up when you confirm, then you can sign in.`
+          : wantsAdmin
           ? 'Account created — check your email to confirm it, then sign in and use "Claim admin access" with your invite code.'
           : wantsController
           ? 'Account created — check your email to confirm it, then sign in and use "Claim controller access" with your invite code.'
@@ -3735,6 +3818,20 @@ async function loadProfileAndApp(){
   }
   profile = prof;
   if (!offlineMode) offlineSnapSavedAt = Date.now();
+
+  // A first admin who had to confirm their email before signing in: create the company they asked for now.
+  const pendingCo = readPendingCompany();
+  if (pendingCo && !profile.org_id && !session.offline && session.user.email && pendingCo.email === session.user.email.toLowerCase()){
+    clearPendingCompany();
+    const { data: newOrgId, error: coErr } = await sb.rpc('create_organization', { p_org_name: pendingCo.orgName });
+    if (!coErr && newOrgId){
+      const { data: fresh } = await sb.from('profiles').select('*').eq('id', session.user.id).single();
+      if (fresh) profile = fresh;
+      showToast('Company created', `${pendingCo.orgName} is set up and you are its first admin. Invite your team from Admin invites.`, 'success');
+    } else {
+      showToast('Could not create the company', 'Tap "Have an admin code?" then "Create your company instead".', 'warn');
+    }
+  }
   guardSiteId = profile.site_id || null;
 
   document.getElementById('authGate').classList.remove('show');
@@ -3830,6 +3927,7 @@ async function loadProfileAndApp(){
 function initAuth(){
   sb.auth.getSession().then(async ({ data: { session: s } }) => {
     session = s;
+    if (WELCOME_MODE){ showWelcomePage(); return; }
     if (!session && OFFLINE_ENABLED){
       // No valid login token AND no connection: let a guard who has used this phone before carry on from the saved copy.
       const snap = await OFF.get('snapshot');
@@ -3843,7 +3941,7 @@ function initAuth(){
   });
   sb.auth.onAuthStateChange((event, s2) => {
     if (s2 || !(session && session.offline)) session = s2;
-    if (event === 'SIGNED_IN' && s2 && (!profile || profile.id !== s2.user.id)) loadProfileAndApp();
+    if (event === 'SIGNED_IN' && s2 && !WELCOME_MODE && (!profile || profile.id !== s2.user.id)) loadProfileAndApp();
     if (event === 'SIGNED_OUT'){
       profile = null;
       // Signing out removes the face data kept on the phone (anything still waiting to be sent is kept).
