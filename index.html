@@ -3401,11 +3401,17 @@ async function showWelcomePage(){
       // First admin: the company they typed at sign-up is created now (safe to repeat: it does nothing if they already have one).
       const { data: prof } = await sb.from('profiles').select('org_id').eq('id', sess.user.id).single();
       let ready = !!(prof && prof.org_id);
+      clearPendingCompany();   // first, so a second open tab of the app does not try to create it as well
       if (prof && !prof.org_id){
         const { data: newOrgId, error: coErr } = await sb.rpc('create_organization', { p_org_name: orgName });
-        ready = !coErr && !!newOrgId;
+        if (coErr) ready = false;
+        else if (newOrgId) ready = true;
+        else {
+          // No new company came back: another tab may have just created it. Check.
+          const { data: again } = await sb.from('profiles').select('org_id').eq('id', sess.user.id).single();
+          ready = !!(again && again.org_id);
+        }
       }
-      clearPendingCompany();
       companyEl.textContent = orgName;
       companyEl.style.display = 'block';
       msg = ready
@@ -3824,10 +3830,11 @@ async function loadProfileAndApp(){
   if (pendingCo && !profile.org_id && !session.offline && session.user.email && pendingCo.email === session.user.email.toLowerCase()){
     clearPendingCompany();
     const { data: newOrgId, error: coErr } = await sb.rpc('create_organization', { p_org_name: pendingCo.orgName });
-    if (!coErr && newOrgId){
+    if (!coErr){
+      // newOrgId is empty when the company already exists (created a moment ago from another tab) - carry on quietly.
       const { data: fresh } = await sb.from('profiles').select('*').eq('id', session.user.id).single();
       if (fresh) profile = fresh;
-      showToast('Company created', `${pendingCo.orgName} is set up and you are its first admin. Invite your team from Admin invites.`, 'success');
+      if (newOrgId) showToast('Company created', `${pendingCo.orgName} is set up and you are its first admin. Invite your team from Admin invites.`, 'success');
     } else {
       showToast('Could not create the company', 'Tap "Have an admin code?" then "Create your company instead".', 'warn');
     }
@@ -8324,8 +8331,8 @@ function renderPlatformOrgs(){
     return `
     <div class="detail-modal" style="margin-bottom:14px; padding:16px;">
       <div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px; flex-wrap:wrap;">
-        <div style="font-size:15px; font-weight:600;">${org.name}</div>
-        <span class="role-pill">${org.subscription_status}</span>
+        <div style="font-size:15px; font-weight:600;">${escapeHtmlForPrint(org.name)}</div>
+        <span class="role-pill">${escapeHtmlForPrint(org.subscription_status)}</span>
       </div>
       <div class="result-meta" style="margin:6px 0 12px;">
         ${org.site_count} site${org.site_count === 1 ? '' : 's'} ·
@@ -8339,43 +8346,65 @@ function renderPlatformOrgs(){
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
         <div>
           <div class="field-label" style="margin-top:0;">Plan</div>
-          <input type="text" data-org-field="plan" data-org-id="${org.id}" value="${org.plan || ''}">
+          <input type="text" data-org-field="plan" data-org-id="${org.id}" value="${escapeHtmlForPrint(org.plan || '')}" disabled>
         </div>
         <div>
           <div class="field-label" style="margin-top:0;">Subscription status</div>
-          <select data-org-field="subscription_status" data-org-id="${org.id}">
+          <select data-org-field="subscription_status" data-org-id="${org.id}" disabled>
             ${['trial','active','past_due','cancelled'].map(s => `<option value="${s}" ${s === org.subscription_status ? 'selected' : ''}>${s}</option>`).join('')}
           </select>
         </div>
         <div>
           <div class="field-label">Billing email</div>
-          <input type="email" data-org-field="billing_email" data-org-id="${org.id}" value="${org.billing_email || ''}">
+          <input type="email" data-org-field="billing_email" data-org-id="${org.id}" value="${escapeHtmlForPrint(org.billing_email || '')}" disabled>
         </div>
         <div>
           <div class="field-label">Trial ends</div>
-          <input type="date" data-org-field="trial_ends_at" data-org-id="${org.id}" value="${org.trial_ends_at ? org.trial_ends_at.slice(0,10) : ''}">
+          <input type="date" data-org-field="trial_ends_at" data-org-id="${org.id}" value="${org.trial_ends_at ? org.trial_ends_at.slice(0,10) : ''}" disabled>
         </div>
       </div>
       <div class="field-label">Notes</div>
-      <input type="text" data-org-field="notes" data-org-id="${org.id}" value="${(org.notes || '').replace(/"/g, '&quot;')}">
+      <input type="text" data-org-field="notes" data-org-id="${org.id}" value="${escapeHtmlForPrint(org.notes || '')}" disabled>
 
       <div class="btn-row" style="margin-top:14px;">
-        <button class="btn" data-org-save="${org.id}">Save changes</button>
+        <button class="btn" data-org-edit="${org.id}">Edit</button>
+        <button class="btn btn-primary" data-org-save="${org.id}" style="display:none;">Save changes</button>
+        <button class="btn" data-org-cancel="${org.id}" style="display:none;">Cancel</button>
         <button class="btn" data-org-export="${org.id}">Download data</button>
         <button class="btn" data-org-delete="${org.id}" style="background:var(--danger); color:#fff;">Delete company</button>
       </div>
     </div>`;
   }).join('');
 
+  // Fields are locked until Edit is pressed, so nothing can be changed by a stray tap.
+  list.querySelectorAll('[data-org-edit]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const orgId = btn.dataset.orgEdit;
+      list.querySelectorAll(`[data-org-id="${orgId}"]`).forEach(input => { input.disabled = false; });
+      btn.style.display = 'none';
+      list.querySelector(`[data-org-save="${orgId}"]`).style.display = '';
+      list.querySelector(`[data-org-cancel="${orgId}"]`).style.display = '';
+    });
+  });
+  list.querySelectorAll('[data-org-cancel]').forEach(btn => {
+    btn.addEventListener('click', () => renderPlatformOrgs());   // drops any edits and locks the tile again
+  });
+
   list.querySelectorAll('[data-org-save]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const orgId = btn.dataset.orgSave;
+      const org = platformOrgs.find(o => o.id === orgId) || {};
       const updates = {};
+      // Only send what was really changed. (Sending the untouched trial date back would also
+      // reset its exact time and could trigger a second trial reminder email.)
       list.querySelectorAll(`[data-org-id="${orgId}"]`).forEach(input => {
-        let val = input.value.trim();
-        if (input.dataset.orgField === 'trial_ends_at') val = val ? new Date(val).toISOString() : null;
-        updates[input.dataset.orgField] = val || null;
+        const field = input.dataset.orgField;
+        const raw = input.value.trim();
+        const before = field === 'trial_ends_at' ? (org.trial_ends_at ? org.trial_ends_at.slice(0, 10) : '') : String(org[field] || '');
+        if (raw === before) return;
+        updates[field] = field === 'trial_ends_at' ? (raw ? new Date(raw).toISOString() : null) : (raw || null);
       });
+      if (!Object.keys(updates).length){ showToast('No changes to save', '', 'success'); renderPlatformOrgs(); return; }
       btn.disabled = true;
       const { data, error } = await sb.functions.invoke('platform-admin', { body: { action: 'update_org', org_id: orgId, updates } });
       btn.disabled = false;
