@@ -316,6 +316,10 @@
   .status-pill.completed_late{background:var(--warn-dim); color:var(--warn);}
   .status-pill.missed{background:var(--danger-dim); color:var(--danger);}
   .progress-mini{color:var(--muted); font-family:var(--mono); font-size:11px;}
+
+  #offlineBanner{display:none; position:fixed; left:12px; right:12px; bottom:12px; z-index:60; padding:10px 14px; border-radius:10px; font-family:var(--sans); font-size:12.5px; line-height:1.4; background:var(--warn-dim); color:var(--warn); border:1px solid var(--warn); text-align:center;}
+  #offlineBanner[data-kind="sync"]{background:var(--bg); color:var(--muted); border-color:var(--border);}
+  #offlineBanner[data-kind="fail"]{background:var(--danger-dim); color:var(--danger); border-color:var(--danger);}
 </style>
 <style id="enterprise-ui">
 /* =====================================================================
@@ -1732,6 +1736,7 @@ tbody tr:hover td{background:rgba(255,255,255,.025);}
 </div>
 
 <div class="toast-wrap" id="toastWrap"></div>
+<div id="offlineBanner" role="status" aria-live="polite"></div>
 
 <div class="qr-modal-bg" id="resetPasswordModalBg">
   <div class="detail-modal">
@@ -2128,6 +2133,418 @@ function setActiveSite(id){
 }
 
 function nowMs(){ return Date.now(); }
+
+// ============================================================
+// Offline mode for guard phones
+// ------------------------------------------------------------
+// Rule: always talk to the server when there is a connection. Only when the
+// server cannot be reached does the phone fall back to the copy of the site's
+// data it saved earlier (schedules, checkpoints, roster, face data). Everything
+// the guard does while offline is kept in a queue on the phone, stamped with
+// the real time it happened, and sent automatically when signal returns.
+//
+// What works offline: scanning tags, clocking in/out (with a face check done on
+// the phone), choosing who is on patrol, and the panic button (it keeps trying
+// until it gets through).
+// What still needs a connection: incident reports with photos, first-time face
+// enrolment, and anything for a guard who has never signed in on this phone.
+// ============================================================
+const OFFLINE_ENABLED = true;                          // master switch: false turns every offline behaviour off
+const OFFLINE_FACE_ENABLED = true;                     // false = clock-in needs a connection (no face data is kept on the phone)
+const OFFLINE_FACE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;   // saved face data expires if it hasn't been refreshed for 7 days
+const OFFLINE_SERVER_TIMEOUT_MS = 9000;                // how long to wait for the server before treating the connection as down
+
+let offlineMode = false;              // true while the app is running from the saved copy (server unreachable at start-up)
+let serverReachable = true;
+let offlineQueueCount = 0, offlineQueueFailed = 0;
+let offlineSnapSavedAt = Date.now();  // when the saved copy (incl. this guard's own face data) was last refreshed
+let offlineLastSnap = 0, offlineLastRoster = 0;
+let offlineSyncing = false, offlineBackBusy = false, offlineSentPanic = false;
+let offlineSyncTimer = null, offlineSnapTimer = null;
+
+// ---- tiny IndexedDB wrapper (survives closing the app and restarting the phone) ----
+const OFF = (function(){
+  let dbp = null;
+  function open(){
+    if (dbp) return dbp;
+    dbp = new Promise((resolve, reject) => {
+      if (!window.indexedDB){ reject(new Error('no indexedDB')); return; }
+      const req = indexedDB.open('onpatrol-offline', 1);
+      req.onupgradeneeded = () => {
+        const d = req.result;
+        if (!d.objectStoreNames.contains('kv')) d.createObjectStore('kv');
+        if (!d.objectStoreNames.contains('queue')) d.createObjectStore('queue', { keyPath: 'qid', autoIncrement: true });
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    return dbp;
+  }
+  async function run(store, mode, fn){
+    const d = await open();
+    return new Promise((resolve, reject) => {
+      const t = d.transaction(store, mode);
+      let req;
+      try { req = fn(t.objectStore(store)); } catch(e){ reject(e); return; }
+      t.oncomplete = () => resolve(req ? req.result : undefined);
+      t.onerror = () => reject(t.error);
+      t.onabort = () => reject(t.error);
+    });
+  }
+  return {
+    get: k => run('kv', 'readonly', s => s.get(k)).catch(() => undefined),
+    set: (k, v) => run('kv', 'readwrite', s => s.put(v, k)).catch(e => console.warn('offline store', e)),
+    del: k => run('kv', 'readwrite', s => s.delete(k)).catch(() => {}),
+    qAdd: item => run('queue', 'readwrite', s => s.add(item)),
+    qAll: () => run('queue', 'readonly', s => s.getAll()).catch(() => []),
+    qGet: qid => run('queue', 'readonly', s => s.get(qid)).catch(() => undefined),
+    qPut: item => run('queue', 'readwrite', s => s.put(item)).catch(() => {}),
+    qDel: qid => run('queue', 'readwrite', s => s.delete(qid)).catch(() => {})
+  };
+})();
+
+// ---- small helpers ----
+function offlineNewId(){
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  const b = new Uint8Array(16); crypto.getRandomValues(b);
+  b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80;
+  const h = Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+  return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;
+}
+// True when an error means "could not reach the server" (as opposed to the server
+// answering with a refusal such as a wrong face or a permissions error).
+function isNetworkFailure(err){
+  if (!err) return false;
+  const name = String(err.name || '');
+  const msg = String(err.message || err).toLowerCase();
+  return name === 'FunctionsFetchError' || name === 'AbortError' || name === 'TypeError' ||
+    /failed to fetch|networkerror|network request failed|load failed|fetch failed|timed out|timeout|err_internet|offline/.test(msg);
+}
+function withTimeout(promise, ms){
+  return new Promise(resolve => {
+    const t = setTimeout(() => resolve({ data: null, error: { name: 'AbortError', message: 'timed out' } }), ms);
+    Promise.resolve(promise).then(r => { clearTimeout(t); resolve(r); }, e => { clearTimeout(t); resolve({ data: null, error: e }); });
+  });
+}
+function offlineKnownDown(){ return !!OFFLINE_ENABLED && (navigator.onLine === false || !serverReachable); }
+function offlineMarkServerDown(){ if (serverReachable){ serverReachable = false; offlineRenderBanner(); } }
+function offlineMarkServerUp(){ if (!serverReachable){ serverReachable = true; offlineRenderBanner(); offlineOnBackOnline(); } }
+function offlineFaceDistance(a, b){
+  let sum = 0; const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++){ const d = a[i] - b[i]; sum += d * d; }
+  return Math.sqrt(sum);   // same measure and threshold (0.55) the server uses
+}
+async function offlinePing(){
+  try{
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 6000);
+    const r = await fetch(SUPABASE_URL + '/auth/v1/health', { headers: { apikey: SUPABASE_KEY }, signal: ctl.signal, cache: 'no-store' });
+    clearTimeout(t);
+    return r.status < 500;   // any answer at all means the server can be reached
+  }catch(e){ return false; }
+}
+
+// ---- the saved copy of the site's data ----
+function offlineSnapshotSoon(){
+  if (!OFFLINE_ENABLED || offlineSnapTimer) return;
+  offlineSnapTimer = setTimeout(() => { offlineSnapTimer = null; offlineSaveSnapshot(); }, 1500);
+}
+async function offlineSaveSnapshot(){
+  if (!OFFLINE_ENABLED || !profile || profile.role !== 'guard' || !session || session.offline || offlineMode) return;
+  offlineSnapSavedAt = Date.now(); offlineLastSnap = offlineSnapSavedAt;
+  await OFF.set('snapshot', {
+    v: 1, savedAt: offlineSnapSavedAt,
+    userId: session.user.id, email: session.user.email || null,
+    profile, guardSiteId, activeDutySiteId,
+    sites, checkpoints, routes, schedules, siteShifts, attendance, absences, scans,
+    guardDirectoryCache, alertSettings
+  });
+}
+async function offlineCachedProfile(){
+  if (!OFFLINE_ENABLED || !session) return null;
+  const snap = await OFF.get('snapshot');
+  if (!snap || snap.v !== 1 || !snap.profile || snap.userId !== session.user.id) return null;
+  if (snap.profile.role !== 'guard') return null;   // offline mode is for guard phones only
+  offlineSnapSavedAt = snap.savedAt || 0;
+  return snap.profile;
+}
+async function offlineRestoreSnapshot(){
+  const snap = await OFF.get('snapshot');
+  if (!snap || snap.v !== 1) return false;
+  sites = snap.sites || []; checkpoints = snap.checkpoints || []; routes = snap.routes || [];
+  schedules = snap.schedules || []; siteShifts = snap.siteShifts || []; attendance = snap.attendance || [];
+  absences = snap.absences || []; scans = snap.scans || [];
+  guardDirectoryCache = snap.guardDirectoryCache || {};
+  alertSettings = snap.alertSettings || alertSettings;
+  guardSiteId = snap.guardSiteId || guardSiteId;
+  activeDutySiteId = snap.activeDutySiteId || null;
+  if (!activeSiteId || !sites.some(s => s.id === activeSiteId)) activeSiteId = guardSiteId || (sites[0] ? sites[0].id : null);
+  await offlineApplyQueueToState();
+  myAttendance = (session && attendance.find(a => a.guardId === session.user.id && a.status === 'on_duty')) || null;
+  if (myAttendance && myAttendance.siteId) activeDutySiteId = myAttendance.siteId;
+  return true;
+}
+// Puts everything still waiting in the queue back into the on-screen state, so a
+// scan or clock-in made offline stays visible (and counts toward the patrol)
+// even after the app is reopened or refreshed before it has been sent.
+async function offlineApplyQueueToState(){
+  if (!OFFLINE_ENABLED || !profile || profile.role !== 'guard') return false;
+  const items = await OFF.qAll();
+  let changed = false;
+  for (const it of items){
+    const p = it.payload || {};
+    if (it.type === 'scan' && p.row){
+      if (!scans.some(s => s.id === p.row.id)){ scans.push(rowToScan(p.row)); changed = true; }
+    } else if (it.type === 'clock_in' && p.body){
+      const b = p.body;
+      if (!attendance.some(a => a.id === b.client_attendance_id)){
+        attendance.push({ id: b.client_attendance_id, siteId: b.site_id, shiftId: b.shift_id, shiftDate: b.shift_date, guardId: b.target_guard_id, isReliever: !!b.is_reliever, coveringGuardId: null, clockInAt: Date.parse(b.clock_in_at), clockOutAt: null, status: 'on_duty', pending: true });
+        changed = true;
+      }
+    } else if (it.type === 'clock_out' && p.patch){
+      const a = attendance.find(x => x.id === p.id);
+      if (a && a.status !== 'clocked_out'){ a.status = 'clocked_out'; a.clockOutAt = Date.parse(p.patch.clock_out_at); changed = true; }
+    } else if (it.type === 'assign' && p.instId && p.row){
+      if (!patrolAssignmentsCache[p.instId]) patrolAssignmentsCache[p.instId] = { guardId: p.row.guard_id, guardName: p.guardName || 'A guard' };
+    }
+  }
+  if (changed) scans.sort((a, b) => a.timestamp - b.timestamp);
+  return changed;
+}
+
+// ---- the queue ----
+async function offlineEnqueue(type, payload){
+  const qid = await OFF.qAdd({ type, payload, at: Date.now(), attempts: 0, failed: false, lastError: null });
+  await offlineRefreshCounts();
+  offlineSyncSoon(type === 'panic' ? 1500 : 4000);
+  return qid;
+}
+async function offlineRefreshCounts(){
+  const all = await OFF.qAll();
+  offlineQueueCount = all.filter(i => !i.failed).length;
+  offlineQueueFailed = all.filter(i => i.failed).length;
+  offlineRenderBanner();
+}
+function offlineSyncSoon(ms){
+  clearTimeout(offlineSyncTimer);
+  offlineSyncTimer = setTimeout(offlineSync, ms == null ? 1500 : ms);
+}
+async function offlineRemapAttendanceId(oldId, newId){
+  const items = await OFF.qAll();
+  for (const it of items){
+    const p = it.payload || {};
+    if (it.type === 'scan' && p.row && p.row.attendance_id === oldId){ p.row.attendance_id = newId; await OFF.qPut(it); }
+    if (it.type === 'clock_out' && p.id === oldId){ p.id = newId; await OFF.qPut(it); }
+  }
+  attendance.forEach(a => { if (a.id === oldId) a.id = newId; });
+}
+// Sends one queued item. Returns 'done', 'retry' (try again later, keep order) or 'failed'.
+async function offlineSendOne(item){
+  const p = item.payload || {};
+  let res = null;
+  if (item.type === 'scan') res = await withTimeout(sb.from('scans').insert(p.row), 20000);
+  else if (item.type === 'notification') res = await withTimeout(sb.from('patrol_notifications').insert(p.row), 20000);
+  else if (item.type === 'assign') res = await withTimeout(sb.from('patrol_assignments').insert(p.row), 20000);
+  else if (item.type === 'clock_out') res = await withTimeout(sb.from('attendance').update(p.patch).eq('id', p.id), 20000);
+  else if (item.type === 'panic') res = await withTimeout(sb.rpc('trigger_panic', p.args), 15000);
+  else if (item.type === 'clock_in'){
+    res = await withTimeout(sb.functions.invoke('clock-in-offline', { body: p.body }), 30000);
+    if (res.error && !isNetworkFailure(res.error)){
+      const msg = await functionErrorMessage(res.data, res.error, 'Could not sync clock-in.');
+      res = { data: null, error: { message: msg, code: 'fn' } };
+    } else if (!res.error && res.data && res.data.error){
+      res = { data: null, error: { message: res.data.error, code: 'fn' } };
+    } else if (!res.error && res.data && res.data.attendance && res.data.attendance.id !== p.body.client_attendance_id){
+      await offlineRemapAttendanceId(p.body.client_attendance_id, res.data.attendance.id);
+    }
+  } else return 'failed';
+
+  const err = res && res.error;
+  if (!err){ if (item.type === 'panic') offlineSentPanic = true; return 'done'; }
+  if (isNetworkFailure(err)){ offlineMarkServerDown(); return 'retry'; }
+  const msg = String(err.message || '');
+  // Already stored (a retry after a reply that got lost) counts as success.
+  if (err.code === '23505' || /duplicate key|unique constraint/i.test(msg)) return 'done';
+  if (err.status === 401 || /jwt|not authenticated|invalid token/i.test(msg)) return 'retry';
+  item.attempts = (item.attempts || 0) + 1;
+  item.lastError = msg.slice(0, 300);
+  await OFF.qPut(item);
+  return item.attempts >= 5 ? 'failed' : 'retry';
+}
+async function offlineSync(){
+  if (!OFFLINE_ENABLED || offlineSyncing || !session || session.offline) return;
+  if (navigator.onLine === false) return;
+  offlineSyncing = true;
+  let sent = 0;
+  try{
+    const ids = (await OFF.qAll()).filter(i => !i.failed).map(i => i.qid);
+    for (const qid of ids){
+      const item = await OFF.qGet(qid);                // read fresh: an earlier item may have re-pointed this one
+      if (!item || item.failed) continue;
+      const r = await offlineSendOne(item);
+      if (r === 'done'){ await OFF.qDel(item.qid); sent++; }
+      else if (r === 'retry') break;                 // connection down: stop, keep the order, try again soon
+      else { item.failed = true; await OFF.qPut(item); }
+    }
+  } finally {
+    offlineSyncing = false;
+    await offlineRefreshCounts();
+  }
+  if (sent){
+    offlineMarkServerUp();
+    await offlineAfterSync(sent);
+  }
+  const left = (await OFF.qAll()).filter(i => !i.failed);
+  if (left.length) offlineSyncSoon(left.some(i => i.type === 'panic') ? 5000 : 20000);
+}
+async function offlineAfterSync(sent){
+  try{
+    await loadAttendanceRecent(); await loadAbsencesRecent(); await loadScans();
+    renderStats(); renderLog(); renderGuardPatrolCard(); renderAttendanceCard(); renderTeammatesCard(); renderPanicActingAsSelector();
+  }catch(e){ console.warn('after sync', e); }
+  if (offlineSentPanic){ offlineSentPanic = false; showToast('Panic alert delivered', 'It was sent as soon as the connection came back.', 'warn'); }
+  else showToast('Back online', `${sent} saved item${sent === 1 ? '' : 's'} sent.`, 'success');
+}
+async function offlineOnBackOnline(){
+  if (!OFFLINE_ENABLED || !profile || profile.role !== 'guard' || offlineBackBusy) return;
+  offlineBackBusy = true;
+  try{
+    serverReachable = true;
+    const r = await sb.auth.getSession().catch(() => ({ data: null }));
+    const s = r && r.data && r.data.session;
+    if (!s) return;                       // no valid login yet — the auth library keeps retrying in the background
+    if (session && session.offline) session = s;
+    await offlineSync();
+    if (offlineMode){
+      offlineMode = false;
+      await loadAllData(); renderAll(); subscribeRealtime();
+    } else offlineRefreshFaceRoster();
+  } finally { offlineBackBusy = false; offlineRenderBanner(); }
+}
+
+// ---- helpers used by the guard actions ----
+async function offlineInsertNotification(row){
+  if (!offlineKnownDown()){
+    const r = await withTimeout(sb.from('patrol_notifications').insert(row), OFFLINE_SERVER_TIMEOUT_MS);
+    if (!r.error) return;
+    if (!(OFFLINE_ENABLED && isNetworkFailure(r.error))){ console.warn('alert not saved', r.error); return; }
+    offlineMarkServerDown();
+  }
+  if (OFFLINE_ENABLED) await offlineEnqueue('notification', { row });
+}
+async function offlineClockOut(attendanceId, extra){
+  const patch = Object.assign({ status: 'clocked_out', clock_out_at: new Date().toISOString() }, extra || {});
+  if (!offlineKnownDown()){
+    const r = await withTimeout(sb.from('attendance').update(patch).eq('id', attendanceId), OFFLINE_SERVER_TIMEOUT_MS);
+    if (!r.error){ offlineMarkServerUp(); return { ok: true, queued: false }; }
+    if (!(OFFLINE_ENABLED && isNetworkFailure(r.error))) return { ok: false, message: r.error.message };
+    offlineMarkServerDown();
+  }
+  if (!OFFLINE_ENABLED) return { ok: false, message: 'No connection.' };
+  await offlineEnqueue('clock_out', { id: attendanceId, patch });
+  await offlineApplyQueueToState();
+  myAttendance = (session && attendance.find(a => a.guardId === session.user.id && a.status === 'on_duty')) || null;
+  offlineSnapshotSoon();
+  showToast('Saved on this phone', 'No connection — the clock-out will send automatically.', 'warn');
+  return { ok: true, queued: true };
+}
+// Face check done on the phone, used only when the server cannot be reached.
+// The server checks the same face again when the clock-in is sent.
+async function offlineClockIn({ guardId, siteId, shiftId, shiftDate, isReliever, coveringAbsenceId, descriptor, byId }){
+  if (!OFFLINE_FACE_ENABLED) return { error: 'No connection — clock-in needs a connection on this phone.' };
+  if (Date.now() - offlineSnapSavedAt > OFFLINE_FACE_MAX_AGE_MS) return { error: 'No connection, and the face data saved on this phone is over 7 days old. Connect once to refresh it.' };
+  const isSelf = guardId === session.user.id;
+  let reference = null, whose = 'your';
+  if (isSelf){
+    reference = Array.isArray(profile.face_descriptor) && profile.face_descriptor.length ? profile.face_descriptor : null;
+    if (!reference) return { error: 'No connection — your first face enrolment needs a connection. Try again when you have signal.' };
+  } else {
+    const roster = await OFF.get('faceRoster');
+    const fresh = roster && roster.siteId === siteId && (Date.now() - roster.savedAt) <= OFFLINE_FACE_MAX_AGE_MS;
+    if (!fresh) return { error: 'No connection, and this phone has no up-to-date face data for this site. Connect once to refresh it.' };
+    const entry = (roster.guards || []).find(g => g.id === guardId);
+    if (!entry || !Array.isArray(entry.descriptor)) return { error: "No connection, and this guard isn't in the face data saved on this phone. They can clock in once signal returns." };
+    reference = entry.descriptor; whose = "this guard's";
+  }
+  const dist = offlineFaceDistance(reference, descriptor);
+  if (dist > FACE_MATCH_THRESHOLD) return { error: `Face didn't match ${whose} enrolled profile. Try again with better lighting.` };
+  if (attendance.some(a => a.guardId === guardId && a.status === 'on_duty')) return { error: 'Already clocked in — clock out first.' };
+  const id = offlineNewId();
+  const nowIso = new Date().toISOString();
+  await offlineEnqueue('clock_in', { body: {
+    client_attendance_id: id, target_guard_id: guardId, site_id: siteId, shift_id: shiftId, shift_date: shiftDate,
+    is_reliever: !!isReliever, covering_absence_id: coveringAbsenceId || null,
+    descriptor, clock_in_at: nowIso, local_face_score: dist, clocked_in_by: byId || null
+  }});
+  const rec = { id, siteId, shiftId, shiftDate, guardId, isReliever: !!isReliever, coveringGuardId: null, clockInAt: Date.parse(nowIso), clockOutAt: null, status: 'on_duty', pending: true };
+  attendance.push(rec);
+  if (isSelf) myAttendance = rec;
+  offlineSnapshotSoon();
+  return { attendance: rec, score: dist };
+}
+// Keeps a copy of this site's guards' face data on the phone (needed to clock teammates in offline).
+async function offlineRefreshFaceRoster(){
+  if (!OFFLINE_ENABLED || !OFFLINE_FACE_ENABLED || !profile || profile.role !== 'guard' || offlineKnownDown()) return;
+  const siteId = activeDutySiteId || guardSiteId;
+  if (!siteId) return;
+  offlineLastRoster = Date.now();
+  const r = await withTimeout(sb.functions.invoke('get-site-face-roster', { body: { site_id: siteId } }), 15000);
+  if (r.error || !r.data || !Array.isArray(r.data.guards)) return;   // not available yet — offline clock-in for teammates simply stays off
+  await OFF.set('faceRoster', { siteId, savedAt: Date.now(), guards: r.data.guards });
+}
+
+// ---- status banner + heartbeat ----
+function offlineRenderBanner(){
+  const el = document.getElementById('offlineBanner');
+  if (!el) return;
+  const guard = OFFLINE_ENABLED && profile && profile.role === 'guard';
+  let msg = '', kind = '';
+  if (guard){
+    const n = offlineQueueCount, f = offlineQueueFailed;
+    if (offlineKnownDown()){
+      kind = 'down';
+      msg = n ? `No connection — ${n} saved on this phone. Sending when signal returns.`
+              : 'No connection — working from saved site data. Scans, clock-ins and panic alerts are kept and sent when signal returns.';
+    } else if (f){
+      kind = 'fail';
+      msg = `${f} saved item${f === 1 ? '' : 's'} could not be sent — tell your controller.`;
+    } else if (n){
+      kind = 'sync';
+      msg = `Sending ${n} saved item${n === 1 ? '' : 's'}…`;
+    }
+  }
+  if (el.textContent !== msg) el.textContent = msg;
+  el.dataset.kind = kind;
+  el.style.display = msg ? 'block' : 'none';
+}
+async function offlineHeartbeat(force){
+  if (!OFFLINE_ENABLED || !profile || profile.role !== 'guard') return;
+  if (navigator.onLine === false){ serverReachable = false; offlineRenderBanner(); return; }
+  if (serverReachable && !offlineMode && offlineQueueCount === 0 && !force){
+    const now = Date.now();
+    if (now - offlineLastSnap > 10 * 60 * 1000) offlineSnapshotSoon();
+    if (now - offlineLastRoster > 6 * 60 * 60 * 1000) offlineRefreshFaceRoster();
+    return;
+  }
+  const ok = await offlinePing();
+  if (ok) await offlineOnBackOnline(); else serverReachable = false;
+  offlineRenderBanner();
+}
+window.addEventListener('online', () => { offlineHeartbeat(true); });
+window.addEventListener('offline', () => { offlineRenderBanner(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) offlineHeartbeat(true); });
+setInterval(offlineHeartbeat, 20000);
+if (OFFLINE_ENABLED && 'serviceWorker' in navigator){
+  // Lets the app itself (page, libraries, face models) open with no signal. sw.js must sit next to index.html.
+  window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').catch(e => console.warn('service worker', e)); });
+}
+
+// Alerts change in bursts (the server writes a batch at once). Reload the alert list once
+// per burst instead of once per row, so controllers' screens stay responsive.
+let notifReloadTimer = null;
+function scheduleNotifReload(){
+  if (notifReloadTimer) return;
+  notifReloadTimer = setTimeout(() => { notifReloadTimer = null; loadNotifications().then(renderNotifications); }, 1200);
+}
 // sb.functions.invoke() only puts the real error message in `data` when the
 // edge function returns 2xx. On a non-2xx response, `data` is null and
 // `error.message` is just the generic "Edge Function returned a non-2xx
@@ -2279,11 +2696,41 @@ function routeCheckpoints(routeId){
   const r = routes.find(r => r.id === routeId);
   return r ? r.cpIds : [];
 }
+// Scans indexed by tag (accepted only, oldest first), rebuilt only when the scan list
+// actually changes. Every patrol round looks its scans up here by time window instead of
+// re-reading the whole scan history — that keeps big companies (dozens of sites, tens of
+// thousands of scans) fast. Same results as filtering the full list.
+let scanIndexRef = null, scanIndexKey = '', scanIndexMap = null;
+function acceptedScansByTag(){
+  const n = scans.length, last = n ? scans[n - 1] : null, first = n ? scans[0] : null;
+  const key = n + '|' + (last ? last.id + ':' + last.timestamp : '') + '|' + (first ? first.id : '');
+  if (scanIndexMap && scanIndexRef === scans && scanIndexKey === key) return scanIndexMap;
+  const map = new Map();
+  for (const s of scans){
+    if (s.result !== 'ACCEPTED') continue;
+    let arr = map.get(s.qrId);
+    if (!arr){ arr = []; map.set(s.qrId, arr); }
+    arr.push(s);
+  }
+  map.forEach(arr => arr.sort((a, b) => a.timestamp - b.timestamp));
+  scanIndexRef = scans; scanIndexKey = key; scanIndexMap = map;
+  return map;
+}
 function scansForInstance(inst){
   const cpIds = routeCheckpoints(inst.routeId);
   const winStart = inst.expectedTime - 5*60000;
   const winEnd = inst.expectedTime + inst.intervalMinutes*60000;
-  return scans.filter(s => cpIds.includes(s.qrId) && s.result === 'ACCEPTED' && s.timestamp >= winStart && s.timestamp < winEnd);
+  const idx = acceptedScansByTag();
+  const out = [];
+  for (const id of cpIds){
+    const arr = idx.get(id);
+    if (!arr) continue;
+    // first scan at/after winStart (binary search), then walk until winEnd
+    let lo = 0, hi = arr.length;
+    while (lo < hi){ const mid = (lo + hi) >> 1; if (arr[mid].timestamp < winStart) lo = mid + 1; else hi = mid; }
+    for (let i = lo; i < arr.length && arr[i].timestamp < winEnd; i++) out.push(arr[i]);
+  }
+  return out;
 }
 // The moment a patrol's last required checkpoint was actually scanned — i.e. when
 // the guard finished, not "now". Returns null if not every checkpoint has a scan yet.
@@ -2433,11 +2880,66 @@ async function loadSchedules(){
     createdAt: s.created_at ? new Date(s.created_at).getTime() : null
   }));
 }
+// ---- Scan loading (built for many sites) ----
+// The API returns at most ~1000 rows per request, and a busy company writes thousands
+// of scans a day. So scans are pulled page by page, NEWEST FIRST, until the window is
+// covered — the current shift can never be the part that gets cut off.
+//  * Guard phones only load their own site(s): the one they're assigned to plus the one
+//    they're clocked in at when relieving. 70 phones must not each download the estate.
+//  * Controllers/admins load the last 14h straight away (covers the current shift and the
+//    patrol windows around it) and fill in the rest of the 48h in the background.
+const SCAN_PAGE = 1000;
+const SCAN_HOT_MS = 14 * 60 * 60 * 1000;
+const SCAN_HISTORY_MS = 48 * 60 * 60 * 1000;
+let scanLoadToken = 0;
+async function fetchScansPaged({ since, until, siteIds, maxRows = 80000 }){
+  const rows = [], seen = new Set();
+  let from = 0;
+  while (rows.length < maxRows){
+    let q = sb.from('scans').select('*').gte('created_at', since);
+    if (until) q = q.lt('created_at', until);
+    if (siteIds && siteIds.length) q = siteIds.length === 1 ? q.eq('site_id', siteIds[0]) : q.in('site_id', siteIds);
+    q = q.order('created_at', { ascending: false }).order('id', { ascending: false }).range(from, from + SCAN_PAGE - 1);
+    const { data, error } = await q;
+    if (error) return { rows, error };
+    if (!data || !data.length) break;
+    // rows written while we page shift the offsets; de-dupe by id so nothing is counted twice
+    data.forEach(r => { if (!seen.has(r.id)){ seen.add(r.id); rows.push(r); } });
+    from += data.length;
+  }
+  return { rows, error: null };
+}
+function scanScopeSiteIds(){
+  if (profile && profile.role === 'guard') return [...new Set([guardSiteId, activeDutySiteId].filter(Boolean))];
+  return null;   // controllers / admins see every site
+}
 async function loadScans(){
-  const since = new Date(Date.now() - 48*60*60*1000).toISOString();
-  const { data, error } = await sb.from('scans').select('*').gte('created_at', since).order('created_at', { ascending: true }).limit(2000);
+  if (OFFLINE_ENABLED && profile && profile.role === 'guard' && offlineKnownDown()) return;   // keep what the phone already has
+  const siteIds = scanScopeSiteIds();
+  const token = ++scanLoadToken;
+  if (siteIds && !siteIds.length){ scans = []; return; }
+  const now = Date.now();
+  const { rows, error } = await fetchScansPaged({ since: new Date(now - SCAN_HOT_MS).toISOString(), siteIds });
   if (error){ showToast('Could not load scan history', error.message, 'danger'); return; }
-  scans = (data || []).map(rowToScan);
+  if (token !== scanLoadToken) return;   // a newer load has superseded this one
+  scans = rows.map(rowToScan).sort((a, b) => a.timestamp - b.timestamp);
+  await offlineApplyQueueToState();   // scans still waiting to be sent stay visible
+  offlineSnapshotSoon();
+  if (!siteIds) backfillOlderScans(token, now);
+}
+async function backfillOlderScans(token, now){
+  try{
+    const { rows, error } = await fetchScansPaged({
+      since: new Date(now - SCAN_HISTORY_MS).toISOString(),
+      until: new Date(now - SCAN_HOT_MS).toISOString()
+    });
+    if (error || token !== scanLoadToken || !rows.length) return;
+    const have = new Set(scans.map(x => x.id));
+    const older = rows.filter(r => !have.has(r.id)).map(rowToScan);
+    if (!older.length) return;
+    scans = older.concat(scans).sort((a, b) => a.timestamp - b.timestamp);
+    renderStats(); renderLog(); renderPatrolsAdmin();
+  }catch(e){ console.warn('scan backfill', e); }
 }
 async function loadSiteShifts(){
   const { data, error } = await sb.from('site_shifts').select('*').order('start_time');
@@ -2460,13 +2962,17 @@ function rowToAttendance(r){
 // Attendance/absences are loaded on a rolling 30h window so an overnight shift that
 // started "yesterday" is still visible in today's coverage tiles.
 async function loadAttendanceRecent(){
+  if (OFFLINE_ENABLED && profile && profile.role === 'guard' && offlineKnownDown()) return;
   const since = new Date(Date.now() - 30*60*60*1000).toISOString();
   const { data, error } = await sb.from('attendance').select('*').gte('clock_in_at', since);
   if (error){ showToast('Could not load attendance', error.message, 'danger'); return; }
   attendance = (data || []).map(rowToAttendance);
+  await offlineApplyQueueToState();   // clock-ins / clock-outs still waiting to be sent stay visible
+  offlineSnapshotSoon();
   myAttendance = (session && attendance.find(a => a.guardId === session.user.id && a.status === 'on_duty')) || null;
 }
 async function loadAbsencesRecent(){
+  if (OFFLINE_ENABLED && profile && profile.role === 'guard' && offlineKnownDown()) return;
   const since = new Date(Date.now() - 30*60*60*1000).toISOString();
   const { data, error } = await sb.from('absences').select('*').gte('marked_at', since);
   if (error){ showToast('Could not load absences', error.message, 'danger'); return; }
@@ -2646,6 +3152,10 @@ document.getElementById('generateControllerInviteBtn').addEventListener('click',
 });
 
 async function loadAllData(){
+  if (OFFLINE_ENABLED && offlineMode){
+    // Server unreachable at start-up: run from the copy saved on this phone.
+    if (await offlineRestoreSnapshot()) return;
+  }
   await loadSites();
   await loadCheckpoints();
   await loadRoutes();
@@ -2671,10 +3181,23 @@ async function loadAllData(){
     renderSiteShiftsTable();
   }
   if (profile && profile.role === 'guard'){
+    const prevDutySite = activeDutySiteId;
     activeDutySiteId = (myAttendance && myAttendance.siteId) || guardSiteId;
+    if (activeDutySiteId !== guardSiteId && activeDutySiteId !== prevDutySite){
+      // clocked in somewhere other than home (relieving): bring in that site's scans too
+      await loadScans();
+      subscribeRealtime();
+    }
     renderAttendanceCard();
     renderTeammatesCard();
     renderPanicActingAsSelector();
+  }
+  if (OFFLINE_ENABLED && profile && profile.role === 'guard'){
+    offlineSnapshotSoon();
+    offlineRefreshFaceRoster();
+    setTimeout(() => { ensureFaceModels().catch(() => {}); }, 4000);   // warm the face models so they are saved for offline use
+    offlineSyncSoon(2000);
+    offlineRefreshCounts();
   }
 }
 
@@ -3194,12 +3717,24 @@ document.getElementById('joinSiteSubmitBtn').addEventListener('click', async () 
 });
 
 async function loadProfileAndApp(){
-  const { data: prof, error } = await sb.from('profiles').select('*').eq('id', session.user.id).single();
-  if (error || !prof){
+  let prof = null, error = null;
+  if (session.offline){
+    prof = await offlineCachedProfile();
+    if (!prof){ showAuthGate('No connection, and this phone has no saved data for you yet. Sign in once with a connection.'); return; }
+  } else {
+    const r = await withTimeout(sb.from('profiles').select('*').eq('id', session.user.id).single(), 12000);
+    prof = r.data; error = r.error;
+    if ((error || !prof) && OFFLINE_ENABLED && isNetworkFailure(error)){
+      prof = await offlineCachedProfile();
+      if (prof){ offlineMode = true; serverReachable = false; }
+    }
+  }
+  if (!prof){
     showAuthGate('Could not load your profile — try signing in again.');
     return;
   }
   profile = prof;
+  if (!offlineMode) offlineSnapSavedAt = Date.now();
   guardSiteId = profile.site_id || null;
 
   document.getElementById('authGate').classList.remove('show');
@@ -3254,7 +3789,7 @@ async function loadProfileAndApp(){
   // role this account already has within its own org.
   const platformTabBtn = document.getElementById('platformTabBtn');
   try{
-    const { data: isPlatformAdmin } = await sb.rpc('is_platform_admin');
+    const { data: isPlatformAdmin } = offlineMode ? { data: false } : await withTimeout(sb.rpc('is_platform_admin'), 8000);
     platformTabBtn.style.display = isPlatformAdmin ? '' : 'none';
   } catch(e){
     platformTabBtn.style.display = 'none';
@@ -3293,15 +3828,27 @@ async function loadProfileAndApp(){
 }
 
 function initAuth(){
-  sb.auth.getSession().then(({ data: { session: s } }) => {
+  sb.auth.getSession().then(async ({ data: { session: s } }) => {
     session = s;
+    if (!session && OFFLINE_ENABLED){
+      // No valid login token AND no connection: let a guard who has used this phone before carry on from the saved copy.
+      const snap = await OFF.get('snapshot');
+      if (snap && snap.userId && (navigator.onLine === false || !(await offlinePing()))){
+        session = { user: { id: snap.userId, email: snap.email }, offline: true };
+        offlineMode = true; serverReachable = false;
+      }
+    }
     if (session) loadProfileAndApp();
     else showAuthGate();
   });
   sb.auth.onAuthStateChange((event, s2) => {
-    session = s2;
-    if (event === 'SIGNED_IN' && (!profile || profile.id !== s2.user.id)) loadProfileAndApp();
-    if (event === 'SIGNED_OUT'){ profile = null; window.location.reload(); }
+    if (s2 || !(session && session.offline)) session = s2;
+    if (event === 'SIGNED_IN' && s2 && (!profile || profile.id !== s2.user.id)) loadProfileAndApp();
+    if (event === 'SIGNED_OUT'){
+      profile = null;
+      // Signing out removes the face data kept on the phone (anything still waiting to be sent is kept).
+      Promise.all([OFF.del('snapshot'), OFF.del('faceRoster')]).then(() => window.location.reload(), () => window.location.reload());
+    }
   });
 }
 
@@ -3310,8 +3857,18 @@ let realtimeChannel = null;
 let notificationsChannel = null;
 function subscribeRealtime(){
   if (realtimeChannel){ sb.removeChannel(realtimeChannel); realtimeChannel = null; }
+  // Guards only subscribe to their own site(s) — otherwise every scan anywhere would be
+  // pushed to (and permission-checked for) every phone on the estate.
+  const scanFeed = { event: 'INSERT', schema: 'public', table: 'scans' };
+  const scopeIds = scanScopeSiteIds();
+  let listenToScans = true;
+  if (scopeIds){
+    if (!scopeIds.length) listenToScans = false;
+    else scanFeed.filter = scopeIds.length === 1 ? `site_id=eq.${scopeIds[0]}` : `site_id=in.(${scopeIds.join(',')})`;
+  }
   realtimeChannel = sb.channel('scans-live')
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'scans' }, payload => {
+    .on('postgres_changes', scanFeed, payload => {
+      if (!listenToScans) return;
       const record = rowToScan(payload.new);
       if (!scans.some(s => s.id === record.id)){
         scans.push(record);
@@ -3337,7 +3894,7 @@ function subscribeRealtime(){
           SOUND.panic();
           showToast('Panic alert', payload.new.title, 'danger');
         }
-        loadNotifications().then(renderNotifications);
+        scheduleNotifReload();
       })
       .subscribe(status => { notifChannelStatus = status; });
   }
@@ -4733,14 +5290,30 @@ async function loadNotifications(opts){
   // Active (uncleared) alerts never expire on their own here — they must be resolved.
   // Resolved ones only stay in this working set for 24h; the full history lives in
   // Admin → Reports → Controller Comments, queried separately with its own date range.
-  const cutoff = new Date(nowMs() - 24*60*60*1000).toISOString();
-  const { data, error } = await sb.from('patrol_notifications')
-    .select('*, notification_comments(id, body, created_at, author_id, profiles(full_name))')
-    .or(`cleared_at.is.null,cleared_at.gte.${cutoff}`)
-    .order('occurred_at', { ascending: false })
-    .limit(300);
+  //
+  // Three separate queries, because with many sites the routine "patrol completed" rows
+  // (green) arrive by the hundred and would otherwise push real alerts out of a single
+  // "newest 300" list:
+  //   1. everything still needing attention (red/orange, uncleared) — never truncated
+  //   2. recently resolved alerts (cleared in the last 24h)
+  //   3. completed-patrol notices still on screen (green, uncleared)
+  const now = nowMs();
+  const cutoff = new Date(now - 24*60*60*1000).toISOString();
+  const greenSince = new Date(now - 3*60*60*1000).toISOString();
+  const sel = '*, notification_comments(id, body, created_at, author_id, profiles(full_name))';
+  const [openQ, resolvedQ, greenQ] = await Promise.all([
+    sb.from('patrol_notifications').select(sel).is('cleared_at', null).neq('severity', 'green')
+      .order('occurred_at', { ascending: false }).limit(1000),
+    sb.from('patrol_notifications').select(sel).gte('cleared_at', cutoff)
+      .order('cleared_at', { ascending: false }).limit(200),
+    sb.from('patrol_notifications').select(sel).is('cleared_at', null).eq('severity', 'green').gte('occurred_at', greenSince)
+      .order('occurred_at', { ascending: false }).limit(500)
+  ]);
+  const error = openQ.error || resolvedQ.error || greenQ.error;
   if (error){ if (!(opts && opts.quiet)) showToast('Could not load notifications', error.message, 'danger'); return; }
-  notifications = data || [];
+  const byId = new Map();
+  [openQ.data, resolvedQ.data, greenQ.data].forEach(list => (list || []).forEach(n => byId.set(n.id, n)));
+  notifications = [...byId.values()].sort((a, b) => new Date(b.occurred_at) - new Date(a.occurred_at));
   announceNewAlerts();
 }
 
@@ -4860,12 +5433,23 @@ function renderNotificationsInto(activeId, resolvedId, filterKey){
     // Most urgent first: panic, then critical, warning, and completed patrols last.
     const rank = n => n.kind === 'panic' ? 0 : n.severity === 'red' ? 1 : n.severity === 'orange' ? 2 : 3;
     active.sort((a, b) => rank(a) - rank(b) || new Date(b.occurred_at) - new Date(a.occurred_at));
+    // On the controller dashboard, routine "patrol completed" notices collapse into one
+    // line (with 70 sites they'd bury the alerts). Pick "Successful patrol" in the type
+    // filter to see them individually.
+    let greenCount = 0;
+    if (activeId === 'ctrlNotifActive' && filters.kind !== 'success_patrol'){
+      greenCount = active.filter(n => n.severity === 'green').length;
+      active = active.filter(n => n.severity !== 'green');
+    }
     if (activeId === 'ctrlNotifActive') uiSetAttentionCount(active);
-    activeEl.innerHTML = active.length
+    const greenNote = greenCount
+      ? `<div class="alert-foot" style="border-top:0; padding-top:4px;">${greenCount} patrol${greenCount === 1 ? '' : 's'} completed on time in the last hour</div>`
+      : '';
+    activeEl.innerHTML = (active.length
       ? active.map(n => uiAlertCard(n, sites.find(s => s.id === n.site_id))).join('')
       : ((filters.site || filters.kind)
           ? '<div class="empty">No alerts match this filter.</div>'
-          : '<div class="empty is-clear"><div><strong>All clear</strong>No open alerts. Every site is operating normally.</div></div>');
+          : '<div class="empty is-clear"><div><strong>All clear</strong>No open alerts. Every site is operating normally.</div></div>')) + greenNote;
 
     activeEl.querySelectorAll('[data-notif-submit]').forEach(btn => {
       btn.addEventListener('click', () => submitNotificationComment(btn.dataset.notifSubmit, activeEl));
@@ -5413,6 +5997,7 @@ async function processScan(qrId){
     : attendance.find(a => a.guardId === actingGuardId && a.status === 'on_duty' && a.siteId === dutySiteId) || myAttendance;
 
   const insertPayload = {
+    id: offlineNewId(),   // created on the phone so a retry can never save the same scan twice
     site_id: siteId,
     checkpoint_id: cp ? cp.id : null,
     raw_qr_id: qrId,
@@ -5426,7 +6011,22 @@ async function processScan(qrId){
     expected_qr_id: result === 'REJECTED_OUT_OF_ORDER' ? expectedQrId : null
   };
 
-  const { data: row, error } = await sb.from('scans').insert(insertPayload).select().single();
+  let row = null, error = null;
+  if (OFFLINE_ENABLED && navigator.onLine === false){
+    error = { name: 'AbortError', message: 'offline' };
+  } else {
+    const r = await withTimeout(sb.from('scans').insert(insertPayload).select().single(), offlineKnownDown() ? 4000 : OFFLINE_SERVER_TIMEOUT_MS);
+    row = r.data; error = r.error;
+    if (!error) offlineMarkServerUp();
+  }
+  if (error && OFFLINE_ENABLED && isNetworkFailure(error)){
+    // No connection: keep the scan on this phone with the time it really happened; it is sent as soon as signal returns.
+    offlineMarkServerDown();
+    row = Object.assign({}, insertPayload, { created_at: new Date().toISOString() });
+    await offlineEnqueue('scan', { row });
+    showToast('Saved on this phone', 'No connection — this scan will send automatically.', 'warn');
+    error = null;
+  }
   if (error){
     showToast('Scan could not be saved', error.message, 'danger');
     return { qrId, cpName: cp ? cp.name : null, distance, result, siteId, expectedQrId, timestamp: Date.now(), saveFailed: true };
@@ -5455,7 +6055,8 @@ async function processScan(qrId){
     const threshold = Math.max(1, alertSettings.escalation || 3);
     const escalated = rejectionCount >= threshold;
 
-    sb.from('patrol_notifications').insert({
+    offlineInsertNotification({
+      id: offlineNewId(),
       site_id: siteId,
       route_id: dutyInfo.inst.routeId,
       kind: 'radius_alert',
@@ -5464,7 +6065,7 @@ async function processScan(qrId){
       detail: escalated ? `${baseDetail} · ${rejectionCount} rejections this shift, reached the escalation threshold` : baseDetail,
       occurred_at: new Date().toISOString(),
       auto_clear: false
-    }).then(({ error: alertErr }) => { if (alertErr) console.warn('radius_alert not saved', alertErr); });
+    });
   }
 
   const record = rowToScan(row);
@@ -5649,12 +6250,26 @@ async function confirmPatrolAssignment(inst, guardId, onDutyHere){
   const errEl = document.getElementById('patrolAssignmentError');
   errEl.style.display = 'none';
   const dutySiteId = activeDutySiteId || guardSiteId;
-  const { error } = await sb.from('patrol_assignments').insert({
+  const assignRow = {
     route_id: inst.routeId,
     expected_time: new Date(inst.expectedTime).toISOString(),
     site_id: dutySiteId,
     guard_id: guardId
-  });
+  };
+  let error = null;
+  if (OFFLINE_ENABLED && navigator.onLine === false) error = { name: 'AbortError', message: 'offline' };
+  else { const r = await withTimeout(sb.from('patrol_assignments').insert(assignRow), OFFLINE_SERVER_TIMEOUT_MS); error = r.error; }
+  if (error && OFFLINE_ENABLED && isNetworkFailure(error)){
+    offlineMarkServerDown();
+    const g0 = onDutyHere.find(o => o.id === guardId);
+    await offlineEnqueue('assign', { row: assignRow, instId: inst.id, guardName: g0 ? g0.full_name : 'A guard' });
+    patrolAssignmentsCache[inst.id] = { guardId, guardName: g0 ? g0.full_name : 'A guard' };
+    patrolAssignmentPromptInstId = null;
+    document.getElementById('patrolAssignmentModalBg').classList.remove('show');
+    renderGuardPatrolCard();
+    renderPanicActingAsSelector();
+    return;
+  }
   // A unique-constraint conflict just means someone else answered this exact
   // round a moment before us - that's fine, go read back their answer.
   if (error && !/duplicate key|unique constraint/i.test(error.message)){
@@ -5912,7 +6527,19 @@ async function triggerPanic(){
   } catch(e){ /* send without location rather than block the alert on it */ }
 
   try{
-    const { error } = await sb.rpc('trigger_panic', { p_lat: lat, p_lng: lng, p_acting_as_guard_id: panicActingAsGuardId || session.user.id });
+    const panicArgs = { p_lat: lat, p_lng: lng, p_acting_as_guard_id: panicActingAsGuardId || session.user.id };
+    let error = null;
+    if (OFFLINE_ENABLED && navigator.onLine === false) error = { name: 'AbortError', message: 'offline' };
+    else { const r = await withTimeout(sb.rpc('trigger_panic', panicArgs), 8000); error = r.error; if (!error) offlineMarkServerUp(); }
+    if (error && OFFLINE_ENABLED && isNetworkFailure(error)){
+      // No signal: the alert is kept and retried every few seconds until it gets through.
+      offlineMarkServerDown();
+      await offlineEnqueue('panic', { args: panicArgs, at: new Date().toISOString() });
+      labelEl.textContent = '⚠ No signal — alert saved, sending when signal returns';
+      showToast('Panic alert saved', 'No connection. It sends automatically the moment signal returns. Call your control room if you can.', 'danger');
+      setTimeout(() => { labelEl.textContent = 'Hold for panic alert'; }, 12000);
+      return;
+    }
     if (error){
       labelEl.textContent = 'Hold for panic alert';
       showToast('Could not send panic alert', error.message, 'danger');
@@ -6255,24 +6882,39 @@ async function clockInTeammate(guardId){
   const faceResult = await openFaceModal(`Face scan for ${guard ? guard.full_name : 'teammate'}`);
   if (!faceResult){ errEl.textContent = 'Face scan cancelled.'; errEl.style.display = 'block'; return; }
 
-  const { data, error } = await sb.functions.invoke('clock-in-teammate', {
-    body: {
-      target_guard_id: guardId, site_id: dutySiteId, shift_id: shiftId, shift_date: shiftDate,
-      is_reliever: !!(guard && guard.site_id !== dutySiteId), descriptor: faceResult.descriptor
-    }
-  });
-  if (error || (data && data.error)){
+  const teammateReliever = !!(guard && guard.site_id !== dutySiteId);
+  let data = null, error = null, wentOffline = false;
+  if (OFFLINE_ENABLED && navigator.onLine === false){
+    error = { name: 'FunctionsFetchError', message: 'offline' };
+  } else {
+    const r = await withTimeout(sb.functions.invoke('clock-in-teammate', {
+      body: {
+        target_guard_id: guardId, site_id: dutySiteId, shift_id: shiftId, shift_date: shiftDate,
+        is_reliever: teammateReliever, descriptor: faceResult.descriptor
+      }
+    }), OFFLINE_SERVER_TIMEOUT_MS + 6000);
+    data = r.data; error = r.error;
+    if (!error && !(data && data.error)) offlineMarkServerUp();
+  }
+  if (error && OFFLINE_ENABLED && isNetworkFailure(error)){
+    offlineMarkServerDown();
+    const off = await offlineClockIn({ guardId, siteId: dutySiteId, shiftId, shiftDate, isReliever: teammateReliever, coveringAbsenceId: null, descriptor: faceResult.descriptor, byId: session.user.id });
+    if (off.error){ errEl.textContent = off.error; errEl.style.display = 'block'; return; }
+    wentOffline = true;
+    data = {};
+  } else if (error || (data && data.error)){
     errEl.textContent = await functionErrorMessage(data, error, 'Could not clock in.');
     errEl.style.display = 'block';
     return;
   }
   const result = data;
 
-  await loadAttendanceRecent();
+  if (!wentOffline) await loadAttendanceRecent();
   renderTeammatesCard();
   renderPanicActingAsSelector();
   renderAttendanceCard();
-  showToast('Clocked in', result.newly_enrolled ? `${guard ? guard.full_name : 'Guard'} enrolled their face and is now on duty.` : `${guard ? guard.full_name : 'Guard'} is now on duty.`, 'success');
+  if (wentOffline) showToast('Clocked in — saved on this phone', `${guard ? guard.full_name : 'Guard'}'s face was checked on this phone. It will send when signal returns.`, 'warn');
+  else showToast('Clocked in', result.newly_enrolled ? `${guard ? guard.full_name : 'Guard'} enrolled their face and is now on duty.` : `${guard ? guard.full_name : 'Guard'} is now on duty.`, 'success');
 }
 
 async function clockOutTeammate(attendanceId, shiftId, shiftDate){
@@ -6285,9 +6927,9 @@ async function clockOutTeammate(attendanceId, shiftId, shiftDate){
     errEl.style.display = 'block';
     return;
   }
-  const { error } = await sb.from('attendance').update({ status: 'clocked_out', clock_out_at: new Date().toISOString(), clocked_out_by: session.user.id }).eq('id', attendanceId);
-  if (error){ errEl.textContent = 'Could not clock out — ' + error.message; errEl.style.display = 'block'; return; }
-  await loadAttendanceRecent();
+  const outRes = await offlineClockOut(attendanceId, { clocked_out_by: session.user.id });
+  if (!outRes.ok){ errEl.textContent = 'Could not clock out — ' + outRes.message; errEl.style.display = 'block'; return; }
+  if (!outRes.queued) await loadAttendanceRecent();
   renderTeammatesCard();
   renderPanicActingAsSelector();
   renderAttendanceCard();
@@ -6303,7 +6945,7 @@ document.getElementById('attendanceClockInBtn').addEventListener('click', async 
   if (!siteId || !shiftId){ errEl.textContent = 'Pick a site and shift first.'; errEl.style.display = 'block'; return; }
 
   // A guard (home or reliever) can only be on duty in one place at a time.
-  await loadAttendanceRecent();
+  if (!offlineKnownDown()) await loadAttendanceRecent();
   const existingElsewhere = attendance.find(a => a.guardId === session.user.id && a.status === 'on_duty');
   if (existingElsewhere){
     const elsewhereSite = sites.find(s => s.id === existingElsewhere.siteId);
@@ -6329,38 +6971,54 @@ document.getElementById('attendanceClockInBtn').addEventListener('click', async 
   if (!faceResult){ errEl.textContent = 'Face scan cancelled.'; errEl.style.display = 'block'; return; }
 
   const covering = coveringAbsenceId ? absences.find(a => a.id === coveringAbsenceId) : null;
-  const { data, error } = await sb.functions.invoke('clock-in-self', {
-    body: {
-      site_id: siteId, shift_id: shiftId, shift_date: shiftDate,
-      covering_absence_id: covering ? covering.id : null,
-      descriptor: faceResult.descriptor
-    }
-  });
-  if (error || data?.error){
+  // Always ask the server first. Only if it cannot be reached is the face checked on the phone.
+  let data = null, error = null, wentOffline = false;
+  if (OFFLINE_ENABLED && navigator.onLine === false){
+    error = { name: 'FunctionsFetchError', message: 'offline' };
+  } else {
+    const r = await withTimeout(sb.functions.invoke('clock-in-self', {
+      body: {
+        site_id: siteId, shift_id: shiftId, shift_date: shiftDate,
+        covering_absence_id: covering ? covering.id : null,
+        descriptor: faceResult.descriptor
+      }
+    }), OFFLINE_SERVER_TIMEOUT_MS + 6000);
+    data = r.data; error = r.error;
+    if (!error && !(data && data.error)) offlineMarkServerUp();
+  }
+  if (error && OFFLINE_ENABLED && isNetworkFailure(error)){
+    offlineMarkServerDown();
+    const off = await offlineClockIn({ guardId: session.user.id, siteId, shiftId, shiftDate, isReliever, coveringAbsenceId: covering ? covering.id : null, descriptor: faceResult.descriptor, byId: null });
+    if (off.error){ errEl.textContent = off.error; errEl.style.display = 'block'; return; }
+    wentOffline = true;
+    data = {};
+  } else if (error || data?.error){
     errEl.textContent = await functionErrorMessage(data, error, 'Could not clock in.');
     errEl.style.display = 'block';
     return;
   }
   if (data.newly_enrolled) profile.face_descriptor = faceResult.descriptor;
 
-  await loadAttendanceRecent();
-  await loadAbsencesRecent();
+  if (!wentOffline){ await loadAttendanceRecent(); await loadAbsencesRecent(); }
   activeDutySiteId = siteId;
+  if (profile.role === 'guard' && !wentOffline){ await loadScans(); subscribeRealtime(); }
   renderGuardSiteName();
   renderAttendanceCard();
   renderTeammatesCard();
   renderPanicActingAsSelector();
   renderGuardPatrolCard();
-  showToast('Clocked in', isReliever ? `Relieving at ${sites.find(s=>s.id===siteId)?.name || 'site'}` : '', 'success');
+  if (wentOffline) showToast('Clocked in — saved on this phone', 'Your face was checked on this phone. It will send when signal returns.', 'warn');
+  else showToast('Clocked in', isReliever ? `Relieving at ${sites.find(s=>s.id===siteId)?.name || 'site'}` : '', 'success');
 });
 
 document.getElementById('attendanceClockOutBtn').addEventListener('click', async () => {
   if (!myAttendance) return;
   if (!confirm('Clock out now?')) return;
-  const { error } = await sb.from('attendance').update({ status: 'clocked_out', clock_out_at: new Date().toISOString() }).eq('id', myAttendance.id);
-  if (error){ showToast('Could not clock out', error.message, 'danger'); return; }
-  await loadAttendanceRecent();
+  const outRes = await offlineClockOut(myAttendance.id, null);
+  if (!outRes.ok){ showToast('Could not clock out', outRes.message, 'danger'); return; }
+  if (!outRes.queued) await loadAttendanceRecent();
   activeDutySiteId = guardSiteId;
+  if (profile.role === 'guard' && !outRes.queued){ await loadScans(); subscribeRealtime(); }
   renderGuardSiteName();
   renderAttendanceCard();
   renderTeammatesCard();
@@ -7083,14 +7741,12 @@ function svgDonutChart(onTime, late, missed){
 async function fetchScansForReportRange(winStartMs, winEndMs, siteFilter){
   const since = new Date(winStartMs - 6*60*60*1000).toISOString(); // small lookback pad for patrol windows that start just before winStart
   const until = new Date(winEndMs).toISOString();
-  let query = sb.from('scans').select('*')
-    .gte('created_at', since)
-    .lte('created_at', until)
-    .order('created_at', { ascending: true })
-    .limit(20000);
-  if (siteFilter) query = query.eq('site_id', siteFilter);
-  const { data, error } = await query;
+  const { rows, error } = await fetchScansPaged({
+    since, until: new Date(winEndMs + 1).toISOString(),
+    siteIds: siteFilter ? [siteFilter] : null, maxRows: 400000
+  });
   if (error){ showToast('Could not load scan history for report', error.message, 'danger'); return null; }
+  const data = rows.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   return (data || []).map(rowToScan);
 }
 
@@ -7852,7 +8508,8 @@ function uiUpdateNavCounts(){
 }
 function uiSystemState(){
   if (typeof profile === 'undefined' || !profile) return ['idle', 'Not signed in'];
-  if (navigator.onLine === false) return ['down', 'Offline'];
+  if (navigator.onLine === false) return ['down', offlineQueueCount ? `Offline · ${offlineQueueCount} saved` : 'Offline'];
+  if (profile.role === 'guard' && offlineKnownDown()) return ['down', offlineQueueCount ? `No connection · ${offlineQueueCount} saved` : 'No connection'];
   let connected = true;
   try{ if (sb && sb.realtime && typeof sb.realtime.isConnected === 'function') connected = sb.realtime.isConnected(); }catch(e){}
   const ops = profile.role === 'admin' || profile.role === 'controller';
@@ -7869,6 +8526,7 @@ function uiTick(){
     const [state, text] = uiSystemState();
     const pill = document.getElementById('sysPill');
     if (pill){ pill.dataset.state = state; document.getElementById('sysPillText').textContent = text; }
+    offlineRenderBanner();
 
     const signedIn = typeof profile !== 'undefined' && !!profile;
     const shiftChip = document.getElementById('ghShift');
