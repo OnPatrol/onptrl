@@ -825,6 +825,17 @@ tbody tr:hover td{background:rgba(255,255,255,.025);}
 
 .dup-title{display:none !important;}
 
+/* ---- Live tracking + site phone ---- */
+.track-grid{display:grid; grid-template-columns:minmax(260px, 360px) 1fr; gap:16px; align-items:start;}
+@media (max-width:900px){ .track-grid{grid-template-columns:1fr;} }
+.track-site-list{display:flex; flex-direction:column; gap:8px; max-height:60vh; overflow:auto;}
+.track-site.selected{border-color:var(--accent);}
+.track-head{display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:10px;}
+.track-map{height:min(52vh, 460px); min-height:260px; border-radius:10px; overflow:hidden; border:1px solid var(--border);}
+#trackingIndicator{display:none; position:fixed; left:12px; right:12px; top:calc(var(--header-h) + 8px); z-index:65; padding:8px 12px; border-radius:10px; font-family:var(--sans); font-size:12px; line-height:1.35; text-align:center; background:var(--danger-dim); color:var(--danger); border:1px solid var(--danger);}
+.panic-contact{display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:10px 0 2px;}
+.panic-nophone{font-family:var(--sans); font-size:12px; font-weight:600; color:var(--warn);}
+
 /* ---- Skipped tags ---- */
 .badge.skipped{background:var(--warn-dim); color:var(--warn);}
 .log-bar.skipped{background:var(--warn);}
@@ -913,6 +924,7 @@ body.no-sidebar #view-guard .cam-box #manualScanStatus{position:fixed; left:12px
         <button class="nav-item" data-ctrl-view="patrols"><svg class="icon" viewBox="0 0 24 24"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg><span>Patrols</span></button>
         <button class="nav-item" data-ctrl-view="incidents"><svg class="icon" viewBox="0 0 24 24"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><path d="M12 9v4M12 17h.01"/></svg><span>Incidents</span></button>
         <button class="nav-item" data-ctrl-view="attendance"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>Attendance</span></button>
+        <button class="nav-item" data-ctrl-view="tracking"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="22" y1="12" x2="18" y2="12"/><line x1="6" y1="12" x2="2" y2="12"/><line x1="12" y1="6" x2="12" y2="2"/><line x1="12" y1="22" x2="12" y2="18"/><circle cx="12" cy="12" r="2"/></svg><span>Live tracking</span></button>
         <button class="nav-item" data-ctrl-view="siteoverview"><svg class="icon" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg><span>Overview</span></button>
       </div>
       <div class="nav-group"><div class="nav-label">Management</div>
@@ -927,6 +939,7 @@ body.no-sidebar #view-guard .cam-box #manualScanStatus{position:fixed; left:12px
         <button class="nav-item" data-admin-view="patrols"><svg class="icon" viewBox="0 0 24 24"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg><span>Patrols</span></button>
         <button class="nav-item" data-admin-view="incidents"><svg class="icon" viewBox="0 0 24 24"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><path d="M12 9v4M12 17h.01"/></svg><span>Incidents</span></button>
         <button class="nav-item" data-admin-view="attendance"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>Attendance</span></button>
+        <button class="nav-item" data-admin-view="tracking"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="22" y1="12" x2="18" y2="12"/><line x1="6" y1="12" x2="2" y2="12"/><line x1="12" y1="6" x2="12" y2="2"/><line x1="12" y1="22" x2="12" y2="18"/><circle cx="12" cy="12" r="2"/></svg><span>Live tracking</span></button>
         <button class="nav-item" data-admin-view="overview"><svg class="icon" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg><span>Activity log</span></button>
       </div>
       <div class="nav-group"><div class="nav-label">Management</div>
@@ -1102,6 +1115,8 @@ body.no-sidebar #view-guard .cam-box #manualScanStatus{position:fixed; left:12px
       </div>
     </div>
 
+    <div class="admin-view" id="admin-tracking"></div>
+
     <div class="admin-view" id="admin-sites">
       <div class="panel">
         <h2>Sites</h2>
@@ -1111,11 +1126,12 @@ body.no-sidebar #view-guard .cam-box #manualScanStatus{position:fixed; left:12px
         <div class="cp-row">
           <input type="text" id="newSiteName" placeholder="Site name">
           <input type="text" id="newSiteAddress" placeholder="Address">
+          <input type="tel" id="newSitePhone" placeholder="Site phone number (required)">
           <button class="btn btn-primary" id="addSiteBtn" style="flex:0 0 auto; width:auto; padding:9px 14px;">Add site</button>
         </div>
         <div class="table-scroll">
         <table style="margin-top:10px;">
-          <thead><tr><th>Site</th><th>Address</th><th>Site code</th><th>Checkpoints</th><th>Routes</th><th></th></tr></thead>
+          <thead><tr><th>Site</th><th>Address</th><th>Phone</th><th>Site code</th><th>Checkpoints</th><th>Routes</th><th></th></tr></thead>
           <tbody id="siteTableBody"></tbody>
         </table>
         </div>
@@ -1135,6 +1151,7 @@ body.no-sidebar #view-guard .cam-box #manualScanStatus{position:fixed; left:12px
         <div class="cp-row">
           <input type="text" id="manageSiteName" placeholder="Site name">
           <input type="text" id="manageSiteAddress" placeholder="Address">
+          <input type="tel" id="manageSitePhone" placeholder="Site phone number (required)">
         </div>
         <div class="result-meta" style="margin:4px 0 0;">Site code: <b id="manageSiteCode">—</b> — share this with guards joining the site.</div>
         <div class="btn-row">
@@ -1676,6 +1693,8 @@ body.no-sidebar #view-guard .cam-box #manualScanStatus{position:fixed; left:12px
     </div>
   </div>
 
+  <div class="ctrl-view" id="ctrl-tracking"></div>
+
   <div class="ctrl-view" id="ctrl-sites">
     <div class="panel">
       <h2>Sites</h2>
@@ -1685,7 +1704,7 @@ body.no-sidebar #view-guard .cam-box #manualScanStatus{position:fixed; left:12px
       </div>
       <div class="table-scroll">
         <table>
-          <thead><tr><th>Site</th><th>Address</th><th>Checkpoints</th><th>Routes</th><th></th></tr></thead>
+          <thead><tr><th>Site</th><th>Address</th><th>Phone</th><th>Checkpoints</th><th>Routes</th><th></th></tr></thead>
           <tbody id="ctrlSiteTableBody"></tbody>
         </table>
       </div>
@@ -1794,6 +1813,7 @@ body.no-sidebar #view-guard .cam-box #manualScanStatus{position:fixed; left:12px
 </div>
 <div class="toast-wrap" id="toastWrap"></div>
 <div id="offlineBanner" role="status" aria-live="polite"></div>
+<div id="trackingIndicator" role="status" aria-live="polite"></div>
 
 <div class="qr-modal-bg" id="resetPasswordModalBg">
   <div class="detail-modal">
@@ -1865,6 +1885,7 @@ body.no-sidebar #view-guard .cam-box #manualScanStatus{position:fixed; left:12px
       <div>
         <div id="ctrlSiteDetailTitle" style="font-weight:700; font-size:16px;"></div>
         <div id="ctrlSiteDetailAddress" class="result-meta" style="margin-top:4px;"></div>
+        <div id="ctrlSiteDetailPhone" class="result-meta" style="margin-top:4px;"></div>
       </div>
       <button class="btn" style="width:auto; padding:5px 10px; font-size:11px; flex:0 0 auto;" id="ctrlSiteDetailCloseBtn">Close</button>
     </div>
@@ -2396,8 +2417,9 @@ async function offlineEnqueue(type, payload){
 }
 async function offlineRefreshCounts(){
   const all = await OFF.qAll();
-  offlineQueueCount = all.filter(i => !i.failed).length;
-  offlineQueueFailed = all.filter(i => i.failed).length;
+  // A waiting panic alert is never counted or mentioned on screen (see the panic button note).
+  offlineQueueCount = all.filter(i => !i.failed && i.type !== 'panic').length;
+  offlineQueueFailed = all.filter(i => i.failed && i.type !== 'panic').length;
   offlineRenderBanner();
 }
 function offlineSyncSoon(ms){
@@ -2444,7 +2466,7 @@ async function offlineSendOne(item){
   item.attempts = (item.attempts || 0) + 1;
   item.lastError = msg.slice(0, 300);
   await OFF.qPut(item);
-  return item.attempts >= 5 ? 'failed' : 'retry';
+  return (item.attempts >= 5 && item.type !== 'panic') ? 'failed' : 'retry';   // a panic alert is never given up on
 }
 async function offlineSync(){
   if (!OFFLINE_ENABLED || offlineSyncing || !session || session.offline) return;
@@ -2457,13 +2479,20 @@ async function offlineSync(){
       const item = await OFF.qGet(qid);                // read fresh: an earlier item may have re-pointed this one
       if (!item || item.failed) continue;
       const r = await offlineSendOne(item);
-      if (r === 'done'){ await OFF.qDel(item.qid); sent++; }
-      else if (r === 'retry') break;                 // connection down: stop, keep the order, try again soon
+      if (r === 'done'){ await OFF.qDel(item.qid); if (item.type !== 'panic') sent++; }
+      else if (r === 'retry'){ if (item.type === 'panic') continue; break; }   // panic never holds the rest of the queue up; otherwise stop, keep the order, try again soon
       else { item.failed = true; await OFF.qPut(item); }
     }
   } finally {
     offlineSyncing = false;
     await offlineRefreshCounts();
+  }
+  if (offlineSentPanic){
+    // A panic alert that was waiting has now been delivered: one long buzz, nothing on screen.
+    offlineSentPanic = false; lastPanicDelivered = true;
+    offlineMarkServerUp();
+    panicHaptic(true);
+    guardTrackingCheck();
   }
   if (sent){
     offlineMarkServerUp();
@@ -2477,8 +2506,7 @@ async function offlineAfterSync(sent){
     await loadAttendanceRecent(); await loadAbsencesRecent(); await loadScans();
     renderStats(); renderLog(); renderGuardPatrolCard(); renderAttendanceCard(); renderTeammatesCard(); renderPanicActingAsSelector();
   }catch(e){ console.warn('after sync', e); }
-  if (offlineSentPanic){ offlineSentPanic = false; showToast('Panic alert delivered', 'It was sent as soon as the connection came back.', 'warn'); }
-  else showToast('Back online', `${sent} saved item${sent === 1 ? '' : 's'} sent.`, 'success');
+  showToast('Back online', `${sent} saved item${sent === 1 ? '' : 's'} sent.`, 'success');
 }
 async function offlineOnBackOnline(){
   if (!OFFLINE_ENABLED || !profile || profile.role !== 'guard' || offlineBackBusy) return;
@@ -2622,6 +2650,330 @@ function scheduleNotifReload(){
   if (notifReloadTimer) return;
   notifReloadTimer = setTimeout(() => { notifReloadTimer = null; loadNotifications().then(renderNotifications); }, 1200);
 }
+
+// ============================================================
+// Site phone numbers + live tracking
+// ============================================================
+function cleanPhone(raw){ return String(raw || '').trim().replace(/\s+/g, ' '); }
+function phoneDigits(raw){ return String(raw || '').replace(/[^\d]/g, ''); }
+function isValidPhone(raw){
+  const t = cleanPhone(raw), d = phoneDigits(t);
+  return d.length >= 7 && d.length <= 15 && /^\+?[\d\s\-().]+$/.test(t);
+}
+function telHref(raw){ const t = cleanPhone(raw); return 'tel:' + (t.startsWith('+') ? '+' : '') + phoneDigits(t); }
+function phoneLinkHtml(raw){ return `<a href="${telHref(raw)}" style="color:inherit; font-weight:600;">${escapeHtmlForPrint(cleanPhone(raw))}</a>`; }
+function sitePhoneOf(siteId){ const s = sites.find(x => x.id === siteId); return s && s.phone ? s.phone : ''; }
+
+// ---------------- Live tracking: control-room side (admin + controller) ----------------
+const TRACK_MINUTES = 30;
+const TRACK_FRESH_MS = 90 * 1000;   // a position older than this is shown as "no recent signal"
+const trk = { prefix: null, siteId: null, map: null, layer: null, requests: [], devices: [], trails: new Map(), timer: null, channel: null, follow: true, fitted: false, wired: {} };
+const trkEl = id => document.getElementById(id);
+
+function trackingMarkup(p){
+  return `
+    <div class="track-grid">
+      <div class="panel">
+        <h2>Live tracking</h2>
+        <div class="cp-row"><input type="text" id="${p}TrackSearch" placeholder="Search sites to live track…"></div>
+        <div class="result-meta" style="margin:2px 0 12px;">Live tracking asks a site's phone to share where it is while the app is open on its screen. The phone shows a "Live tracking is on" notice, and it stops by itself after ${TRACK_MINUTES} minutes.</div>
+        <div id="${p}TrackSiteList" class="track-site-list"></div>
+      </div>
+      <div class="panel" id="${p}TrackPanel" style="display:none;">
+        <div class="track-head">
+          <div style="min-width:0;">
+            <div id="${p}TrackTitle" style="font-weight:700; font-size:15px;"></div>
+            <div id="${p}TrackPhone" class="result-meta"></div>
+          </div>
+          <span class="st st-info" id="${p}TrackStatus"></span>
+        </div>
+        <div id="${p}TrackMap" class="track-map"></div>
+        <div id="${p}TrackInfo" class="result-meta" style="margin-top:8px;"></div>
+        <div class="btn-row" style="margin-top:10px; flex-wrap:wrap;">
+          <button class="btn btn-primary" id="${p}TrackStartBtn" style="width:auto; padding:9px 14px;">Start tracking</button>
+          <button class="btn" id="${p}TrackExtendBtn" style="width:auto; padding:9px 14px;">Extend ${TRACK_MINUTES} min</button>
+          <button class="btn" id="${p}TrackStopBtn" style="width:auto; padding:9px 14px;">Stop</button>
+          <button class="btn" id="${p}TrackFollowBtn" style="width:auto; padding:9px 14px;">Following</button>
+        </div>
+      </div>
+    </div>`;
+}
+function initTrackingViews(){
+  ['ctrl', 'admin'].forEach(p => { const el = trkEl(p + '-tracking'); if (el && !el.innerHTML.trim()) el.innerHTML = trackingMarkup(p); });
+}
+function trackingSiteState(siteId){
+  const req = trk.requests.find(r => r.site_id === siteId);
+  if (!req) return 'off';
+  const fresh = trk.devices.some(d => d.site_id === siteId && Date.now() - new Date(d.updated_at).getTime() < TRACK_FRESH_MS);
+  return fresh ? 'live' : 'waiting';
+}
+function trackingViewOpened(p){
+  initTrackingViews();
+  trk.prefix = p;
+  if (!trk.wired[p]){
+    trk.wired[p] = true;
+    trkEl(p + 'TrackSearch').addEventListener('input', renderTrackingList);
+    trkEl(p + 'TrackSiteList').addEventListener('click', e => {
+      const b = e.target.closest('[data-track-open]');
+      if (b) openTrackingSite(b.dataset.trackOpen, b.dataset.trackStart === '1');
+    });
+    trkEl(p + 'TrackStartBtn').addEventListener('click', () => trk.siteId && startTracking(trk.siteId));
+    trkEl(p + 'TrackStopBtn').addEventListener('click', () => trk.siteId && stopTracking(trk.siteId));
+    trkEl(p + 'TrackExtendBtn').addEventListener('click', () => trk.siteId && extendTracking(trk.siteId));
+    trkEl(p + 'TrackFollowBtn').addEventListener('click', () => { trk.follow = !trk.follow; trackingPanelUi(); if (trk.follow) renderTrackingMap(true); });
+  }
+  if (!teamDirectory.length) loadTeamDirectory();
+  renderTrackingList();
+  trackingTick();
+  if (!trk.timer) trk.timer = setInterval(trackingTick, 4000);
+}
+async function trackingTick(){
+  const p = trk.prefix;
+  if (!p) return;
+  const listEl = trkEl(p + 'TrackSiteList');
+  if (!listEl || listEl.offsetParent === null) return;    // the tracking screen is not showing
+  const r = await withTimeout(sb.from('tracking_requests').select('*').is('stopped_at', null).gt('expires_at', new Date().toISOString()), 8000);
+  if (!r.error) trk.requests = r.data || [];
+  const siteIds = [...new Set(trk.requests.map(x => x.site_id))];
+  if (siteIds.length){
+    const d = await withTimeout(sb.from('device_locations').select('*').in('site_id', siteIds), 8000);
+    if (!d.error) trk.devices = d.data || [];
+  } else trk.devices = [];
+  renderTrackingList();
+  trackingPanelUi();
+  renderTrackingMap(false);
+}
+function renderTrackingList(){
+  const p = trk.prefix; if (!p) return;
+  const el = trkEl(p + 'TrackSiteList'); if (!el) return;
+  const q = (trkEl(p + 'TrackSearch').value || '').trim().toLowerCase();
+  const list = sites.filter(s => !q || [s.name, s.address, s.phone, s.siteCode].some(v => String(v || '').toLowerCase().includes(q)));
+  if (!list.length){ el.innerHTML = '<div class="result-meta">No sites match.</div>'; return; }
+  el.innerHTML = list.map(s => {
+    const st = trackingSiteState(s.id);
+    const chip = st === 'live' ? '<span class="st st-success">Live</span>' : st === 'waiting' ? '<span class="st st-warn">Waiting for phone</span>' : '';
+    return `
+      <div class="site-contact-row track-site${trk.siteId === s.id ? ' selected' : ''}">
+        <div style="flex:1; min-width:0;">
+          <div class="site-contact-name">${escapeHtmlForPrint(s.name)}</div>
+          <div class="result-meta">${escapeHtmlForPrint(s.address && s.address !== '—' ? s.address : '')}${s.phone ? ' · ' + escapeHtmlForPrint(s.phone) : ' · <span style="color:var(--warn);">no phone set</span>'}</div>
+        </div>
+        ${chip}
+        <button class="btn ${st === 'off' ? 'btn-primary' : ''}" data-track-open="${s.id}" ${st === 'off' ? 'data-track-start="1"' : ''} style="width:auto; padding:6px 12px; font-size:12px;">${st === 'off' ? 'Track' : 'View'}</button>
+      </div>`;
+  }).join('');
+}
+function trackingPanelUi(){
+  const p = trk.prefix; if (!p || !trk.siteId) return;
+  const s = sites.find(x => x.id === trk.siteId);
+  const st = trackingSiteState(trk.siteId);
+  trkEl(p + 'TrackTitle').textContent = s ? s.name : 'Site';
+  trkEl(p + 'TrackPhone').innerHTML = s && s.phone ? `Site phone: ${phoneLinkHtml(s.phone)}` : '<span style="color:var(--warn);">No site phone set</span>';
+  const chip = trkEl(p + 'TrackStatus');
+  chip.className = 'st ' + (st === 'live' ? 'st-success' : st === 'waiting' ? 'st-warn' : 'st-info');
+  chip.textContent = st === 'live' ? 'Live' : st === 'waiting' ? 'Waiting for phone' : 'Not tracking';
+  trkEl(p + 'TrackStartBtn').style.display = st === 'off' ? '' : 'none';
+  trkEl(p + 'TrackExtendBtn').style.display = st === 'off' ? 'none' : '';
+  trkEl(p + 'TrackStopBtn').style.display = st === 'off' ? 'none' : '';
+  trkEl(p + 'TrackFollowBtn').textContent = trk.follow ? 'Following' : 'Follow';
+  const req = trk.requests.find(r => r.site_id === trk.siteId);
+  const devs = trk.devices.filter(d => d.site_id === trk.siteId);
+  let info = '';
+  if (st === 'off') info = 'Tracking is off for this site. Press Start tracking to ask its phone to share its location.';
+  else {
+    const mins = req ? Math.max(0, Math.round((new Date(req.expires_at).getTime() - Date.now()) / 60000)) : 0;
+    info = devs.length
+      ? devs.map(d => {
+          const name = (teamDirectory.find(u => u.id === d.user_id) || {}).full_name || 'Phone';
+          const age = Math.max(0, Math.round((Date.now() - new Date(d.updated_at).getTime()) / 1000));
+          const bits = [`updated ${age < 60 ? age + 's' : Math.round(age / 60) + 'm'} ago`];
+          if (d.accuracy_m != null) bits.push(`±${Math.round(d.accuracy_m)} m`);
+          if (d.speed_mps != null && d.speed_mps > 0.5) bits.push(`${Math.round(d.speed_mps * 3.6)} km/h`);
+          if (d.battery_pct != null) bits.push(`battery ${d.battery_pct}%`);
+          return `<b>${escapeHtmlForPrint(name)}</b> · ${bits.join(' · ')}`;
+        }).join('<br>')
+      : 'Waiting for the phone. It must have the app open on its screen with a signal. It usually starts within 10 seconds.';
+    info += `<br>${req && req.silent ? 'Started automatically by the panic alert. ' : ''}Tracking ends in ${mins} min.`;
+  }
+  trkEl(p + 'TrackInfo').innerHTML = info;
+}
+function initTrackingMap(){
+  const p = trk.prefix;
+  const box = trkEl(p + 'TrackMap');
+  if (trk.map && trk.map.getContainer() !== box){ trk.map.remove(); trk.map = null; }
+  if (!trk.map){
+    trk.map = L.map(box).setView([-26.2, 28.05], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(trk.map);
+    trk.layer = L.layerGroup().addTo(trk.map);
+    trk.map.on('dragstart', () => { if (trk.follow){ trk.follow = false; trackingPanelUi(); } });
+  }
+  setTimeout(() => trk.map && trk.map.invalidateSize(), 60);
+}
+function renderTrackingMap(refit){
+  if (!trk.map || !trk.siteId) return;
+  trk.layer.clearLayers();
+  const s = sites.find(x => x.id === trk.siteId);
+  const pts = [];
+  if (s && s.lat != null && s.lng != null){
+    const ll = [Number(s.lat), Number(s.lng)];
+    pts.push(ll);
+    L.circleMarker(ll, { radius: 6, color: '#9ca3af', weight: 2, fillOpacity: 0.25 }).bindTooltip(s.name, { direction: 'bottom' }).addTo(trk.layer);
+    if (Array.isArray(s.perimeter) && s.perimeter.length >= 3){
+      L.polygon(s.perimeter.map(q => [q.lat, q.lng]), { color: '#9ca3af', weight: 1.5, fillOpacity: 0.05, dashArray: '4 4' }).addTo(trk.layer);
+    }
+  }
+  const devs = trk.devices.filter(d => d.site_id === trk.siteId);
+  let latest = null;
+  devs.forEach(d => {
+    const ll = [d.lat, d.lng];
+    const stale = Date.now() - new Date(d.updated_at).getTime() > TRACK_FRESH_MS;
+    const trail = trk.trails.get(d.user_id) || [];
+    const last = trail[trail.length - 1];
+    if (!last || last[0] !== ll[0] || last[1] !== ll[1]){ trail.push(ll); if (trail.length > 100) trail.shift(); trk.trails.set(d.user_id, trail); }
+    if (trail.length > 1) L.polyline(trail, { color: stale ? '#9ca3af' : '#2563eb', weight: 3, opacity: 0.6 }).addTo(trk.layer);
+    if (d.accuracy_m) L.circle(ll, { radius: d.accuracy_m, color: '#2563eb', weight: 1, fillOpacity: 0.08 }).addTo(trk.layer);
+    const name = (teamDirectory.find(u => u.id === d.user_id) || {}).full_name || 'Phone';
+    L.circleMarker(ll, { radius: 9, color: '#fff', weight: 3, fillColor: stale ? '#9ca3af' : '#2563eb', fillOpacity: 1 })
+      .bindTooltip(escapeHtmlForPrint(name) + (stale ? ' · no recent signal' : ''), { permanent: true, direction: 'top', offset: [0, -10] }).addTo(trk.layer);
+    pts.push(ll);
+    latest = ll;
+  });
+  if (latest && trk.follow){
+    if (!trk.fitted || refit){ trk.map.setView(latest, Math.max(trk.map.getZoom(), 17)); trk.fitted = true; }
+    else trk.map.panTo(latest, { animate: true });
+  } else if (!trk.fitted && pts.length){
+    trk.map.setView(pts[0], 16);
+    trk.fitted = true;
+  }
+}
+function trackingSubscribe(siteId){
+  if (trk.channel){ sb.removeChannel(trk.channel); trk.channel = null; }
+  trk.channel = sb.channel('track-' + siteId + '-' + Date.now())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'device_locations', filter: `site_id=eq.${siteId}` }, payload => {
+      const row = payload.new && payload.new.user_id ? payload.new : null;
+      if (payload.eventType === 'DELETE'){ trk.devices = trk.devices.filter(d => d.user_id !== (payload.old || {}).user_id); }
+      else if (row){ trk.devices = trk.devices.filter(d => !(d.site_id === row.site_id && d.user_id === row.user_id)).concat([row]); }
+      trackingPanelUi(); renderTrackingMap(false);
+    })
+    .subscribe();
+}
+async function openTrackingSite(siteId, start){
+  const p = trk.prefix; if (!p) return;
+  trk.siteId = siteId; trk.follow = true; trk.fitted = false; trk.trails = new Map();
+  trkEl(p + 'TrackPanel').style.display = '';
+  initTrackingMap();
+  trackingSubscribe(siteId);
+  if (start) await startTracking(siteId); else await trackingTick();
+  renderTrackingList(); trackingPanelUi(); renderTrackingMap(true);
+  trkEl(p + 'TrackPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+async function startTracking(siteId){
+  if (trk.requests.some(r => r.site_id === siteId)){ await trackingTick(); return; }
+  const { error } = await sb.from('tracking_requests').insert({
+    site_id: siteId, requested_by: session.user.id, expires_at: new Date(Date.now() + TRACK_MINUTES * 60000).toISOString()
+  });
+  if (error){ showToast('Could not start tracking', error.message, 'danger'); return; }
+  showToast('Tracking requested', 'The phone starts sharing its location within about 10 seconds.', 'success');
+  await trackingTick();
+}
+async function stopTracking(siteId){
+  const { error } = await sb.from('tracking_requests').update({ stopped_at: new Date().toISOString() }).eq('site_id', siteId).is('stopped_at', null);
+  if (error){ showToast('Could not stop tracking', error.message, 'danger'); return; }
+  await sb.from('device_locations').delete().eq('site_id', siteId);
+  trk.devices = trk.devices.filter(d => d.site_id !== siteId);
+  showToast('Tracking stopped', '', 'success');
+  await trackingTick();
+}
+async function extendTracking(siteId){
+  const { error } = await sb.from('tracking_requests').update({ expires_at: new Date(Date.now() + TRACK_MINUTES * 60000).toISOString() }).eq('site_id', siteId).is('stopped_at', null);
+  if (error){ showToast('Could not extend tracking', error.message, 'danger'); return; }
+  showToast('Tracking extended', `Another ${TRACK_MINUTES} minutes.`, 'success');
+  await trackingTick();
+}
+// Jump straight to a site's live tracking (used by the panic alert's "Live track" button).
+function goToLiveTracking(siteId){
+  const ws = trkEl('view-admin').classList.contains('active') ? 'admin' : 'ctrl';
+  const btn = document.querySelector(ws === 'admin' ? '[data-admin-view="tracking"]' : '[data-ctrl-view="tracking"]');
+  if (!btn) return;
+  btn.click();
+  setTimeout(() => openTrackingSite(siteId, true), 200);
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-track-site]');
+  if (b){ e.preventDefault(); goToLiveTracking(b.dataset.trackSite); }
+});
+
+// ---------------- Live tracking: guard phone ----------------
+// The phone only shares its location while a controller/admin has asked for it (the database rejects
+// location updates otherwise), it says so on screen the whole time, and it stops by itself.
+const gtrk = { active: false, silent: false, watchId: null, siteId: null, expiresAt: 0, lastSent: 0, wake: null, checking: false };
+function guardTrackingIndicator(text){
+  const el = document.getElementById('trackingIndicator');
+  if (!el) return;
+  el.textContent = text || '';
+  el.style.display = text ? 'block' : 'none';
+}
+async function guardTrackingCheck(){
+  if (!OFFLINE_ENABLED || !profile || profile.role !== 'guard' || !session || session.offline || gtrk.checking) return;
+  if (document.hidden || offlineKnownDown()) return;
+  const siteId = activeDutySiteId || guardSiteId;
+  if (!siteId) return;
+  gtrk.checking = true;
+  try{
+    const r = await withTimeout(sb.from('tracking_requests').select('*').eq('site_id', siteId).is('stopped_at', null)
+      .gt('expires_at', new Date().toISOString()).order('requested_at', { ascending: false }).limit(1), 8000);
+    if (r.error) return;
+    const req = r.data && r.data[0];
+    if (req) guardTrackingStart(req, siteId);
+    else if (gtrk.active) guardTrackingStop();
+  } finally { gtrk.checking = false; }
+}
+function guardTrackingStart(req, siteId){
+  gtrk.expiresAt = new Date(req.expires_at).getTime();
+  gtrk.siteId = siteId;
+  // A session started by a panic alert is silent on the phone (no notice), so the guard is not put at risk.
+  gtrk.silent = !!req.silent;
+  if (gtrk.active){ if (gtrk.silent) guardTrackingIndicator(''); return; }
+  if (!navigator.geolocation){ if (!gtrk.silent) guardTrackingIndicator('Live tracking was requested, but this phone cannot share its location.'); return; }
+  gtrk.active = true;
+  if (!gtrk.silent) guardTrackingIndicator('Live tracking is on — the control room can see this phone\'s location.');
+  gtrk.watchId = navigator.geolocation.watchPosition(guardTrackingFix, err => {
+    if (gtrk.silent) return;
+    guardTrackingIndicator(err && err.code === 1
+      ? 'Live tracking was requested, but location is blocked on this phone. Allow location for this site.'
+      : 'Live tracking is on — waiting for a location fix…');
+  }, { enableHighAccuracy: true, maximumAge: 3000, timeout: 20000 });
+  guardTrackingWakeLock();
+}
+async function guardTrackingWakeLock(){
+  try{ if (navigator.wakeLock && gtrk.active && !gtrk.wake) gtrk.wake = await navigator.wakeLock.request('screen'); if (gtrk.wake) gtrk.wake.addEventListener('release', () => { gtrk.wake = null; }); }catch(e){}
+}
+async function guardTrackingFix(pos){
+  const now = Date.now();
+  if (!gtrk.active) return;
+  if (now > gtrk.expiresAt){ guardTrackingStop(); return; }
+  if (now - gtrk.lastSent < 4000) return;
+  gtrk.lastSent = now;
+  if (!gtrk.silent) guardTrackingIndicator('Live tracking is on — the control room can see this phone\'s location.');
+  let battery = null;
+  try{ if (navigator.getBattery){ const b = await navigator.getBattery(); battery = Math.round(b.level * 100); } }catch(e){}
+  const c = pos.coords;
+  await sb.from('device_locations').upsert({
+    site_id: gtrk.siteId, user_id: session.user.id, lat: c.latitude, lng: c.longitude,
+    accuracy_m: c.accuracy != null ? c.accuracy : null, speed_mps: c.speed != null ? c.speed : null,
+    heading_deg: c.heading != null ? c.heading : null, battery_pct: battery, updated_at: new Date().toISOString()
+  }, { onConflict: 'site_id,user_id' });
+}
+function guardTrackingStop(){
+  if (gtrk.watchId != null){ navigator.geolocation.clearWatch(gtrk.watchId); gtrk.watchId = null; }
+  if (gtrk.wake){ try{ gtrk.wake.release(); }catch(e){} gtrk.wake = null; }
+  const siteId = gtrk.siteId;
+  gtrk.active = false;
+  guardTrackingIndicator('');
+  if (siteId && session) sb.from('device_locations').delete().eq('site_id', siteId).eq('user_id', session.user.id).then(() => {}, () => {});
+}
+setInterval(guardTrackingCheck, 10000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden){ guardTrackingCheck(); guardTrackingWakeLock(); } });
 // sb.functions.invoke() only puts the real error message in `data` when the
 // edge function returns 2xx. On a non-2xx response, `data` is null and
 // `error.message` is just the generic "Edge Function returned a non-2xx
@@ -2923,7 +3275,7 @@ function rowToScan(row){
 async function loadSites(){
   const { data, error } = await sb.from('sites').select('*').order('created_at');
   if (error){ showToast('Could not load sites', error.message, 'danger'); return; }
-  sites = (data || []).map(s => ({ id: s.id, name: s.name, address: s.address || '—', siteCode: s.site_code, lat: s.lat, lng: s.lng, perimeter: s.perimeter || null, createdAt: s.created_at ? new Date(s.created_at).getTime() : null }));
+  sites = (data || []).map(s => ({ id: s.id, name: s.name, address: s.address || '—', siteCode: s.site_code, phone: s.phone || '', lat: s.lat, lng: s.lng, perimeter: s.perimeter || null, createdAt: s.created_at ? new Date(s.created_at).getTime() : null }));
   if (!activeSiteId || !sites.some(s => s.id === activeSiteId)){
     activeSiteId = sites[0] ? sites[0].id : null;
   }
@@ -4092,7 +4444,7 @@ function subscribeRealtime(){
         if (payload.eventType === 'INSERT' && payload.new && payload.new.kind === 'panic' && !seenNotifIds.has(payload.new.id)){
           seenNotifIds.add(payload.new.id);
           SOUND.panic();
-          showToast('Panic alert', payload.new.title, 'danger');
+          showToast('Panic alert', payload.new.title + (sitePhoneOf(payload.new.site_id) ? ' · Site phone ' + cleanPhone(sitePhoneOf(payload.new.site_id)) : ''), 'danger');
         }
         scheduleNotifReload();
       })
@@ -5019,9 +5371,9 @@ function wireIncidentClientEmailSection(inc, incidentId, who, contacts){
 function renderSiteTable(){
   const body = document.getElementById('siteTableBody');
   const q = (document.getElementById('siteSearch').value || '').toLowerCase();
-  const filtered = sites.filter(s => s.name.toLowerCase().includes(q) || s.address.toLowerCase().includes(q));
+  const filtered = sites.filter(s => s.name.toLowerCase().includes(q) || s.address.toLowerCase().includes(q) || (s.phone || '').toLowerCase().includes(q));
   if (filtered.length === 0){
-    body.innerHTML = '<tr><td colspan="7" style="font-family:var(--sans); color:var(--muted);">No sites match.</td></tr>';
+    body.innerHTML = '<tr><td colspan="8" style="font-family:var(--sans); color:var(--muted);">No sites match.</td></tr>';
     return;
   }
   body.innerHTML = filtered.map(s => {
@@ -5029,8 +5381,9 @@ function renderSiteTable(){
     const routeCount = routes.filter(r => r.siteId === s.id).length;
     return `
       <tr>
-        <td style="font-family:var(--sans); font-weight:600;">${s.name}</td>
-        <td style="font-family:var(--sans); color:var(--muted);">${s.address}</td>
+        <td style="font-family:var(--sans); font-weight:600;">${escapeHtmlForPrint(s.name)}</td>
+        <td style="font-family:var(--sans); color:var(--muted);">${escapeHtmlForPrint(s.address)}</td>
+        <td style="font-family:var(--sans);">${s.phone ? phoneLinkHtml(s.phone) : '<span style="color:var(--warn);">Not set</span>'}</td>
         <td style="letter-spacing:0.5px;">${s.siteCode || '—'}</td>
         <td>${cpCount}</td>
         <td>${routeCount}</td>
@@ -5071,16 +5424,16 @@ function renderControllerSiteTable(){
   const body = document.getElementById('ctrlSiteTableBody');
   if (!body) return;
   if (sites.length === 0){
-    body.innerHTML = '<tr><td colspan="5" style="font-family:var(--sans); color:var(--muted);">No sites yet.</td></tr>';
+    body.innerHTML = '<tr><td colspan="6" style="font-family:var(--sans); color:var(--muted);">No sites yet.</td></tr>';
     return;
   }
   const searchEl = document.getElementById('ctrlSiteSearch');
   const q = searchEl ? searchEl.value.trim().toLowerCase() : '';
   const filtered = q
-    ? sites.filter(s => (s.name || '').toLowerCase().includes(q) || (s.address || '').toLowerCase().includes(q))
+    ? sites.filter(s => (s.name || '').toLowerCase().includes(q) || (s.address || '').toLowerCase().includes(q) || (s.phone || '').toLowerCase().includes(q))
     : sites;
   if (filtered.length === 0){
-    body.innerHTML = '<tr><td colspan="5" style="font-family:var(--sans); color:var(--muted);">No sites match your search.</td></tr>';
+    body.innerHTML = '<tr><td colspan="6" style="font-family:var(--sans); color:var(--muted);">No sites match your search.</td></tr>';
     return;
   }
   body.innerHTML = filtered.map(s => {
@@ -5088,8 +5441,9 @@ function renderControllerSiteTable(){
     const routeCount = routes.filter(r => r.siteId === s.id).length;
     return `
       <tr>
-        <td style="font-family:var(--sans); font-weight:600;">${s.name}</td>
-        <td style="font-family:var(--sans); color:var(--muted);">${s.address}</td>
+        <td style="font-family:var(--sans); font-weight:600;">${escapeHtmlForPrint(s.name)}</td>
+        <td style="font-family:var(--sans); color:var(--muted);">${escapeHtmlForPrint(s.address)}</td>
+        <td style="font-family:var(--sans);">${s.phone ? phoneLinkHtml(s.phone) : '<span style="color:var(--warn);">Not set</span>'}</td>
         <td>${cpCount}</td>
         <td>${routeCount}</td>
         <td><div style="display:flex; gap:6px;">
@@ -5113,6 +5467,9 @@ async function openCtrlSiteDetailModal(siteId){
   const s = sites.find(x => x.id === siteId);
   document.getElementById('ctrlSiteDetailTitle').textContent = s ? s.name : 'Site';
   document.getElementById('ctrlSiteDetailAddress').textContent = s ? (s.address || '') : '';
+  document.getElementById('ctrlSiteDetailPhone').innerHTML = s && s.phone
+    ? `Site phone: ${phoneLinkHtml(s.phone)}`
+    : '<span style="color:var(--warn);">No site phone number set</span>';
 
   const contactsEl = document.getElementById('ctrlSiteContactsList');
   const guardsEl = document.getElementById('ctrlSiteGuardsList');
@@ -5341,8 +5698,9 @@ function renderManageSiteBasicInfo(){
   const s = sites.find(x => x.id === activeSiteId);
   const addrEl = document.getElementById('manageSiteAddress');
   const summaryEl = document.getElementById('manageSiteLocationSummary');
+  const phoneEl = document.getElementById('manageSitePhone');
   if (!s){
-    nameEl.value = ''; addrEl.value = '';
+    nameEl.value = ''; addrEl.value = ''; if (phoneEl) phoneEl.value = '';
     document.getElementById('manageSiteCode').textContent = '—';
     summaryEl.textContent = 'No site selected.';
     return;
@@ -5350,6 +5708,7 @@ function renderManageSiteBasicInfo(){
   // Don't stomp on text the admin is mid-typing when a background refresh runs.
   if (document.activeElement !== nameEl) nameEl.value = s.name || '';
   if (document.activeElement !== addrEl) addrEl.value = (s.address && s.address !== '—') ? s.address : '';
+  if (phoneEl && document.activeElement !== phoneEl) phoneEl.value = s.phone || '';
   document.getElementById('manageSiteCode').textContent = s.siteCode || '—';
 
   const hasLoc = s.lat != null && s.lng != null;
@@ -5364,9 +5723,11 @@ document.getElementById('manageSiteSaveBtn').addEventListener('click', async () 
   const statusEl = document.getElementById('manageSiteSaveStatus');
   const name = document.getElementById('manageSiteName').value.trim();
   const address = document.getElementById('manageSiteAddress').value.trim();
+  const phone = cleanPhone(document.getElementById('manageSitePhone').value);
   if (!name){ statusEl.textContent = 'Site name is required.'; return; }
+  if (!isValidPhone(phone)){ statusEl.textContent = 'The site phone number is required (e.g. 082 123 4567 or +27 82 123 4567).'; return; }
   statusEl.textContent = 'Saving…';
-  const { error } = await sb.from('sites').update({ name, address: address || null }).eq('id', activeSiteId);
+  const { error } = await sb.from('sites').update({ name, address: address || null, phone }).eq('id', activeSiteId);
   if (error){ statusEl.textContent = 'Could not save — ' + error.message; return; }
   await loadSites();
   renderAll();
@@ -5572,7 +5933,7 @@ function announceNewAlerts(){
   if (!seenNotifsSeeded){ seenNotifsSeeded = true; return; }   // first load = history, not news
   const news = fresh.filter(n => !n.cleared_at && n.severity !== 'green'
     && nowMs() - new Date(n.occurred_at).getTime() < 15 * 60 * 1000);
-  news.filter(n => n.kind === 'panic').forEach(n => { SOUND.panic(); showToast('Panic alert', n.title, 'danger'); });
+  news.filter(n => n.kind === 'panic').forEach(n => { SOUND.panic(); showToast('Panic alert', n.title + (sitePhoneOf(n.site_id) ? ' · Site phone ' + cleanPhone(sitePhoneOf(n.site_id)) : ''), 'danger'); });
   const others = news.filter(n => n.kind !== 'panic');
   others.slice(0, 3).forEach(n => showToast(n.severity === 'red' ? 'New critical alert' : 'New warning', n.title, n.severity === 'red' ? 'danger' : 'warn'));
   if (others.length > 3) showToast(`${others.length - 3} more new alerts`, 'See Attention required on the dashboard.', 'warn');
@@ -5634,6 +5995,7 @@ function notifContextLine(n, site){
     // available" note (set server-side in trigger_panic) - turn the URL
     // into a real tappable link instead of leaving it as plain text.
     const m = rawDetail.match(/^Location:\s*(https?:\/\/\S+)/);
+    parts.push(site && site.phone ? `Site phone: ${phoneLinkHtml(site.phone)}` : '<span style="color:var(--warn);">Site phone not set</span>');
     parts.push(m ? `<a href="${m[1]}" target="_blank" rel="noopener" style="color:inherit; text-decoration:underline;">Open guard's location in Maps</a>` : escapeHtmlForPrint(rawDetail || 'Location was not available.'));
   } else if (rawDetail){
     parts.push(escapeHtmlForPrint(rawDetail));
@@ -6878,10 +7240,10 @@ function panicHoldTick(){
 function startPanicHold(){
   if (panicHoldTimer) return;
   if (Date.now() - lastPanicAt < PANIC_COOLDOWN_MS){
-    showToast('Alert already sent', 'Your last panic alert went out moments ago.', 'warn');
+    // Nothing on screen: just repeat the vibration for the last alert's outcome (no duplicate alert is sent).
+    panicHaptic(lastPanicDelivered);
     return;
   }
-  document.getElementById('panicBtnLabel').textContent = 'Keep holding…';
   panicHoldStart = Date.now();
   panicHoldRaf = requestAnimationFrame(panicHoldTick);
   panicHoldTimer = setTimeout(() => {
@@ -6896,14 +7258,22 @@ function cancelPanicHold(completed){
   const fillEl = document.getElementById('panicBtnFill');
   const labelEl = document.getElementById('panicBtnLabel');
   if (fillEl) fillEl.style.width = '0%';
-  if (labelEl && !completed) labelEl.textContent = 'Hold for panic alert';
+  if (labelEl) labelEl.textContent = 'Hold for panic alert';   // the button always looks the same afterwards
+}
+
+// The panic button is deliberately covert: after it is pressed the button, its text and the screen look exactly
+// as before - no sound, no message, no pop-up - so a guard who was told not to press it is not put at risk.
+// The only feedback is vibration: one long buzz = the alert was delivered; fast short pulses = it was NOT
+// delivered yet (an undelivered alert is kept on the phone and retried until it gets through, then buzzes long).
+let lastPanicDelivered = false;
+function panicHaptic(delivered){
+  if (!navigator.vibrate) return;
+  navigator.vibrate(delivered ? 1200 : [70,50,70,50,70,50,70,50,70,50,70,50,70,50,70]);
 }
 
 async function triggerPanic(){
   lastPanicAt = Date.now();
-  const labelEl = document.getElementById('panicBtnLabel');
-  labelEl.textContent = 'Sending alert…';
-  SOUND.panic(); // fire immediately for the guard's own confirmation - don't wait on location/network
+  lastPanicDelivered = false;
 
   let lat = null, lng = null;
   try{
@@ -6921,24 +7291,19 @@ async function triggerPanic(){
     if (OFFLINE_ENABLED && navigator.onLine === false) error = { name: 'AbortError', message: 'offline' };
     else { const r = await withTimeout(sb.rpc('trigger_panic', panicArgs), 8000); error = r.error; if (!error) offlineMarkServerUp(); }
     if (error && OFFLINE_ENABLED && isNetworkFailure(error)){
-      // No signal: the alert is kept and retried every few seconds until it gets through.
+      // No signal: kept on the phone and retried every few seconds until it gets through.
       offlineMarkServerDown();
       await offlineEnqueue('panic', { args: panicArgs, at: new Date().toISOString() });
-      labelEl.textContent = '⚠ No signal — alert saved, sending when signal returns';
-      showToast('Panic alert saved', 'No connection. It sends automatically the moment signal returns. Call your control room if you can.', 'danger');
-      setTimeout(() => { labelEl.textContent = 'Hold for panic alert'; }, 12000);
+      panicHaptic(false);
       return;
     }
-    if (error){
-      labelEl.textContent = 'Hold for panic alert';
-      showToast('Could not send panic alert', error.message, 'danger');
-      return;
-    }
-    labelEl.textContent = '✓ Alert sent — help is on the way';
-    setTimeout(() => { labelEl.textContent = 'Hold for panic alert'; }, 8000);
+    if (error){ console.warn('panic not delivered', error.message); panicHaptic(false); return; }
+    lastPanicDelivered = true;
+    panicHaptic(true);
+    guardTrackingCheck();   // the control room's live tracking (started by the alert) begins straight away, silently
   } catch(err){
-    labelEl.textContent = 'Hold for panic alert';
-    showToast('Could not send panic alert', err.message, 'danger');
+    console.warn('panic not delivered', err);
+    panicHaptic(false);
   }
 }
 
@@ -7882,11 +8247,14 @@ document.getElementById('addCpBtn').addEventListener('click', async () => {
 document.getElementById('addSiteBtn').addEventListener('click', async () => {
   const name = document.getElementById('newSiteName').value.trim();
   const address = document.getElementById('newSiteAddress').value.trim();
+  const phone = cleanPhone(document.getElementById('newSitePhone').value);
   if (!name) return;
-  const { data, error } = await sb.from('sites').insert({ name, address: address || null }).select().single();
+  if (!isValidPhone(phone)){ showToast('Site phone number needed', 'Enter the main phone number at this site, e.g. 082 123 4567 or +27 82 123 4567.', 'warn'); document.getElementById('newSitePhone').focus(); return; }
+  const { data, error } = await sb.from('sites').insert({ name, address: address || null, phone }).select().single();
   if (error){ showToast('Could not add site', error.message, 'danger'); return; }
   document.getElementById('newSiteName').value = '';
   document.getElementById('newSiteAddress').value = '';
+  document.getElementById('newSitePhone').value = '';
   showToast('Site added', `${name} is ready to configure. Share code ${data.site_code} with its guards.`, 'success');
   await loadSites();
   setActiveSite(data.id);
@@ -8574,6 +8942,9 @@ document.querySelectorAll('[data-admin-view]').forEach(btn => {
     if (btn.dataset.adminView === 'siteoverview'){
       renderSiteOverview('admin');
     }
+    if (btn.dataset.adminView === 'tracking'){
+      trackingViewOpened('admin');
+    }
   });
 });
 
@@ -8597,6 +8968,9 @@ document.querySelectorAll('[data-ctrl-view]').forEach(btn => {
     }
     if (btn.dataset.ctrlView === 'siteoverview'){
       renderSiteOverview('ctrl');
+    }
+    if (btn.dataset.ctrlView === 'tracking'){
+      trackingViewOpened('ctrl');
     }
   });
 });
@@ -8851,9 +9225,17 @@ function uiAlertCard(n, site){
     const remainMin = Math.max(0, 60 - Math.round((nowMs() - new Date(n.occurred_at).getTime()) / 60000));
     return `<div class="alert-card sev-${n.severity}">${head}<div class="alert-foot">Clears automatically in ${remainMin}m</div></div>`;
   }
+  const panicRow = isPanic ? `
+      <div class="panic-contact">
+        ${site && site.phone
+          ? `<a class="btn btn-primary" href="${telHref(site.phone)}" style="width:auto; padding:8px 14px;">Call site · ${escapeHtmlForPrint(cleanPhone(site.phone))}</a>`
+          : '<span class="panic-nophone">Site phone number not set</span>'}
+        <button class="btn" type="button" data-track-site="${n.site_id}" style="width:auto; padding:8px 14px;">Live track</button>
+      </div>` : '';
   return `
     <div class="alert-card sev-${n.severity}${isPanic ? ' is-panic' : ''}">
       ${head}
+      ${panicRow}
       <div class="alert-actions">
         <input type="text" placeholder="Comment to resolve…" data-notif-comment="${n.id}">
         <button class="btn" data-notif-submit="${n.id}" style="flex:0 0 auto; width:auto; padding:8px 14px;">Post & clear</button>
@@ -9075,6 +9457,7 @@ const UI_PAGE_META = {
     users:         ['Users', 'Everyone in your company and their roles.'],
     attendance:    ['Attendance', 'Live coverage per site and shift, plus attendance exports.'],
     incidents:     ['Incidents', 'Reports filed by guards in the field.'],
+    tracking:      ['Live tracking', 'See where a site\'s phone is, live. Search for a site to start.'],
     reports:       ['Reports', 'Patrol reports over any date range.']
   },
   controller: {
@@ -9083,6 +9466,7 @@ const UI_PAGE_META = {
     patrols:       ['Patrols', 'Upcoming and past patrols by site.'],
     incidents:     ['Incidents', 'Read, comment on and review incident reports.'],
     attendance:    ['Attendance', 'Who is clocked in right now, per site and shift.'],
+    tracking:      ['Live tracking', 'See where a site\'s phone is, live. Search for a site to start.'],
     siteoverview:  ['Overview', 'Tag-scan and patrol completion across every site for the shift under way.'],
     sites:         ['Sites', 'Read-only site directory with map locations.'],
     team:          ['Team', 'Everyone in the company at a glance.']
