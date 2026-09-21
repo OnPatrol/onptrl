@@ -825,6 +825,22 @@ tbody tr:hover td{background:rgba(255,255,255,.025);}
 
 .dup-title{display:none !important;}
 
+/* ---- Skipped tags ---- */
+.badge.skipped{background:var(--warn-dim); color:var(--warn);}
+.log-bar.skipped{background:var(--warn);}
+.cp-dot.skipped{border-color:var(--warn); color:var(--warn); background:var(--warn-dim);}
+#scanSkipRow{display:grid !important; grid-template-columns:3fr 1fr; gap:8px;}
+#scanSkipRow .btn{width:100%; margin:0;}
+#skipTagBtn{padding:20px 0; color:var(--warn); border-color:var(--warn); background:transparent;}
+#skipTagBtn .icon{width:22px; height:22px; margin:0; vertical-align:middle;}
+#skipTagBtn:disabled{color:var(--muted); border-color:var(--border);}
+body.no-sidebar #skipTagBtn{padding:12px 0; padding:clamp(11px, 2.3dvh, 18px) 0;}
+.skip-reasons{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
+.skip-option{display:flex; align-items:center; gap:8px; min-height:54px; padding:8px 10px; text-align:left; background:var(--panel-2, var(--panel)); color:var(--text); border:1px solid var(--border); border-radius:10px; font-family:var(--sans); font-size:13px; font-weight:600; cursor:pointer;}
+.skip-option .skip-radio{flex:0 0 auto; width:16px; height:16px; border-radius:50%; border:2px solid var(--muted);}
+.skip-option.selected{border-color:var(--warn); background:var(--warn-dim);}
+.skip-option.selected .skip-radio{border-color:var(--warn); background:radial-gradient(circle, var(--warn) 0 45%, transparent 50%);}
+
 /* ---- Company name next to the logo ---- */
 .gh-company{font-size:12.5px; font-weight:600; color:var(--text); padding-left:12px; border-left:1px solid var(--border-strong); line-height:16px; white-space:nowrap; max-width:36vw; overflow:hidden; text-overflow:ellipsis;}
 @media (max-width:640px){ .gh-company{max-width:34vw; font-size:11.5px; padding-left:8px;} }
@@ -1012,8 +1028,9 @@ body.no-sidebar #view-guard .cam-box #manualScanStatus{position:fixed; left:12px
             <div class="cp-progress" id="guardPatrolCps"></div>
           </div>
 
-          <div class="btn-row" style="position:sticky; bottom:8px; background:var(--panel); padding-top:6px; margin-top:10px;">
+          <div class="btn-row" id="scanSkipRow" style="position:sticky; bottom:8px; background:var(--panel); padding-top:6px; margin-top:10px;">
             <button class="btn btn-primary" id="manualScanBtn"><svg class="icon" viewBox="0 0 24 24"><path d="M4 8V6a2 2 0 0 1 2-2h2M4 16v2a2 2 0 0 0 2 2h2M20 8V6a2 2 0 0 0-2-2h-2M20 16v2a2 2 0 0 1-2 2h-2"/></svg>Scan</button>
+            <button class="btn" id="skipTagBtn" type="button" aria-label="Skip a checkpoint" title="Skip a checkpoint"><svg class="icon" viewBox="0 0 24 24"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg></button>
           </div>
 
           <div id="panicActingAsWrap" style="display:none; margin-top:10px;">
@@ -1076,6 +1093,7 @@ body.no-sidebar #view-guard .cam-box #manualScanStatus{position:fixed; left:12px
               <option value="missed_patrol">Missed patrol</option>
               <option value="late_patrol">Late patrol</option>
               <option value="radius_alert">Position alert</option>
+              <option value="tag_skipped">Skipped tag</option>
               <option value="success_patrol">Successful patrol</option>
             </select>
           </div>
@@ -1633,6 +1651,7 @@ body.no-sidebar #view-guard .cam-box #manualScanStatus{position:fixed; left:12px
                 <option value="missed_patrol">Missed patrol</option>
                 <option value="late_patrol">Late patrol</option>
                 <option value="radius_alert">Position alert</option>
+                <option value="tag_skipped">Skipped tag</option>
                 <option value="success_patrol">Successful patrol</option>
               </select>
             </div>
@@ -1926,10 +1945,28 @@ body.no-sidebar #view-guard .cam-box #manualScanStatus{position:fixed; left:12px
   </div>
 </div>
 
+<div class="qr-modal-bg" id="skipTagModalBg">
+  <div class="detail-modal" style="max-width:420px;">
+    <h2 style="margin:0 0 4px; font-size:16px;">Skip this checkpoint?</h2>
+    <div class="result-meta" style="margin-bottom:12px; font-family:var(--sans);">The control room is alerted, and the checkpoint counts as done for this patrol. Choose why it can't be scanned.</div>
+    <div id="skipTagCheckpoint" style="font-family:var(--mono); font-size:14px; font-weight:600; margin-bottom:12px;"></div>
+    <div id="skipTagSelectWrap" style="display:none; margin-bottom:12px;">
+      <div class="field-label" style="margin-top:0;">Checkpoint</div>
+      <select id="skipTagSelect" style="margin-bottom:0;"></select>
+    </div>
+    <div id="skipTagReasons" class="skip-reasons"></div>
+    <div id="skipTagError" class="result-meta" style="color:var(--danger); display:none; margin:10px 0 0; font-family:var(--sans);"></div>
+    <div class="btn-row" style="margin-top:14px;">
+      <button class="btn" id="skipTagCancelBtn" type="button">Cancel</button>
+      <button class="btn btn-primary" id="skipTagConfirmBtn" type="button" disabled>Skip</button>
+    </div>
+  </div>
+</div>
+
 <div class="qr-modal-bg" id="incidentModalBg">
   <div class="detail-modal" style="max-width:480px;">
     <h2 style="margin:0 0 4px; font-size:16px;">Report an incident</h2>
-    <div class="result-meta" style="margin-bottom:12px;">Once submitted, the report itself can't be edited — add to it later with actions taken or a resolution, or ask a controller/admin to add a comment.</div>
+    <div class="result-meta" style="margin-bottom:12px;">Once submitted, the report itself can't be edited. If you leave the resolution blank, a controller or admin can record it on your behalf.</div>
     <div id="incidentFormError" class="result-meta" style="color:var(--danger); display:none; margin-bottom:10px; font-family:var(--sans);"></div>
 
     <div id="incidentReportingAsWrap" style="display:none; margin-bottom:10px;">
@@ -2747,7 +2784,7 @@ function acceptedScansByTag(){
   if (scanIndexMap && scanIndexRef === scans && scanIndexKey === key) return scanIndexMap;
   const map = new Map();
   for (const s of scans){
-    if (s.result !== 'ACCEPTED') continue;
+    if (s.result !== 'ACCEPTED' && s.result !== 'SKIPPED') continue;   // a skipped tag is excused, so it counts as done
     let arr = map.get(s.qrId);
     if (!arr){ arr = []; map.set(s.qrId, arr); }
     arr.push(s);
@@ -2787,6 +2824,8 @@ function instanceStatus(inst, at){
   const cpIds = routeCheckpoints(inst.routeId);
   const found = scansForInstance(inst);
   const doneCps = [...new Set(found.map(s => s.qrId))];
+  // Tags that are done only because the guard skipped them (no real scan).
+  const skippedCps = doneCps.filter(id => !found.some(s => s.qrId === id && s.result === 'ACCEPTED'));
   const totalCps = cpIds.length;
   const complete = totalCps > 0 && doneCps.length >= totalCps;
   // Expected finish (start + duration), then the grace buffer on top of that before
@@ -2823,7 +2862,7 @@ function instanceStatus(inst, at){
   // tags land as a late completion instead of being silently rejected. Once truly
   // complete, or once windowEnd passes, scanning stops.
   const scannable = !complete && at >= inst.expectedTime && at < windowEnd;
-  return { status, doneCps, totalCps, cpIds, durationEnd, concludeAt, windowEnd, scannable };
+  return { status, doneCps, skippedCps, totalCps, cpIds, durationEnd, concludeAt, windowEnd, scannable };
 }
 function nextExpectedCheckpoint(inst){
   const st = instanceStatus(inst, nowMs());
@@ -2832,6 +2871,14 @@ function nextExpectedCheckpoint(inst){
 function statusLabel(s){
   return { upcoming:'Upcoming', due_soon:'Due soon', active:'In progress', grace:'Grace period', late:'Late', completed:'Completed', completed_late:'Completed (late)', missed:'Missed' }[s] || s;
 }
+// Why a guard may skip a checkpoint they can't scan (stored on the scan as skip_reason).
+const SKIP_REASONS = [
+  { id: 'damaged',        label: 'Tag damaged' },
+  { id: 'missing',        label: 'Tag missing' },
+  { id: 'obstruction',    label: 'Tag obstruction' },
+  { id: 'not_responding', label: 'Tag not responding' }
+];
+function skipReasonLabel(id){ const r = SKIP_REASONS.find(x => x.id === id); return r ? r.label : 'Skipped'; }
 function fmtCountdown(ms){
   const sign = ms < 0 ? -1 : 1;
   ms = Math.abs(ms);
@@ -2868,7 +2915,8 @@ function rowToScan(row){
     expectedQrId: row.expected_qr_id,
     timestamp: new Date(row.created_at).getTime(),
     guardId: row.guard_id,
-    isLate: !!row.is_late
+    isLate: !!row.is_late,
+    skipReason: row.skip_reason || null
   };
 }
 
@@ -4183,7 +4231,7 @@ function setTextIf(id, val){
 function renderStats(){
   const total = scans.length;
   const accepted = scans.filter(s => s.result === 'ACCEPTED').length;
-  const rejected = total - accepted;
+  const rejected = scans.filter(s => String(s.result).startsWith('REJECTED')).length;   // skipped tags are not rejections
   const alerts = scans.filter(s => s.result === 'REJECTED_OUT_OF_RANGE' || s.result === 'REJECTED_NO_LOCATION').length;
   setTextIf('statTotal', total);
   setTextIf('statAccepted', accepted);
@@ -4302,7 +4350,7 @@ function computeSiteShiftStats(site){
     });
   });
 
-  const acceptedTags = scans.filter(s => s.siteId === site.id && s.result === 'ACCEPTED' && s.timestamp >= shiftStart).length;
+  const acceptedTags = scans.filter(s => s.siteId === site.id && (s.result === 'ACCEPTED' || s.result === 'SKIPPED') && s.timestamp >= shiftStart).length;   // skipped tags are excused, so they count as done
   const pct = expectedTags > 0 ? Math.min(100, (acceptedTags / expectedTags) * 100) : null;
   return { site, expectedTags, acceptedTags, expectedPatrols, completedPatrols, pct, shiftPatrols, shiftPatrolsDone, shiftTags, shiftTagsDone };
 }
@@ -4459,19 +4507,19 @@ function renderLog(){
   const html = shiftScans.length === 0
     ? '<div class="empty">No scans yet this shift.</div>'
     : shiftScans.slice().reverse().slice(0, 200).map(s => {
-      const ok = s.result === 'ACCEPTED';
+      const cls = s.result === 'ACCEPTED' ? 'accepted' : s.result === 'SKIPPED' ? 'skipped' : 'rejected';
       const time = new Date(s.timestamp).toLocaleTimeString([], { hour12: false });
       const site = sites.find(x => x.id === s.siteId);
       return `
         <div class="log-entry feed-row">
           <div class="feed-time">${time}</div>
-          <div class="log-bar ${ok ? 'accepted' : 'rejected'}"></div>
+          <div class="log-bar ${cls}"></div>
           <div class="log-main">
             <div class="log-top">
               <span class="feed-title">${escapeHtmlForPrint(site ? site.name : 'Unknown site')} <span class="feed-sep">·</span> ${escapeHtmlForPrint(s.cpName || 'unknown')}</span>
-              <span class="badge ${ok ? 'accepted' : 'rejected'}">${uiScanResultLabel(s.result)}</span>
+              <span class="badge ${cls}">${uiScanResultLabel(s.result)}</span>
             </div>
-            <div class="log-sub">${escapeHtmlForPrint(s.qrId)}${s.distance != null ? ' · ' + s.distance.toFixed(0) + 'm from checkpoint' : ''}${s.result === 'REJECTED_OUT_OF_ORDER' && s.expectedQrId ? ` · expected ${escapeHtmlForPrint(s.expectedQrId)} next` : ''}</div>
+            <div class="log-sub">${escapeHtmlForPrint(s.qrId)}${s.result === 'SKIPPED' ? ' · ' + escapeHtmlForPrint(skipReasonLabel(s.skipReason)) : ''}${s.distance != null ? ' · ' + s.distance.toFixed(0) + 'm from checkpoint' : ''}${s.result === 'REJECTED_OUT_OF_ORDER' && s.expectedQrId ? ` · expected ${escapeHtmlForPrint(s.expectedQrId)} next` : ''}</div>
           </div>
         </div>
       `;
@@ -4754,6 +4802,7 @@ async function openIncidentDetail(incidentId, who){
   const route = routes.find(r => r.id === inc.route_id);
   const cp = checkpoints.find(c => c.id === inc.checkpoint_id);
   const sev = INCIDENT_SEVERITY_META[inc.severity] || { emoji: '', label: inc.severity };
+  const resolverEntry = inc.resolved_by ? teamDirectory.find(p => p.id === inc.resolved_by) : null;
 
   let photoUrls = [];
   if (inc.photo_paths && inc.photo_paths.length){
@@ -4784,7 +4833,21 @@ async function openIncidentDetail(incidentId, who){
     <div class="field-label">Actions taken</div>
     <div class="result-meta" style="color:var(--text); margin-bottom:10px;">${escapeHtmlForPrint(inc.actions_taken || '—')}</div>
     <div class="field-label">Resolution</div>
-    <div class="result-meta" style="color:var(--text); margin-bottom:10px;">${escapeHtmlForPrint(inc.resolution || 'Not yet resolved')}</div>
+    ${inc.resolution ? `
+      <div class="result-meta" style="color:var(--text); margin-bottom:${resolverEntry ? '4px' : '10px'};">${escapeHtmlForPrint(inc.resolution)}</div>
+      ${resolverEntry ? `<div class="result-meta" style="margin-bottom:10px;">Recorded by ${escapeHtmlForPrint(resolverEntry.full_name)} (${escapeHtmlForPrint(resolverEntry.role)}) on behalf of the guard${inc.resolved_at ? ' · ' + new Date(inc.resolved_at).toLocaleString([], { hour12: false }) : ''}</div>` : ''}
+    ` : `
+      <div class="attendance-card" style="margin:0 0 12px;">
+        <div class="result-meta" style="margin-bottom:8px;">This report was submitted without a resolution. Record it on behalf of ${escapeHtmlForPrint(guardEntry ? guardEntry.full_name : 'the guard')} — it is saved under your name and can't be changed afterwards.</div>
+        ${inc.actions_taken ? '' : `
+          <div class="field-label" style="margin-top:0;">Actions taken <span class="result-meta">(optional)</span></div>
+          <textarea id="incidentResolveActions" rows="2" placeholder="What was done about it?" style="margin-bottom:8px;"></textarea>`}
+        <div class="field-label" style="margin-top:0;">Resolution</div>
+        <textarea id="incidentResolveInput" rows="3" placeholder="How was it resolved?" style="margin-bottom:8px;"></textarea>
+        <div id="incidentResolveError" class="result-meta" style="color:var(--danger); display:none; margin-bottom:8px; font-family:var(--sans);"></div>
+        <button class="btn btn-primary" id="incidentSaveResolutionBtn" style="width:auto; padding:8px 14px;">Save resolution</button>
+      </div>
+    `}
 
     ${photoUrls.length ? `
       <div class="field-label">Photos</div>
@@ -4811,6 +4874,34 @@ async function openIncidentDetail(incidentId, who){
   `;
 
   if (who === 'admin') wireIncidentClientEmailSection(inc, incidentId, who, incidentSiteContacts || []);
+
+  const saveResolutionBtn = document.getElementById('incidentSaveResolutionBtn');
+  if (saveResolutionBtn){
+    saveResolutionBtn.addEventListener('click', async () => {
+      const errEl = document.getElementById('incidentResolveError');
+      errEl.style.display = 'none';
+      const resolution = document.getElementById('incidentResolveInput').value.trim();
+      const actionsEl = document.getElementById('incidentResolveActions');
+      const actions = actionsEl ? actionsEl.value.trim() : '';
+      if (!resolution){ errEl.textContent = 'Write the resolution first.'; errEl.style.display = 'block'; return; }
+      saveResolutionBtn.disabled = true; saveResolutionBtn.textContent = 'Saving…';
+      const patch = { resolution, resolved_by: session.user.id, resolved_at: new Date().toISOString() };
+      if (actions) patch.actions_taken = actions;
+      // Only fills in a blank resolution - it can never overwrite one that is already there.
+      const { data: saved, error } = await sb.from('incidents').update(patch).eq('id', incidentId).eq('resolution', '').select();
+      saveResolutionBtn.disabled = false; saveResolutionBtn.textContent = 'Save resolution';
+      if (error){ errEl.textContent = 'Could not save — ' + error.message; errEl.style.display = 'block'; return; }
+      if (!saved || !saved.length){
+        errEl.textContent = 'Someone has already recorded a resolution for this report. Close and reopen it to see it.';
+        errEl.style.display = 'block';
+        return;
+      }
+      Object.assign(inc, saved[0]);
+      showToast('Resolution saved', 'Recorded on behalf of the guard under your name.', 'success');
+      renderIncidentsList(who);
+      openIncidentDetail(incidentId, who);
+    });
+  }
 
   document.getElementById('incidentAddCommentBtn').addEventListener('click', async () => {
     const input = document.getElementById('incidentCommentInput');
@@ -4850,7 +4941,7 @@ function renderIncidentClientEmailSection(inc, contacts){
     return `
       <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--border);">
         <div style="font-family:var(--sans); font-weight:700; font-size:12.5px; margin-bottom:4px;">Email to client</div>
-        <div class="result-meta">Available once a resolution has been recorded — the guard adds this from their own report.</div>
+        <div class="result-meta">Available once a resolution has been recorded — add it in the Resolution section above.</div>
       </div>
     `;
   }
@@ -5518,8 +5609,10 @@ async function pollLiveData(){
   finally{ livePolling = false; }
 }
 
+// Green "patrol completed" notices and orange "tag skipped" notices clear themselves after an hour.
+function isAutoClearing(n){ return n.severity === 'green' || n.kind === 'tag_skipped'; }
 function isGreenExpired(n){
-  return n.severity === 'green' && (nowMs() - new Date(n.occurred_at).getTime()) > 60*60*1000;
+  return isAutoClearing(n) && (nowMs() - new Date(n.occurred_at).getTime()) > 60*60*1000;
 }
 
 // Combines the site name with the notification's specific reason so an alert reads
@@ -5697,7 +5790,7 @@ async function sweepPatrolInstanceNotifications(){
 // Actually clear (not just hide) green successes once they've been visible for an hour.
 async function sweepAutoClearGreens(){
   if (!profile || (profile.role !== 'admin' && profile.role !== 'controller')) return;
-  const stale = notifications.filter(n => n.severity === 'green' && !n.cleared_at && isGreenExpired(n));
+  const stale = notifications.filter(n => isAutoClearing(n) && !n.cleared_at && isGreenExpired(n));
   if (!stale.length) return;
   const { error } = await sb.from('patrol_notifications')
     .update({ cleared_at: new Date().toISOString() })
@@ -5802,21 +5895,24 @@ function openPatrolDetail(instId){
 
   const sequenceHtml = st.cpIds.map((id, i) => {
     const done = st.doneCps.includes(id);
-    return `<span class="cp-dot ${done ? 'done' : ''}">${i+1}. ${id}${done ? ' ✓' : ''}</span>`;
+    const skipped = st.skippedCps.includes(id);
+    return `<span class="cp-dot ${skipped ? 'skipped' : done ? 'done' : ''}">${i+1}. ${id}${skipped ? ' — skipped' : done ? ' ✓' : ''}</span>`;
   }).join('');
 
   const attemptsHtml = attempts.length ? attempts.map(s => {
     const ok = s.result === 'ACCEPTED';
+    const skipped = s.result === 'SKIPPED';
     const lateFlag = ok && s.isLate
       ? ' <span style="color:var(--warn); font-family:var(--sans); font-size:10px;">(late)</span>' : '';
     const detailBits = [];
     if (s.distance != null) detailBits.push(`${s.distance.toFixed(0)}m from point`);
+    if (skipped) detailBits.push(escapeHtmlForPrint(skipReasonLabel(s.skipReason)));
     if (s.result === 'REJECTED_OUT_OF_ORDER' && s.expectedQrId) detailBits.push(`expected ${escapeHtmlForPrint(s.expectedQrId)} next`);
     return `
       <tr>
         <td>${new Date(s.timestamp).toLocaleTimeString([], { hour12: false })}</td>
         <td style="font-family:var(--sans);">${escapeHtmlForPrint(s.qrId)} — ${escapeHtmlForPrint(s.cpName || 'unknown')}</td>
-        <td><span class="badge ${ok ? 'accepted' : 'rejected'}">${s.result.replace('REJECTED_','').replace(/_/g,' ')}</span>${lateFlag}</td>
+        <td><span class="badge ${skipped ? 'skipped' : ok ? 'accepted' : 'rejected'}">${s.result.replace('REJECTED_','').replace(/_/g,' ')}</span>${lateFlag}</td>
         <td class="progress-mini">${detailBits.join(' · ') || '—'}</td>
       </tr>
     `;
@@ -5939,6 +6035,8 @@ function renderGuardPatrolCard(){
   const camBtn = document.getElementById('camToggleBtn');
   const clockedIn = !!myAttendance;
   if (scanBtn) scanBtn.disabled = !clockedIn || !gate.inProgress;
+  const skipBtn = document.getElementById('skipTagBtn');
+  if (skipBtn) skipBtn.disabled = !clockedIn || !gate.inProgress;
   if (camBtn) camBtn.disabled = !clockedIn;
 
   // Green in-camera hint: only while there's an active round with nothing scanned
@@ -5972,7 +6070,8 @@ function renderGuardPatrolCard(){
   cpsEl.innerHTML = st.cpIds.map(id => {
     const cp = checkpoints.find(c => c.qrId === id);
     const label = cp ? cp.name : id;
-    return `<span class="cp-dot ${st.doneCps.includes(id) ? 'done' : ''}">${label}${st.doneCps.includes(id) ? ' ✓' : ''}</span>`;
+    const skipped = st.skippedCps.includes(id);
+    return `<span class="cp-dot ${skipped ? 'skipped' : st.doneCps.includes(id) ? 'done' : ''}">${label}${skipped ? ' — skipped' : st.doneCps.includes(id) ? ' ✓' : ''}</span>`;
   }).join('');
 }
 
@@ -6114,7 +6213,7 @@ async function processScan(qrId){
   const isLate = Date.now() >= instSt.durationEnd;
   // Already checked in on this tag for the current patrol — reject locally without
   // touching the DB, so re-scanning a completed checkpoint never creates a new activity.
-  const alreadyScanned = !!(cp && dutyRoute && dutyRoute.cpIds.includes(qrId) && instSt.doneCps.includes(qrId));
+  const alreadyScanned = !!(cp && dutyRoute && dutyRoute.cpIds.includes(qrId) && instSt.doneCps.includes(qrId) && !instSt.skippedCps.includes(qrId));
   if (alreadyScanned){
     return { qrId, cpName: cp.name, distance: null, result: 'REJECTED_ALREADY_SCANNED', siteId: cp.siteId, expectedQrId: null, timestamp: Date.now(), localOnly: true };
   }
@@ -6129,7 +6228,7 @@ async function processScan(qrId){
     result = 'REJECTED_NO_LOCATION';
   } else if (distance > cp.radius){
     result = 'REJECTED_OUT_OF_RANGE';
-  } else if (dutyRoute && dutyRoute.strictOrder && dutyRoute.cpIds.includes(qrId)){
+  } else if (dutyRoute && dutyRoute.strictOrder && dutyRoute.cpIds.includes(qrId) && !instSt.skippedCps.includes(qrId)){
     expectedQrId = nextExpectedCheckpoint(dutyInfo.inst);
     result = (expectedQrId && expectedQrId !== qrId) ? 'REJECTED_OUT_OF_ORDER' : 'ACCEPTED';
   } else {
@@ -6226,6 +6325,144 @@ async function processScan(qrId){
   renderLog();
   return record;
 }
+
+// ---------------- Skip a checkpoint (tag damaged / missing / blocked / not responding) ----------------
+// A skip is saved like a scan (result SKIPPED + the reason), so it works offline too and every patrol
+// calculation treats the tag as excused. The database raises the orange "tag skipped" alert for the
+// control room (it clears itself after an hour, like the green ones).
+let skipModalState = { qrId: null, reason: null, busy: false };
+
+function skipCandidates(){
+  const gate = guardPatrolGate();
+  if (!myAttendance || !gate.inProgress || !gate.instSt) return null;
+  const remaining = gate.instSt.cpIds.filter(id => !gate.instSt.doneCps.includes(id));
+  if (!remaining.length) return null;
+  // Strict-order routes can only move forward, so only the next tag can be skipped.
+  const strict = !!(gate.dutyRoute && gate.dutyRoute.strictOrder);
+  return { gate, remaining: strict ? [remaining[0]] : remaining };
+}
+function skipCpName(qrId){ const cp = checkpoints.find(c => c.qrId === qrId); return cp ? cp.name : qrId; }
+
+function openSkipModal(){
+  const cand = skipCandidates();
+  if (!cand){
+    showToast('Nothing to skip', 'You can skip a checkpoint while a patrol is in progress and has checkpoints left.', 'warn');
+    return;
+  }
+  skipModalState = { qrId: cand.remaining[0], reason: null, busy: false };
+  const lineEl = document.getElementById('skipTagCheckpoint');
+  const wrap = document.getElementById('skipTagSelectWrap');
+  const sel = document.getElementById('skipTagSelect');
+  if (cand.remaining.length > 1){
+    sel.innerHTML = cand.remaining.map(id => `<option value="${escapeHtmlForPrint(id)}">${escapeHtmlForPrint(skipCpName(id))}</option>`).join('');
+    sel.value = skipModalState.qrId;
+    wrap.style.display = ''; lineEl.style.display = 'none';
+  } else {
+    wrap.style.display = 'none'; lineEl.style.display = ''; lineEl.textContent = skipCpName(cand.remaining[0]);
+  }
+  document.getElementById('skipTagReasons').innerHTML = SKIP_REASONS.map(r =>
+    `<button type="button" class="skip-option" data-skip-reason="${r.id}"><span class="skip-radio"></span>${r.label}</button>`).join('');
+  document.querySelectorAll('#skipTagReasons [data-skip-reason]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      skipModalState.reason = btn.dataset.skipReason;
+      document.querySelectorAll('#skipTagReasons .skip-option').forEach(b => b.classList.toggle('selected', b === btn));
+      document.getElementById('skipTagConfirmBtn').disabled = false;
+      document.getElementById('skipTagError').style.display = 'none';
+    });
+  });
+  document.getElementById('skipTagConfirmBtn').disabled = true;
+  document.getElementById('skipTagCancelBtn').disabled = false;
+  document.getElementById('skipTagError').style.display = 'none';
+  document.getElementById('skipTagModalBg').classList.add('show');
+}
+function closeSkipModal(){ document.getElementById('skipTagModalBg').classList.remove('show'); }
+
+// Same save path as a normal scan: server first; if there is no signal it is kept on the phone and sent later.
+async function recordSkip(qrId, reason){
+  const dutySiteId = activeDutySiteId || guardSiteId;
+  const cp = checkpoints.find(c => c.qrId === qrId && c.siteId === dutySiteId);
+  if (!cp) return { error: 'That checkpoint could not be found.' };
+  const { dutyInfo, instSt } = guardPatrolGate();
+  if (!dutyInfo || !instSt) return { error: 'No patrol is in progress any more.' };
+  // Attributed to whoever is locked in as "on patrol" for this round, same as a scan.
+  const lockedAssignment = patrolAssignmentsCache[dutyInfo.inst.id];
+  const actingGuardId = lockedAssignment ? lockedAssignment.guardId : session.user.id;
+  const actingAttendance = actingGuardId === session.user.id
+    ? myAttendance
+    : attendance.find(a => a.guardId === actingGuardId && a.status === 'on_duty' && a.siteId === dutySiteId) || myAttendance;
+  if (!actingAttendance) return { error: "You're not clocked in." };
+
+  const payload = {
+    id: offlineNewId(),
+    site_id: cp.siteId,
+    checkpoint_id: cp.id,
+    raw_qr_id: qrId,
+    route_id: dutyInfo.inst.routeId,
+    guard_id: actingGuardId,
+    attendance_id: actingAttendance.id,
+    result: 'SKIPPED',
+    skip_reason: reason,
+    distance_m: null,
+    is_mock: false,
+    is_late: Date.now() >= instSt.durationEnd,
+    expected_qr_id: null
+  };
+  let row = null, error = null, queued = false;
+  if (OFFLINE_ENABLED && navigator.onLine === false){
+    error = { name: 'AbortError', message: 'offline' };
+  } else {
+    const r = await withTimeout(sb.from('scans').insert(payload).select().single(), offlineKnownDown() ? 4000 : OFFLINE_SERVER_TIMEOUT_MS);
+    row = r.data; error = r.error;
+    if (!error) offlineMarkServerUp();
+  }
+  if (error && OFFLINE_ENABLED && isNetworkFailure(error)){
+    offlineMarkServerDown();
+    row = Object.assign({}, payload, { created_at: new Date().toISOString() });
+    await offlineEnqueue('scan', { row });
+    queued = true;
+    error = null;
+  }
+  if (error) return { error: error.message || 'Could not save the skip.' };
+
+  const record = rowToScan(row);
+  if (!scans.some(s => s.id === record.id)) scans.push(record);
+  scans.sort((a, b) => a.timestamp - b.timestamp);
+  return { record, queued, cpName: cp.name };
+}
+
+async function confirmSkip(){
+  if (skipModalState.busy || !skipModalState.reason) return;
+  const sel = document.getElementById('skipTagSelect');
+  if (document.getElementById('skipTagSelectWrap').style.display !== 'none' && sel.value) skipModalState.qrId = sel.value;
+  const errEl = document.getElementById('skipTagError');
+  const cand = skipCandidates();
+  if (!cand || !cand.remaining.includes(skipModalState.qrId)){
+    errEl.textContent = 'This checkpoint can no longer be skipped — the patrol may have moved on.';
+    errEl.style.display = 'block';
+    return;
+  }
+  skipModalState.busy = true;
+  const confirmBtn = document.getElementById('skipTagConfirmBtn');
+  const cancelBtn = document.getElementById('skipTagCancelBtn');
+  confirmBtn.disabled = true; cancelBtn.disabled = true;
+  const res = await recordSkip(skipModalState.qrId, skipModalState.reason);
+  skipModalState.busy = false;
+  cancelBtn.disabled = false;
+  if (res.error){
+    errEl.textContent = res.error;
+    errEl.style.display = 'block';
+    confirmBtn.disabled = false;
+    return;
+  }
+  closeSkipModal();
+  showToast('Checkpoint skipped',
+    res.queued ? `${res.cpName} — ${skipReasonLabel(skipModalState.reason)}. No connection: saved on this phone, the control room is alerted when it sends.`
+               : `${res.cpName} — ${skipReasonLabel(skipModalState.reason)}. The control room has been alerted.`, 'warn');
+  renderStats(); renderLog(); renderGuardPatrolCard();
+}
+document.getElementById('skipTagBtn').addEventListener('click', openSkipModal);
+document.getElementById('skipTagCancelBtn').addEventListener('click', closeSkipModal);
+document.getElementById('skipTagConfirmBtn').addEventListener('click', confirmSkip);
 
 let resultCardHideTimer = null;
 function showResult(record){
@@ -7962,7 +8199,9 @@ async function computeReport(){
         const cpDetail = cpIds.map(id => {
           const cp = checkpoints.find(c => c.qrId === id);
           const t = firstScanAt[id];
-          return { name: cp ? cp.name : id, qrId: id, scannedAt: t != null ? t : null };
+          const skipRow = found.find(s => s.qrId === id && s.result === 'SKIPPED');
+          const wasScanned = found.some(s => s.qrId === id && s.result === 'ACCEPTED');
+          return { name: cp ? cp.name : id, qrId: id, scannedAt: t != null ? t : null, skipped: (!wasScanned && skipRow) ? skipReasonLabel(skipRow.skipReason) : null };
         });
         detail.push({
           siteName: site ? site.name : '—',
@@ -7992,6 +8231,13 @@ async function computeReport(){
   return true;
 }
 
+// One line per checkpoint in the patrol report: scan time, skipped (with the reason), or not scanned.
+function reportCpLabel(cp){
+  const what = cp.skipped
+    ? `skipped (${escapeHtmlForPrint(cp.skipped)})`
+    : (cp.scannedAt != null ? new Date(cp.scannedAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12: false}) : 'not scanned');
+  return `${escapeHtmlForPrint(cp.name)} — ${what}`;
+}
 function renderReport(){
   const summary = lastReportSummary;
   document.getElementById('repScheduled').textContent = summary.scheduled;
@@ -8009,7 +8255,7 @@ function renderReport(){
 
   const detailBody = document.getElementById('reportDetailBody');
   detailBody.innerHTML = lastReportDetail.length ? lastReportDetail.map(d => {
-    const cpText = d.checkpoints.map(cp => `${escapeHtmlForPrint(cp.name)} — ${cp.scannedAt != null ? new Date(cp.scannedAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12: false}) : 'not scanned'}`).join('<br>');
+    const cpText = d.checkpoints.map(reportCpLabel).join('<br>');
     return `<tr><td style="font-family:var(--sans);">${escapeHtmlForPrint(d.siteName)}</td><td style="font-family:var(--sans);">${escapeHtmlForPrint(d.routeName)}</td><td>${new Date(d.expectedTime).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', hour12: false})}</td><td>${statusLabel(d.status)}</td><td style="font-family:var(--sans);">${cpText}</td></tr>`;
   }).join('') : '<tr><td colspan="5" style="font-family:var(--sans); color:var(--muted);">No resolved patrols in this range.</td></tr>';
 
@@ -8198,7 +8444,7 @@ document.getElementById('printPdfReportBtn').addEventListener('click', async () 
     }).join('') || '<tr><td colspan="7" class="empty-row">No resolved patrols in this range.</td></tr>';
 
     const detailRows = lastReportDetail.map(d => {
-      const cpText = d.checkpoints.map(cp => `${escapeHtmlForPrint(cp.name)} — ${cp.scannedAt != null ? new Date(cp.scannedAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hour12: false}) : 'not scanned'}`).join('<br>');
+      const cpText = d.checkpoints.map(reportCpLabel).join('<br>');
       return `<tr><td>${escapeHtmlForPrint(d.siteName)}</td><td>${escapeHtmlForPrint(d.routeName)}</td><td>${new Date(d.expectedTime).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', hour12: false})}</td><td>${statusLabel(d.status)}</td><td>${cpText}</td></tr>`;
     }).join('') || '<tr><td colspan="5" class="empty-row">No resolved patrols in this range.</td></tr>';
 
@@ -8559,6 +8805,7 @@ const UI_KIND_LABELS = {
   missed_patrol: 'Missed patrol',
   late_patrol: 'Late patrol',
   radius_alert: 'Position alert',
+  tag_skipped: 'Tag skipped',
   success_patrol: 'Patrol completed'
 };
 
@@ -8574,6 +8821,7 @@ function fmtTs(ms){
 }
 function uiScanResultLabel(result){
   if (result === 'ACCEPTED') return 'Accepted';
+  if (result === 'SKIPPED') return 'Skipped';
   const t = String(result || '').replace('REJECTED_', '').replace(/_/g, ' ').toLowerCase();
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
@@ -8599,9 +8847,9 @@ function uiAlertCard(n, site){
         <span class="alert-time">${timeAgo(n.occurred_at)}</span>
       </div>
     </div>`;
-  if (n.severity === 'green'){
+  if (isAutoClearing(n)){
     const remainMin = Math.max(0, 60 - Math.round((nowMs() - new Date(n.occurred_at).getTime()) / 60000));
-    return `<div class="alert-card sev-green">${head}<div class="alert-foot">Clears automatically in ${remainMin}m</div></div>`;
+    return `<div class="alert-card sev-${n.severity}">${head}<div class="alert-foot">Clears automatically in ${remainMin}m</div></div>`;
   }
   return `
     <div class="alert-card sev-${n.severity}${isPanic ? ' is-panic' : ''}">
@@ -8617,7 +8865,7 @@ function uiResolvedRow(n, site){
   const comment = (n.notification_comments || []).slice().sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
   const note = comment
     ? `<div class="rr-note">“${escapeHtmlForPrint(comment.body)}” — ${escapeHtmlForPrint((comment.profiles && comment.profiles.full_name) || 'Someone')}</div>`
-    : (n.severity === 'green' ? '<div class="rr-note">Auto-cleared</div>' : '');
+    : (isAutoClearing(n) ? '<div class="rr-note">Auto-cleared</div>' : '');
   return `
     <div class="resolved-row">
       <span class="st st-success">Resolved</span>
@@ -8644,6 +8892,7 @@ function uiIncidentCard(inc, site, guardEntry){
         </div>
         <div class="incident-badges">
           <span class="st st-${tone}">${escapeHtmlForPrint(meta.label)}</span>
+          ${inc.resolution ? '' : '<span class="st st-warn">Unresolved</span>'}
           <span class="st ${reviewed ? 'st-success' : 'st-info'}">${reviewed ? 'Reviewed' : 'Open'}</span>
         </div>
       </div>
@@ -8732,6 +8981,7 @@ function renderLiveFeed(){
   const rows = scans.filter(s => s.timestamp >= shiftStart).slice(-8).reverse();
   el.innerHTML = rows.length ? `<div class="feed-compact">${rows.map(s => {
     const ok = s.result === 'ACCEPTED';
+    const skipped = s.result === 'SKIPPED';
     const site = sites.find(x => x.id === s.siteId);
     const time = new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
     return `
@@ -8741,7 +8991,7 @@ function renderLiveFeed(){
           <span class="feed-title">${escapeHtmlForPrint(s.cpName || 'Unknown checkpoint')}</span>
           <div class="feed-meta">${escapeHtmlForPrint(site ? site.name : 'Unknown site')}</div>
         </div>
-        <span class="st ${ok ? 'st-success' : 'st-crit'}">${uiScanResultLabel(s.result)}</span>
+        <span class="st ${ok ? 'st-success' : skipped ? 'st-warn' : 'st-crit'}">${uiScanResultLabel(s.result)}</span>
       </div>`;
   }).join('')}</div>` : '<div class="empty">No scans yet this shift.</div>';
 }
