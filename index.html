@@ -924,6 +924,7 @@ body.no-sidebar #view-guard .cam-box #manualScanStatus{position:fixed; left:12px
         <button class="nav-item" data-ctrl-view="patrols"><svg class="icon" viewBox="0 0 24 24"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg><span>Patrols</span></button>
         <button class="nav-item" data-ctrl-view="incidents"><svg class="icon" viewBox="0 0 24 24"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><path d="M12 9v4M12 17h.01"/></svg><span>Incidents</span></button>
         <button class="nav-item" data-ctrl-view="attendance"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>Attendance</span></button>
+        <button class="nav-item" id="ctrlAuditNavBtn" data-ctrl-view="audit" style="display:none;"><svg class="icon" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></svg><span>Audit trail</span></button>
         <button class="nav-item" data-ctrl-view="tracking"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="22" y1="12" x2="18" y2="12"/><line x1="6" y1="12" x2="2" y2="12"/><line x1="12" y1="6" x2="12" y2="2"/><line x1="12" y1="22" x2="12" y2="18"/><circle cx="12" cy="12" r="2"/></svg><span>Live tracking</span></button>
         <button class="nav-item" data-ctrl-view="siteoverview"><svg class="icon" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg><span>Overview</span></button>
       </div>
@@ -1522,6 +1523,10 @@ body.no-sidebar #view-guard .cam-box #manualScanStatus{position:fixed; left:12px
         <div class="result-meta" id="attExportStatus" style="margin-top:6px;"></div>
       </div>
 
+      <div class="panel" id="adminAuditPanel">
+        <h2>Audit trail</h2>
+      </div>
+
       <div class="panel">
         <h2>Patrol reports</h2>
         <div class="result-meta" style="margin-bottom:14px;">Summarize how patrols performed over a date range — per site, per patrol, or overall — and download the results.</div>
@@ -1694,6 +1699,10 @@ body.no-sidebar #view-guard .cam-box #manualScanStatus{position:fixed; left:12px
   </div>
 
   <div class="ctrl-view" id="ctrl-tracking"></div>
+
+  <div class="ctrl-view" id="ctrl-audit">
+    <div class="panel" id="ctrlAuditPanel"><h2>Audit trail</h2></div>
+  </div>
 
   <div class="ctrl-view" id="ctrl-sites">
     <div class="panel">
@@ -2974,6 +2983,313 @@ function guardTrackingStop(){
 }
 setInterval(guardTrackingCheck, 10000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden){ guardTrackingCheck(); guardTrackingWakeLock(); } });
+
+// ============================================================
+// Audit trail (admin always; controller only if the admin has switched it on for this company):
+// who did what, when - viewable and downloadable
+// ============================================================
+
+function auditPanelMarkup(prefix, showControllerToggle){
+  const toggle = showControllerToggle ? `
+    <div class="site-contact-row" style="margin-bottom:12px;">
+      <div style="flex:1;">
+        <div class="site-contact-name">Let controllers view this audit trail</div>
+        <div class="result-meta">Controllers can already see everything they need to do their job. This only controls whether they can also open this trail (read-only - they can never edit or delete it either).</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="${prefix}AuditControllerAccess"><span class="slider"></span></label>
+    </div>` : '';
+  return `
+    <div class="result-meta" style="margin-bottom:12px;">A permanent record of who did what, and when, across your company: changes to sites, routes and people, alerts and panic, incidents, attendance, downloads and sign-ins. Entries can't be edited or deleted, and each is chained to the one before it, so any tampering shows up.</div>
+    ${toggle}
+    <div class="inline-fields">
+      <div class="f"><label>From</label><input type="date" id="${prefix}AuditFrom"></div>
+      <div class="f"><label>To</label><input type="date" id="${prefix}AuditTo"></div>
+      <div class="f"><label>Site</label><select id="${prefix}AuditSite"><option value="">All sites</option></select></div>
+      <div class="f"><label>Person</label><select id="${prefix}AuditActor"><option value="">Everyone</option></select></div>
+      <div class="f"><label>Type</label><select id="${prefix}AuditType"><option value="">Everything</option></select></div>
+      <div class="f"><label>Search</label><input type="text" id="${prefix}AuditSearch" placeholder="e.g. phone, panic, a name"></div>
+    </div>
+    <div class="btn-row" style="margin-top:10px; flex-wrap:wrap;">
+      <button class="btn btn-primary" id="${prefix}AuditShowBtn" style="width:auto; padding:9px 14px;">Show</button>
+      <button class="btn" id="${prefix}AuditCsvBtn" style="width:auto; padding:9px 14px;"><svg class="icon" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/></svg> Download CSV</button>
+      <button class="btn" id="${prefix}AuditPrintBtn" style="width:auto; padding:9px 14px;"><svg class="icon" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 17v4h12v-4"/></svg> Print / PDF</button>
+      <button class="btn" id="${prefix}AuditVerifyBtn" style="width:auto; padding:9px 14px;">Check integrity</button>
+    </div>
+    <div class="result-meta" id="${prefix}AuditIntegrity" style="margin-top:8px;"></div>
+    <div class="result-meta" id="${prefix}AuditStatus" style="margin-top:4px;"></div>
+    <div class="table-scroll" style="margin-top:10px;">
+      <table>
+        <thead><tr><th>When (SAST)</th><th>Who</th><th>What</th><th>Details</th><th>Site</th></tr></thead>
+        <tbody id="${prefix}AuditBody"><tr><td colspan="5" style="font-family:var(--sans); color:var(--muted);">Open this page to load the trail.</td></tr></tbody>
+      </table>
+    </div>
+    <div class="result-meta" id="${prefix}AuditCount" style="margin-top:6px;"></div>
+    <div class="btn-row" style="margin-top:6px;"><button class="btn" id="${prefix}AuditMoreBtn" style="display:none; width:auto; padding:8px 14px;">Load more</button></div>`;
+}
+function auditFillPanel(prefix, showControllerToggle){
+  const panel = document.getElementById(prefix + 'AuditPanel');
+  if (panel && !panel.dataset.filled){ panel.dataset.filled = '1'; panel.innerHTML = auditPanelMarkup(prefix, showControllerToggle); }
+}
+
+const AUDIT_TZ = 'Africa/Johannesburg';
+const AUDIT_PAGE = 200;
+const AUDIT_TYPES = {
+  setup:      { label: 'Sites, routes & schedules', entities: ['site', 'checkpoint', 'route', 'schedule', 'shift', 'contact', 'vehicle', 'alert settings'] },
+  people:     { label: 'People & accounts',         entities: ['user', 'admin invite code', 'controller invite code', 'company', 'platform admin'], actions: ['password_reset'] },
+  alerts:     { label: 'Alerts & panic',            entities: ['alert', 'alert comment'], actions: ['panic'] },
+  incidents:  { label: 'Incidents',                 entities: ['incident', 'incident comment'], actions: ['email_incident'] },
+  attendance: { label: 'Attendance & patrol assignments', entities: ['attendance', 'absence', 'patrol assignment'] },
+  tracking:   { label: 'Live tracking',             entities: ['live tracking'] },
+  scans:      { label: 'Scan changes & comments',   entities: ['scan', 'scan comment'] },
+  exports:    { label: 'Downloads & printouts',     actions: ['export', 'print'] },
+  signins:    { label: 'Sign-ins',                  actions: ['sign_in'] }
+};
+const auditState = { prefix: null, rows: [], done: false, loading: false, wired: {}, lastFilters: null };
+const aEl = id => document.getElementById(auditState.prefix + id);
+let controllerAuditAccess = false;   // this company's choice, set by the admin; fetched at sign-in
+
+// Records something the database cannot see by itself (sign-ins, downloads, emails).
+async function logAudit(action, entity, entityId, siteId, summary, details){
+  try{
+    await sb.rpc('audit_event', { p_action: action, p_entity: entity, p_entity_id: entityId ? String(entityId) : null, p_site: siteId || null, p_summary: summary, p_details: details || null });
+  }catch(e){ console.warn('audit event not recorded', e); }
+}
+// One sign-in record per device per 8 hours (not one per page reload).
+function auditSignIn(){
+  try{
+    if (!profile || offlineMode || (session && session.offline)) return;
+    const key = 'onpatrol_audit_signin';
+    const last = Number(localStorage.getItem(key) || 0);
+    if (Date.now() - last < 8 * 60 * 60 * 1000) return;
+    localStorage.setItem(key, String(Date.now()));
+    logAudit('sign_in', 'session', session.user.id, profile.site_id || null, `Signed in (${profile.role}) on ${incidentDeviceLabel()}`, { device: incidentDeviceLabel() });
+  }catch(e){}
+}
+
+function auditWhen(iso){
+  return new Date(iso).toLocaleString('en-ZA', { timeZone: AUDIT_TZ, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+}
+function auditNextDay(ymd){ const d = new Date(ymd + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0, 10); }
+function auditReadFilters(){
+  return {
+    from: aEl('auditFrom').value, to: aEl('auditTo').value, site: aEl('auditSite').value,
+    actor: aEl('auditActor').value, type: aEl('auditType').value, q: aEl('auditSearch').value.trim()
+  };
+}
+function auditFilterText(f){
+  const bits = [];
+  bits.push(`${f.from || 'the start'} to ${f.to || 'today'} (South African time)`);
+  if (f.site){ const s = sites.find(x => x.id === f.site); bits.push('site: ' + (s ? s.name : f.site)); }
+  if (f.actor){ bits.push('person: ' + (f.actor === 'system' ? 'System (automatic)' : ((teamDirectory.find(u => u.id === f.actor) || {}).full_name || f.actor))); }
+  if (f.type) bits.push('type: ' + (AUDIT_TYPES[f.type] || {}).label);
+  if (f.q) bits.push('search: "' + f.q + '"');
+  return bits.join(' · ');
+}
+function auditQuery(f){
+  let q = sb.from('audit_log').select('*').order('id', { ascending: false });
+  if (f.from) q = q.gte('occurred_at', f.from + 'T00:00:00+02:00');
+  if (f.to) q = q.lt('occurred_at', auditNextDay(f.to) + 'T00:00:00+02:00');
+  if (f.site) q = q.eq('site_id', f.site);
+  if (f.actor === 'system') q = q.is('actor_id', null); else if (f.actor) q = q.eq('actor_id', f.actor);
+  if (f.type && AUDIT_TYPES[f.type]){
+    const t = AUDIT_TYPES[f.type], parts = [];
+    if (t.entities) parts.push(`entity.in.(${t.entities.map(e => '"' + e + '"').join(',')})`);
+    if (t.actions) parts.push(`action.in.(${t.actions.map(a => '"' + a + '"').join(',')})`);
+    q = q.or(parts.join(','));
+  }
+  if (f.q){
+    const s = f.q.replace(/[%,()"*\\]/g, ' ').trim();
+    if (s) q = q.or(`summary.ilike.%${s}%,entity_label.ilike.%${s}%,actor_name.ilike.%${s}%`);
+  }
+  return q;
+}
+function auditActionPill(a){
+  const cls = { created: 'st-success', changed: 'st-info', deleted: 'st-crit', panic: 'st-crit', cleared: 'st-warn', resolved: 'st-success', scan_changed: 'st-crit' }[a] || 'st-info';
+  return `<span class="st ${cls}">${escapeHtmlForPrint(String(a).replace(/_/g, ' '))}</span>`;
+}
+function auditRowHtml(r){
+  const site = r.site_id ? (sites.find(s => s.id === r.site_id) || {}).name || '' : '';
+  const who = r.actor_name
+    ? `${escapeHtmlForPrint(r.actor_name)} <span class="result-meta">${escapeHtmlForPrint(r.actor_role || '')}</span>`
+    : '<span class="result-meta">System (automatic)</span>';
+  const details = r.details ? `<details style="margin-top:4px;"><summary class="result-meta" style="cursor:pointer;">details</summary><pre style="white-space:pre-wrap; font-size:11px; margin:4px 0 0;">${escapeHtmlForPrint(JSON.stringify(r.details, null, 1))}</pre></details>` : '';
+  return `<tr>
+    <td style="white-space:nowrap; font-family:var(--mono); font-size:12px;">${auditWhen(r.occurred_at)}</td>
+    <td style="font-family:var(--sans);">${who}</td>
+    <td>${auditActionPill(r.action)}</td>
+    <td style="font-family:var(--sans);">${escapeHtmlForPrint(r.summary)}${details}</td>
+    <td style="font-family:var(--sans); color:var(--muted);">${escapeHtmlForPrint(site)}</td>
+  </tr>`;
+}
+function auditRenderTable(){
+  const body = aEl('auditBody');
+  body.innerHTML = auditState.rows.length
+    ? auditState.rows.map(auditRowHtml).join('')
+    : '<tr><td colspan="5" style="font-family:var(--sans); color:var(--muted);">Nothing recorded for these filters.</td></tr>';
+  aEl('auditCount').textContent = auditState.rows.length
+    ? `Showing ${auditState.rows.length} entr${auditState.rows.length === 1 ? 'y' : 'ies'}${auditState.done ? '' : ' (newest first) — more available'}.`
+    : '';
+  aEl('auditMoreBtn').style.display = auditState.rows.length && !auditState.done ? '' : 'none';
+}
+async function auditLoad(more){
+  if (auditState.loading) return;
+  auditState.loading = true;
+  const status = aEl('auditStatus');
+  status.textContent = 'Loading…';
+  try{
+    const f = more && auditState.lastFilters ? auditState.lastFilters : auditReadFilters();
+    if (!more){ auditState.rows = []; auditState.done = false; auditState.lastFilters = f; }
+    let q = auditQuery(f);
+    if (more && auditState.rows.length) q = q.lt('id', auditState.rows[auditState.rows.length - 1].id);
+    const { data, error } = await q.limit(AUDIT_PAGE);
+    if (error) throw error;
+    auditState.rows = auditState.rows.concat(data || []);
+    if (!data || data.length < AUDIT_PAGE) auditState.done = true;
+    status.textContent = '';
+    auditRenderTable();
+  }catch(e){ status.textContent = 'Could not load the audit trail — ' + (e.message || e); }
+  finally{ auditState.loading = false; }
+}
+// Every entry matching the filters, oldest to newest, for a download or printout.
+async function auditFetchAll(f, max){
+  const out = []; let lastId = null;
+  while (out.length < max){
+    let q = auditQuery(f);
+    if (lastId != null) q = q.lt('id', lastId);
+    const { data, error } = await q.limit(1000);
+    if (error) throw error;
+    if (!data || !data.length) break;
+    out.push(...data); lastId = data[data.length - 1].id;
+    if (data.length < 1000) break;
+  }
+  return { rows: out.slice(0, max).reverse(), truncated: out.length >= max };
+}
+async function auditIntegrity(){
+  const el = aEl('auditIntegrity');
+  el.textContent = 'Checking…';
+  const { data, error } = await sb.rpc('audit_verify');
+  if (error || !data || !data[0]){ el.innerHTML = '<span style="color:var(--warn);">Could not check integrity — ' + escapeHtmlForPrint(error ? error.message : 'no answer') + '</span>'; return null; }
+  const r = data[0];
+  el.innerHTML = r.ok
+    ? `<span style="color:var(--ok, #22c55e); font-weight:600;">✓ Intact</span> — ${r.rows_checked} entries checked; none altered or removed. Fingerprint <span style="font-family:var(--mono);">${escapeHtmlForPrint((r.last_hash || '').slice(0, 16))}</span>`
+    : `<span style="color:var(--danger); font-weight:700;">✗ Tampering detected</span> — entry #${r.first_bad_id} does not match its fingerprint. Contact support.`;
+  return r;
+}
+function auditCsvCell(v){
+  let s = String(v == null ? '' : v);
+  if (/^[=+\-@]/.test(s)) s = "'" + s;
+  return '"' + s.replace(/"/g, '""') + '"';
+}
+async function auditDownloadCsv(){
+  const status = aEl('auditStatus'); status.textContent = 'Preparing…';
+  try{
+    const f = auditReadFilters();
+    const { rows, truncated } = await auditFetchAll(f, 20000);
+    const integ = await auditIntegrity();
+    const lines = [
+      ['OnPatrol audit trail'], ['Company', companyName || ''], ['Filters', auditFilterText(f)],
+      ['Generated', auditWhen(new Date().toISOString()) + ' (SAST) by ' + ((profile && profile.full_name) || '')],
+      ['Integrity', integ ? (integ.ok ? `Intact - ${integ.rows_checked} entries checked, fingerprint ${(integ.last_hash || '').slice(0, 16)}` : `TAMPERING DETECTED at entry #${integ.first_bad_id}`) : 'not checked'],
+      truncated ? ['Note', 'Limited to the newest 20000 entries - narrow the dates for the rest'] : [], []
+    ];
+    lines.push(['Entry', 'Time (SAST)', 'Who', 'Role', 'What', 'Area', 'Item', 'Site', 'Summary', 'Details', 'Source', 'Entry fingerprint']);
+    rows.forEach(r => lines.push([
+      r.id, auditWhen(r.occurred_at), r.actor_name || 'System', r.actor_role || '', r.action, r.entity, r.entity_label || '',
+      r.site_id ? ((sites.find(s => s.id === r.site_id) || {}).name || '') : '', r.summary, r.details ? JSON.stringify(r.details) : '', r.source, (r.row_hash || '').slice(0, 12)
+    ]));
+    const csv = '\ufeff' + lines.map(row => row.map(auditCsvCell).join(',')).join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `audit-trail_${f.from || 'start'}_to_${f.to || 'today'}.csv`;
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    status.textContent = `Downloaded ${rows.length} entr${rows.length === 1 ? 'y' : 'ies'}.`;
+    logAudit('export', 'audit_trail', null, f.site || null, `Downloaded the audit trail as CSV (${rows.length} entries) - ${auditFilterText(f)}`, { format: 'csv', entries: rows.length });
+  }catch(e){ status.textContent = 'Could not download — ' + (e.message || e); }
+}
+async function auditPrint(){
+  const status = aEl('auditStatus'); status.textContent = 'Preparing…';
+  try{
+    const f = auditReadFilters();
+    const { rows, truncated } = await auditFetchAll(f, 3000);
+    const integ = await auditIntegrity();
+    const logoEl = document.querySelector('.brand-logo');
+    const logoSrc = logoEl ? logoEl.getAttribute('src') : null;
+    const win = window.open('', '_blank');
+    if (!win){ status.textContent = 'Your browser blocked the print window — allow popups for this site and try again.'; return; }
+    const integText = integ ? (integ.ok ? `Intact — ${integ.rows_checked} entries checked, none altered or removed. Fingerprint ${(integ.last_hash || '').slice(0, 16)}` : `TAMPERING DETECTED at entry #${integ.first_bad_id}`) : 'not checked';
+    const body = rows.map(r => `<tr><td>${auditWhen(r.occurred_at)}</td><td>${escapeHtmlForPrint(r.actor_name || 'System')}${r.actor_role ? ' (' + escapeHtmlForPrint(r.actor_role) + ')' : ''}</td><td>${escapeHtmlForPrint(String(r.action).replace(/_/g, ' '))}</td><td>${escapeHtmlForPrint(r.summary)}</td><td>${escapeHtmlForPrint(r.site_id ? ((sites.find(s => s.id === r.site_id) || {}).name || '') : '')}</td><td style="font-family:monospace;">#${r.id}</td></tr>`).join('') || '<tr><td colspan="6" class="empty-row">Nothing recorded for these filters.</td></tr>';
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>OnPatrol audit trail</title>
+<style>
+  @page { size: A4 landscape; margin: 1.2cm; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin:0; color:#111; }
+  .header { display:flex; align-items:center; gap:14px; background:#0b0f14; padding:14px 18px; border-radius:10px; }
+  .header img { height:36px; width:auto; }
+  .header h1 { color:#fff; font-size:19px; margin:0; }
+  .header .meta { color:#b9c2cc; font-size:11px; margin-top:2px; }
+  .box { border:1px solid #ddd; border-radius:8px; padding:8px 12px; margin-top:12px; font-size:11px; line-height:1.5; }
+  table { width:100%; border-collapse:collapse; font-size:10px; margin-top:12px; }
+  th, td { border:1px solid #ddd; padding:4px 6px; text-align:left; vertical-align:top; }
+  th { background:#14314f; color:#fff; }
+  tr:nth-child(even) td { background:#f7f9fb; }
+  .empty-row { color:#888; text-align:center; }
+  tr { page-break-inside:avoid; }
+  footer { margin-top:14px; font-size:9px; color:#888; }
+</style></head><body>
+<div class="header">${logoSrc ? `<img src="${logoSrc}" alt="OnPatrol">` : ''}<div><h1>Audit trail</h1><div class="meta">${escapeHtmlForPrint(companyName || '')} · generated ${auditWhen(new Date().toISOString())} (SAST) by ${escapeHtmlForPrint((profile && profile.full_name) || '')}</div></div></div>
+<div class="box"><b>Filters:</b> ${escapeHtmlForPrint(auditFilterText(f))}<br><b>Integrity:</b> ${escapeHtmlForPrint(integText)}<br><b>Entries:</b> ${rows.length}${truncated ? ' (limited to the newest 3000 — narrow the dates or use the CSV download for the rest)' : ''}. Entries are kept in order, cannot be edited or deleted, and each is chained to the one before it.</div>
+<table><thead><tr><th>Time (SAST)</th><th>Who</th><th>What</th><th>Summary</th><th>Site</th><th>Entry</th></tr></thead><tbody>${body}</tbody></table>
+<footer>OnPatrol audit trail · times are South African time · printed ${auditWhen(new Date().toISOString())}</footer>
+<script>window.onload = function(){ setTimeout(function(){ window.print(); }, 300); };<\/script>
+</body></html>`);
+    win.document.close();
+    status.textContent = `Opened ${rows.length} entr${rows.length === 1 ? 'y' : 'ies'} for printing.`;
+    logAudit('print', 'audit_trail', null, f.site || null, `Printed the audit trail (${rows.length} entries) - ${auditFilterText(f)}`, { format: 'pdf', entries: rows.length });
+  }catch(e){ status.textContent = 'Could not prepare the printout — ' + (e.message || e); }
+}
+function auditInit(prefix){
+  if (!profile || !(profile.role === 'admin' || (profile.role === 'controller' && controllerAuditAccess))) return;
+  auditState.prefix = prefix;
+  const siteSel = aEl('auditSite'), actorSel = aEl('auditActor'), typeSel = aEl('auditType');
+  if (!auditState.wired[prefix]){
+    auditState.wired[prefix] = true;
+    typeSel.innerHTML = '<option value="">Everything</option>' + Object.keys(AUDIT_TYPES).map(k => `<option value="${k}">${AUDIT_TYPES[k].label}</option>`).join('');
+    const today = new Date(), weekAgo = new Date(Date.now() - 6 * 86400000);
+    const ymd = d => new Date(d.getTime() + 2 * 3600000).toISOString().slice(0, 10);   // South African date
+    aEl('auditTo').value = ymd(today); aEl('auditFrom').value = ymd(weekAgo);
+    aEl('auditShowBtn').addEventListener('click', () => auditLoad(false));
+    aEl('auditMoreBtn').addEventListener('click', () => auditLoad(true));
+    aEl('auditCsvBtn').addEventListener('click', auditDownloadCsv);
+    aEl('auditPrintBtn').addEventListener('click', auditPrint);
+    aEl('auditVerifyBtn').addEventListener('click', auditIntegrity);
+    aEl('auditSearch').addEventListener('keydown', e => { if (e.key === 'Enter') auditLoad(false); });
+  }
+  const keepSite = siteSel.value, keepActor = actorSel.value;
+  siteSel.innerHTML = '<option value="">All sites</option>' + sites.map(s => `<option value="${s.id}">${escapeHtmlForPrint(s.name)}</option>`).join('');
+  siteSel.value = keepSite;
+  actorSel.innerHTML = '<option value="">Everyone</option><option value="system">System (automatic)</option>' +
+    teamDirectory.slice().sort((a, b) => String(a.full_name).localeCompare(String(b.full_name))).map(u => `<option value="${u.id}">${escapeHtmlForPrint(u.full_name || u.id)} (${escapeHtmlForPrint(u.role)})</option>`).join('');
+  actorSel.value = keepActor;
+  if (prefix === 'admin'){
+    const toggle = document.getElementById('adminAuditControllerAccess');
+    if (toggle && !toggle.dataset.wired){
+      toggle.dataset.wired = '1';
+      sb.from('organizations').select('controller_audit_access').eq('id', profile.org_id).single().then(({ data }) => { toggle.checked = !!(data && data.controller_audit_access); });
+      toggle.addEventListener('change', async () => {
+        toggle.disabled = true;
+        const { error } = await sb.from('organizations').update({ controller_audit_access: toggle.checked }).eq('id', profile.org_id);
+        toggle.disabled = false;
+        if (error){ toggle.checked = !toggle.checked; showToast('Could not save', error.message, 'danger'); return; }
+        controllerAuditAccess = toggle.checked;
+        showToast(toggle.checked ? 'Controllers can now open the audit trail' : 'Controllers can no longer open the audit trail', '', 'success');
+      });
+    }
+  }
+  if (!teamDirectory.length) loadTeamDirectory().then(() => auditInit());
+  auditLoad(false);
+  auditIntegrity();
+}
 // sb.functions.invoke() only puts the real error message in `data` when the
 // edge function returns 2xx. On a non-2xx response, `data` is null and
 // `error.message` is just the generic "Edge Function returned a non-2xx
@@ -4334,6 +4650,8 @@ async function loadProfileAndApp(){
   renderAll();
   subscribeRealtime();
   loadCompanyName();
+  auditSignIn();
+  loadControllerAuditAccess();
   if (!notificationInterval){
     notificationInterval = setInterval(() => {
       checkGuardNotifications();
@@ -4387,6 +4705,16 @@ function initAuth(){
       Promise.all([OFF.del('snapshot'), OFF.del('faceRoster')]).then(() => window.location.reload(), () => window.location.reload());
     }
   });
+}
+
+// ---------------- Whether this company lets controllers see the audit trail ----------------
+async function loadControllerAuditAccess(){
+  const navBtn = document.getElementById('ctrlAuditNavBtn');
+  if (!profile || !profile.org_id || profile.role !== 'controller'){ if (navBtn) navBtn.style.display = 'none'; return; }
+  if (offlineKnownDown()) return;
+  const r = await withTimeout(sb.from('organizations').select('controller_audit_access').eq('id', profile.org_id).single(), 8000);
+  controllerAuditAccess = !!(r.data && r.data.controller_audit_access);
+  if (navBtn) navBtn.style.display = controllerAuditAccess ? '' : 'none';
 }
 
 // ---------------- Company name shown next to the logo ----------------
@@ -5355,6 +5683,7 @@ function wireIncidentClientEmailSection(inc, incidentId, who, contacts){
         return;
       }
       showToast('Email sent', `Sent to ${(data.sent_to || []).join(', ')}`, 'success');
+      logAudit('email_incident', 'incident', incidentId, inc.site_id, `Emailed incident report to ${(data.sent_to || []).join(', ')}`, { to: data.sent_to || [], photos: includePhotos, comments: includeComments });
       inc.client_emailed_at = new Date().toISOString();
       inc.client_emailed_to = contacts.filter(c => contactIds.includes(c.id)).map(c => ({ name: c.name, email: c.email }));
       openIncidentDetail(incidentId, who);
@@ -8015,6 +8344,7 @@ async function exportAttendanceCsv(fromStr, toStr, statusElId, btn){
     a.remove();
     URL.revokeObjectURL(url);
     statusEl.textContent = `Exported ${rows.length} record${rows.length === 1 ? '' : 's'}.`;
+    logAudit('export', 'attendance', null, null, `Exported attendance as CSV (${rows.length} records) - ${fromStr} to ${toStr}`, { format: 'csv', records: rows.length, from: fromStr, to: toStr });
   } catch (err) {
     console.error('Attendance export failed:', err);
     statusEl.textContent = 'Could not export — ' + (err?.message || 'unexpected error, see console.');
@@ -8786,6 +9116,7 @@ document.getElementById('downloadReportBtn').addEventListener('click', async () 
   a.remove();
   URL.revokeObjectURL(url);
   showToast('Report downloaded', '', 'success');
+  logAudit('export', 'patrol_report', null, document.getElementById('reportSiteSelect').value || null, `Downloaded the patrol report as CSV - ${siteLabel}, ${from} to ${to}`, { format: 'csv', from, to });
 });
 
 document.getElementById('printPdfReportBtn').addEventListener('click', async () => {
@@ -8824,6 +9155,7 @@ document.getElementById('printPdfReportBtn').addEventListener('click', async () 
       <tr><td>${new Date(c.when).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', hour12: false})}</td><td>${escapeHtmlForPrint(c.site)}</td><td>${escapeHtmlForPrint(c.title)}</td><td>${escapeHtmlForPrint(c.body)}</td><td>${escapeHtmlForPrint(c.author)}</td></tr>
     `).join('') || '<tr><td colspan="5" class="empty-row">No commented alerts in this range.</td></tr>';
 
+    logAudit('print', 'patrol_report', null, document.getElementById('reportSiteSelect').value || null, `Printed the patrol report - ${siteLabel}, ${from} to ${to}`, { format: 'pdf', from, to });
     const win = window.open('', '_blank');
     if (!win){
       showToast('Could not open print window', 'Your browser may have blocked the popup — allow popups for this site and try again.', 'danger');
@@ -8945,6 +9277,10 @@ document.querySelectorAll('[data-admin-view]').forEach(btn => {
     if (btn.dataset.adminView === 'tracking'){
       trackingViewOpened('admin');
     }
+    if (btn.dataset.adminView === 'reports'){
+      auditFillPanel('admin', true);
+      auditInit('admin');
+    }
   });
 });
 
@@ -8971,6 +9307,10 @@ document.querySelectorAll('[data-ctrl-view]').forEach(btn => {
     }
     if (btn.dataset.ctrlView === 'tracking'){
       trackingViewOpened('ctrl');
+    }
+    if (btn.dataset.ctrlView === 'audit'){
+      auditFillPanel('ctrl', false);
+      auditInit('ctrl');
     }
   });
 });
@@ -9458,6 +9798,7 @@ const UI_PAGE_META = {
     attendance:    ['Attendance', 'Live coverage per site and shift, plus attendance exports.'],
     incidents:     ['Incidents', 'Reports filed by guards in the field.'],
     tracking:      ['Live tracking', 'See where a site\'s phone is, live. Search for a site to start.'],
+    audit:         ['Audit trail', 'Who did what, and when — permanent and cannot be edited or deleted.'],
     reports:       ['Reports', 'Patrol reports over any date range.']
   },
   controller: {
