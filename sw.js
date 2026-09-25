@@ -3,9 +3,27 @@
    It never touches the OnPatrol database, login or realtime traffic — those always go straight to the network.
    Put this file next to index.html (same folder, served over https). */
 
-const VERSION = 'v1';
+const VERSION = 'v2';   // bumped: index.html now loads its CSS and JS as separate files (see LOCAL_ASSETS)
 const SHELL = 'onpatrol-shell-' + VERSION;
 const LIBS = 'onpatrol-libs-' + VERSION;
+
+// The app's own files, split out of index.html so edits are smaller and safer to review.
+// Pre-cached on install, same as index.html itself, so a phone that has only ever opened
+// the app once (even briefly) has everything it needs before it first goes offline.
+const LOCAL_ASSETS = [
+  'onpatrol.css',
+  'onpatrol-01-offline.js',
+  'onpatrol-02-tracking-audit.js',
+  'onpatrol-03-engine-data.js',
+  'onpatrol-04-auth-realtime.js',
+  'onpatrol-05-render-core.js',
+  'onpatrol-06-incidents-sites.js',
+  'onpatrol-07-patrols-alerts.js',
+  'onpatrol-08-guard-ui.js',
+  'onpatrol-09-attendance.js',
+  'onpatrol-10-admin-reports.js',
+  'onpatrol-11-ui-boot.js'
+];
 
 const LIB_HOSTS = ['cdn.jsdelivr.net', 'cdnjs.cloudflare.com', 'fonts.googleapis.com', 'fonts.gstatic.com'];
 
@@ -35,6 +53,10 @@ self.addEventListener('install', event => {
     // Best effort: one failed file must not stop the rest from being saved.
     const shell = await caches.open(SHELL);
     await shell.add(new Request(self.registration.scope, { cache: 'reload' })).catch(() => {});
+    await Promise.all(LOCAL_ASSETS.map(path => {
+      const url = new URL(path, self.registration.scope).toString();
+      return shell.add(new Request(url, { cache: 'reload' })).catch(() => {});
+    }));
     const libs = await caches.open(LIBS);
     await Promise.all(LIB_URLS.concat(MODEL_FILES).map(url =>
       fetch(corsRequest(url)).then(res => { if (res.ok) return libs.put(url, res); }).catch(() => {})
