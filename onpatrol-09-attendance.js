@@ -429,7 +429,12 @@ function renderCoverageGrid(containerId){
     const covered = r.onDuty.length >= r.shift.required;
     const guardRows = r.onDuty.map(a => {
       const badge = a.isReliever ? '<span class="badge">reliever</span>' : '';
-      return `<div class="coverage-guard-row present"><span class="dot"></span>${guardLabel(r.shift.siteId, a.guardId)}${badge}</div>`;
+      // Admins can end a shift here directly - e.g. someone forgot to clock out, or their phone died,
+      // and it's blocking them from clocking in again anywhere else.
+      const clockOutBtn = profile && profile.role === 'admin'
+        ? `<button class="btn" data-force-clock-out="${a.id}" data-guard-label="${guardLabel(r.shift.siteId, a.guardId)}" style="width:auto; padding:2px 8px; font-size:10.5px; margin-left:auto;">Clock out</button>`
+        : '';
+      return `<div class="coverage-guard-row present"><span class="dot"></span>${guardLabel(r.shift.siteId, a.guardId)}${badge}${clockOutBtn}</div>`;
     }).join('');
     const absentRows = r.openAbsences.map(a =>
       `<div class="coverage-guard-row absent"><span class="dot"></span>${guardLabel(r.shift.siteId, a.guardId)} — absent</div>`
@@ -455,6 +460,20 @@ function renderCoverageGrid(containerId){
     btn.addEventListener('click', () => {
       const [siteId, shiftId, shiftDate] = btn.dataset.markAbsent.split('|');
       openMarkAbsentModal(siteId, shiftId, shiftDate);
+    });
+  });
+  el.querySelectorAll('[data-force-clock-out]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const label = btn.dataset.guardLabel || 'this guard';
+      if (!confirm(`Clock ${label} out? Use this when someone forgot to clock out, or their phone is unreachable, and it's stopping them clocking in elsewhere.`)) return;
+      btn.disabled = true;
+      const { error } = await sb.from('attendance').update({
+        status: 'clocked_out', clock_out_at: new Date().toISOString(), clocked_out_by: session.user.id
+      }).eq('id', btn.dataset.forceClockOut).eq('status', 'on_duty');
+      if (error){ showToast('Could not clock out', error.message, 'danger'); btn.disabled = false; return; }
+      showToast('Clocked out', `${label} is now off duty.`, 'success');
+      await loadAttendanceRecent();
+      renderCoverageGrid('coverageGridAdmin');
     });
   });
 }

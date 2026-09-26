@@ -43,12 +43,15 @@ function renderUsersTable(){
         <td>${u.role === 'guard' ? `<input type="text" data-emp-num="${u.id}" value="${escapeHtmlForPrint(u.employee_number || '')}" placeholder="—" style="width:90px; padding:5px 7px; font-size:11px;">` : '<span class="result-meta">—</span>'}</td>
         <td><input type="tel" data-phone="${u.id}" value="${escapeHtmlForPrint(u.phone || '')}" placeholder="—" style="width:120px; padding:5px 7px; font-size:11px;"></td>
         <td style="font-family:var(--sans); color:var(--muted);">${escapeHtmlForPrint(u.email)}</td>
-        <td>${escapeHtmlForPrint(u.role || '—')}</td>
+        <td>${escapeHtmlForPrint(u.role || '—')}${u.deactivated ? ' <span class="st st-warn" style="margin-left:4px;">Deactivated</span>' : ''}</td>
         <td style="font-family:var(--sans);">${escapeHtmlForPrint(site ? site.name : '—')}</td>
         <td>${u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</td>
         <td style="display:flex; gap:6px; flex-wrap:wrap;">
           <button class="btn" data-reset-pw="${u.id}" data-user-label="${safeLabel}" style="width:auto; padding:5px 10px; font-size:11px;">Reset password</button>
           ${u.role === 'guard' ? `<button class="btn" data-reset-face="${u.id}" data-user-label="${safeLabel}" style="width:auto; padding:5px 10px; font-size:11px;">Reset face</button>` : ''}
+          ${isSelf ? '' : u.deactivated
+            ? `<button class="btn" data-reactivate-user="${u.id}" data-user-label="${safeLabel}" style="width:auto; padding:5px 10px; font-size:11px;">Reactivate</button>`
+            : `<button class="btn" data-deactivate-user="${u.id}" data-user-label="${safeLabel}" style="width:auto; padding:5px 10px; font-size:11px;">Deactivate</button>`}
           ${isSelf ? '' : `<button class="del-btn" data-del-user="${u.id}" data-user-label="${safeLabel}" aria-label="Delete user"><i>&times;</i></button>`}
         </td>
       </tr>
@@ -100,11 +103,64 @@ function renderUsersTable(){
       btn.disabled = true;
       const { data, error } = await sb.functions.invoke('admin-users', { body: { action: 'delete', user_id: btn.dataset.delUser } });
       if (error || !data || data.error){
-        showToast('Could not delete user', await functionErrorMessage(data, error, 'Unknown error'), 'danger');
+        // A blocked delete comes back as a non-2xx response, so its JSON body lives on the
+        // error, not on `data` - read it once, ourselves, so we can also see has_history
+        // (functionErrorMessage reads the same body for its fallback path, so it must not
+        // run first, or there'd be nothing left to read here).
+        let body = data && data.error ? data : null;
+        if (!body && error && error.context && typeof error.context.json === 'function'){
+          try{ body = await error.context.json(); }catch(e){}
+        }
+        const msg = (body && body.error) || (error && error.message) || 'Unknown error';
+        const hasHistory = !!(body && body.has_history);
+        if (hasHistory && confirm(msg + '\n\nDeactivate them now instead?')){
+          const r2 = await sb.functions.invoke('admin-users', { body: { action: 'deactivate', user_id: btn.dataset.delUser } });
+          if (r2.error || !r2.data || r2.data.error){
+            showToast('Could not deactivate user', await functionErrorMessage(r2.data, r2.error, 'Unknown error'), 'danger');
+          } else {
+            showToast('User deactivated', `${label} can no longer sign in. Their records are unchanged.`, 'success');
+            await loadUsersAdmin(); renderUsersTable();
+          }
+        } else {
+          showToast('Could not delete user', msg, 'danger');
+        }
         btn.disabled = false;
         return;
       }
       showToast('User deleted', `${label} was removed.`, 'success');
+      await loadUsersAdmin();
+      renderUsersTable();
+    });
+  });
+
+  body.querySelectorAll('[data-deactivate-user]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const label = btn.dataset.userLabel;
+      if (!confirm(`Deactivate "${label}"? They won't be able to sign in until reactivated. Nothing else changes - their history stays exactly as it is.`)) return;
+      btn.disabled = true;
+      const { data, error } = await sb.functions.invoke('admin-users', { body: { action: 'deactivate', user_id: btn.dataset.deactivateUser } });
+      btn.disabled = false;
+      if (error || !data || data.error){
+        showToast('Could not deactivate user', await functionErrorMessage(data, error, 'Unknown error'), 'danger');
+        return;
+      }
+      showToast('User deactivated', `${label} can no longer sign in.`, 'success');
+      await loadUsersAdmin();
+      renderUsersTable();
+    });
+  });
+
+  body.querySelectorAll('[data-reactivate-user]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const label = btn.dataset.userLabel;
+      btn.disabled = true;
+      const { data, error } = await sb.functions.invoke('admin-users', { body: { action: 'reactivate', user_id: btn.dataset.reactivateUser } });
+      btn.disabled = false;
+      if (error || !data || data.error){
+        showToast('Could not reactivate user', await functionErrorMessage(data, error, 'Unknown error'), 'danger');
+        return;
+      }
+      showToast('User reactivated', `${label} can sign in again.`, 'success');
       await loadUsersAdmin();
       renderUsersTable();
     });
