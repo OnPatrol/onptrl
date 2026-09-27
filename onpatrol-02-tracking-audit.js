@@ -382,7 +382,7 @@ const AUDIT_TYPES = {
   exports:    { label: 'Downloads & printouts',     actions: ['export', 'print'] },
   signins:    { label: 'Sign-ins',                  actions: ['sign_in'] }
 };
-const auditState = { prefix: null, rows: [], done: false, loading: false, wired: {}, lastFilters: null };
+const auditState = { prefix: null, rows: [], done: false, loading: false, wired: {}, lastFilters: null, dirTried: false };
 const aEl = id => document.getElementById(auditState.prefix + id);
 let controllerAuditAccess = false;   // this company's choice, set by the admin; fetched at sign-in
 
@@ -410,8 +410,8 @@ function auditWhen(iso){
 function auditNextDay(ymd){ const d = new Date(ymd + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0, 10); }
 function auditReadFilters(){
   return {
-    from: aEl('auditFrom').value, to: aEl('auditTo').value, site: aEl('auditSite').value,
-    actor: aEl('auditActor').value, type: aEl('auditType').value, q: aEl('auditSearch').value.trim()
+    from: aEl('AuditFrom').value, to: aEl('AuditTo').value, site: aEl('AuditSite').value,
+    actor: aEl('AuditActor').value, type: aEl('AuditType').value, q: aEl('AuditSearch').value.trim()
   };
 }
 function auditFilterText(f){
@@ -460,19 +460,19 @@ function auditRowHtml(r){
   </tr>`;
 }
 function auditRenderTable(){
-  const body = aEl('auditBody');
+  const body = aEl('AuditBody');
   body.innerHTML = auditState.rows.length
     ? auditState.rows.map(auditRowHtml).join('')
     : '<tr><td colspan="5" style="font-family:var(--sans); color:var(--muted);">Nothing recorded for these filters.</td></tr>';
-  aEl('auditCount').textContent = auditState.rows.length
+  aEl('AuditCount').textContent = auditState.rows.length
     ? `Showing ${auditState.rows.length} entr${auditState.rows.length === 1 ? 'y' : 'ies'}${auditState.done ? '' : ' (newest first) — more available'}.`
     : '';
-  aEl('auditMoreBtn').style.display = auditState.rows.length && !auditState.done ? '' : 'none';
+  aEl('AuditMoreBtn').style.display = auditState.rows.length && !auditState.done ? '' : 'none';
 }
 async function auditLoad(more){
   if (auditState.loading) return;
   auditState.loading = true;
-  const status = aEl('auditStatus');
+  const status = aEl('AuditStatus');
   status.textContent = 'Loading…';
   try{
     const f = more && auditState.lastFilters ? auditState.lastFilters : auditReadFilters();
@@ -503,7 +503,7 @@ async function auditFetchAll(f, max){
   return { rows: out.slice(0, max).reverse(), truncated: out.length >= max };
 }
 async function auditIntegrity(){
-  const el = aEl('auditIntegrity');
+  const el = aEl('AuditIntegrity');
   el.textContent = 'Checking…';
   const { data, error } = await sb.rpc('audit_verify');
   if (error || !data || !data[0]){ el.innerHTML = '<span style="color:var(--warn);">Could not check integrity — ' + escapeHtmlForPrint(error ? error.message : 'no answer') + '</span>'; return null; }
@@ -519,7 +519,7 @@ function auditCsvCell(v){
   return '"' + s.replace(/"/g, '""') + '"';
 }
 async function auditDownloadCsv(){
-  const status = aEl('auditStatus'); status.textContent = 'Preparing…';
+  const status = aEl('AuditStatus'); status.textContent = 'Preparing…';
   try{
     const f = auditReadFilters();
     const { rows, truncated } = await auditFetchAll(f, 20000);
@@ -546,7 +546,7 @@ async function auditDownloadCsv(){
   }catch(e){ status.textContent = 'Could not download — ' + (e.message || e); }
 }
 async function auditPrint(){
-  const status = aEl('auditStatus'); status.textContent = 'Preparing…';
+  const status = aEl('AuditStatus'); status.textContent = 'Preparing…';
   try{
     const f = auditReadFilters();
     const { rows, truncated } = await auditFetchAll(f, 3000);
@@ -589,19 +589,19 @@ async function auditPrint(){
 function auditInit(prefix){
   if (!profile || !(profile.role === 'admin' || (profile.role === 'controller' && controllerAuditAccess))) return;
   auditState.prefix = prefix;
-  const siteSel = aEl('auditSite'), actorSel = aEl('auditActor'), typeSel = aEl('auditType');
+  const siteSel = aEl('AuditSite'), actorSel = aEl('AuditActor'), typeSel = aEl('AuditType');
   if (!auditState.wired[prefix]){
     auditState.wired[prefix] = true;
     typeSel.innerHTML = '<option value="">Everything</option>' + Object.keys(AUDIT_TYPES).map(k => `<option value="${k}">${AUDIT_TYPES[k].label}</option>`).join('');
     const today = new Date(), weekAgo = new Date(Date.now() - 6 * 86400000);
     const ymd = d => new Date(d.getTime() + 2 * 3600000).toISOString().slice(0, 10);   // South African date
-    aEl('auditTo').value = ymd(today); aEl('auditFrom').value = ymd(weekAgo);
-    aEl('auditShowBtn').addEventListener('click', () => auditLoad(false));
-    aEl('auditMoreBtn').addEventListener('click', () => auditLoad(true));
-    aEl('auditCsvBtn').addEventListener('click', auditDownloadCsv);
-    aEl('auditPrintBtn').addEventListener('click', auditPrint);
-    aEl('auditVerifyBtn').addEventListener('click', auditIntegrity);
-    aEl('auditSearch').addEventListener('keydown', e => { if (e.key === 'Enter') auditLoad(false); });
+    aEl('AuditTo').value = ymd(today); aEl('AuditFrom').value = ymd(weekAgo);
+    aEl('AuditShowBtn').addEventListener('click', () => auditLoad(false));
+    aEl('AuditMoreBtn').addEventListener('click', () => auditLoad(true));
+    aEl('AuditCsvBtn').addEventListener('click', auditDownloadCsv);
+    aEl('AuditPrintBtn').addEventListener('click', auditPrint);
+    aEl('AuditVerifyBtn').addEventListener('click', auditIntegrity);
+    aEl('AuditSearch').addEventListener('keydown', e => { if (e.key === 'Enter') auditLoad(false); });
   }
   const keepSite = siteSel.value, keepActor = actorSel.value;
   siteSel.innerHTML = '<option value="">All sites</option>' + sites.map(s => `<option value="${s.id}">${escapeHtmlForPrint(s.name)}</option>`).join('');
@@ -624,7 +624,14 @@ function auditInit(prefix){
       });
     }
   }
-  if (!teamDirectory.length) loadTeamDirectory().then(() => auditInit());
+  if (!teamDirectory.length && !auditState.dirTried){
+    // The very first time this loads, the people list may not be ready yet - fetch it, then
+    // finish setting up THIS SAME panel (same prefix) instead of restarting with none at all,
+    // which was quietly breaking every button on the panel from that point on.
+    auditState.dirTried = true;
+    loadTeamDirectory().then(() => auditInit(prefix));
+    return;
+  }
   auditLoad(false);
   auditIntegrity();
 }
