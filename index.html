@@ -102,9 +102,20 @@
         <div class="phone-notch"></div>
 
         <div id="guardNoSiteGate" style="display:none; text-align:center; padding:30px 10px;">
-          <div style="font-size:14px; font-weight:600; margin-bottom:8px;">You haven't joined a site yet</div>
-          <div class="result-meta" style="margin-bottom:16px;">Ask your admin for your site code, then join to start scanning.</div>
+          <div style="font-size:15px; font-weight:600; margin-bottom:4px;">Join your company</div>
+          <div class="result-meta" style="margin-bottom:20px;">Ask your admin for the code that matches your role.</div>
+
+          <div style="font-size:12.5px; font-weight:600; margin-bottom:4px;">Guards</div>
+          <div class="result-meta" style="margin-bottom:10px;">Enter your site code to start scanning.</div>
           <button class="btn btn-primary" id="guardJoinSiteBtn" style="width:auto; padding:9px 16px;">Join a site</button>
+
+          <div style="border-top:1px solid var(--border); margin:22px 0 18px;"></div>
+
+          <div style="font-size:12.5px; font-weight:600; margin-bottom:4px;">Controllers</div>
+          <div class="result-meta" style="margin-bottom:10px;">Enter the controller code from your admin.</div>
+          <div id="guardControllerError" class="result-meta" style="color:var(--danger); display:none; margin-bottom:8px; font-family:var(--sans);"></div>
+          <input type="text" id="guardControllerCode" placeholder="Controller code" autocomplete="off" autocapitalize="characters" style="text-align:center; margin-bottom:10px;">
+          <button class="btn" id="guardClaimControllerBtn" style="width:auto; padding:9px 16px;">Join as a controller</button>
         </div>
 
         <div id="guardMainContent">
@@ -1295,14 +1306,8 @@
       </div>
     </div>
 
-    <div id="authControllerCodeWrap" style="display:none;">
-      <div class="field-label">Controller invite code</div>
-      <input type="text" id="authControllerCode" placeholder="Enter the code you were given">
-    </div>
-
-    <div id="authSiteCodeWrap" style="display:none;">
-      <div class="field-label">Site code</div>
-      <input type="text" id="authSiteCode" placeholder="Ask your admin for your site's code">
+    <div id="authJoinLaterNote" style="display:none;">
+      <div class="result-meta" style="margin-bottom:2px;">You'll join your company right after you sign in — ask your admin for your code now if you don't have it yet.</div>
     </div>
 
     <div class="btn-row">

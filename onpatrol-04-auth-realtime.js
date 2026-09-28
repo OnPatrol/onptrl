@@ -311,11 +311,10 @@ function setAuthSignupRole(role){
   document.getElementById('authRoleAdminBtn').classList.toggle('active', role === 'admin');
   document.getElementById('authRoleControllerBtn').classList.toggle('active', role === 'controller');
   document.getElementById('authInviteWrap').style.display = (authMode === 'signup' && role === 'admin') ? 'block' : 'none';
-  document.getElementById('authControllerCodeWrap').style.display = (authMode === 'signup' && role === 'controller') ? 'block' : 'none';
-  document.getElementById('authSiteCodeWrap').style.display = (authMode === 'signup' && role === 'guard') ? 'block' : 'none';
+  // Guards and controllers don't enter a code at sign-up — the confirmation email has to go out
+  // before any code could be checked anyway, so it's collected once, for real, right after sign-in.
+  document.getElementById('authJoinLaterNote').style.display = (authMode === 'signup' && role !== 'admin') ? 'block' : 'none';
   if (role !== 'admin') document.getElementById('authInviteCode').value = '';
-  if (role !== 'controller') document.getElementById('authControllerCode').value = '';
-  if (role !== 'guard') document.getElementById('authSiteCode').value = '';
 }
 
 // Two ways to sign up as an admin: redeem a code from an existing company,
@@ -392,18 +391,6 @@ document.getElementById('authSubmitBtn').addEventListener('click', async () => {
     errEl.style.display = 'block';
     return;
   }
-  if (authMode === 'signup' && authSignupRole === 'controller' && !document.getElementById('authControllerCode').value.trim()){
-    errEl.textContent = 'A controller invite code is required to sign up as a controller.';
-    errEl.style.color = 'var(--danger)';
-    errEl.style.display = 'block';
-    return;
-  }
-  if (authMode === 'signup' && authSignupRole === 'guard' && !document.getElementById('authSiteCode').value.trim()){
-    errEl.textContent = 'A site code is required to sign up as a guard.';
-    errEl.style.color = 'var(--danger)';
-    errEl.style.display = 'block';
-    return;
-  }
   const btn = document.getElementById('authSubmitBtn');
   btn.disabled = true;
   try{
@@ -411,11 +398,8 @@ document.getElementById('authSubmitBtn').addEventListener('click', async () => {
       const fullName = document.getElementById('authFullName').value.trim();
       const phone = document.getElementById('authPhone').value.trim();
       const wantsAdmin = authSignupRole === 'admin';
-      const wantsController = authSignupRole === 'controller';
       const inviteCode = document.getElementById('authInviteCode').value.trim();
       const orgName = document.getElementById('authOrgName').value.trim();
-      const controllerCode = document.getElementById('authControllerCode').value.trim();
-      const siteCode = document.getElementById('authSiteCode').value.trim();
       const creatingCompany = wantsAdmin && authCreatingOrg;
       const { data, error } = await sb.auth.signUp({ email, password, options: {
         emailRedirectTo: welcomeRedirectUrl(),
@@ -443,21 +427,11 @@ document.getElementById('authSubmitBtn').addEventListener('click', async () => {
         } else {
           showToast('Admin access granted', '', 'success');
         }
-      } else if (wantsController && data.session){
-        const { data: claimed, error: claimErr } = await sb.rpc('claim_controller', { p_code: controllerCode });
-        if (claimErr || !claimed){
-          showToast('Signed up as guard', 'That invite code was invalid or already used — your account was created with guard access instead.', 'warn');
-        } else {
-          showToast('Controller access granted', '', 'success');
-        }
-      } else if (!wantsAdmin && !wantsController && data.session){
-        const { data: joinedSiteId, error: joinErr } = await sb.rpc('join_site', { p_site_code: siteCode });
-        if (joinErr || !joinedSiteId){
-          showToast('Account created', 'That site code was invalid — use "Join a site" after signing in to try again.', 'warn');
-        } else {
-          showToast('Joined site', '', 'success');
-        }
       }
+      // Controllers and guards don't redeem a code here at all - the confirmation email has to
+      // go out first regardless, so there is no session yet to check a code against even when
+      // one is typed. They join their company for real, with a genuine signed-in session, right
+      // after they confirm and sign in (see the "Join your company" screen).
       if (!data.session){
         // Email confirmation is on, so there is no login yet and the company cannot be created yet.
         // Remember the company name; it is created automatically at the first sign-in on this device.
@@ -466,9 +440,7 @@ document.getElementById('authSubmitBtn').addEventListener('click', async () => {
           ? `Account created — tap the confirmation link in your email. "${orgName}" is set up when you confirm, then you can sign in.`
           : wantsAdmin
           ? 'Account created — check your email to confirm it, then sign in and use "Claim admin access" with your invite code.'
-          : wantsController
-          ? 'Account created — check your email to confirm it, then sign in and use "Claim controller access" with your invite code.'
-          : 'Account created — check your email to confirm it, then sign in and use "Join a site" with your site code.';
+          : 'Account created — check your email to confirm it, then sign in and join your company from there.';
         errEl.style.color = 'var(--text)';
         errEl.style.display = 'block';
         setAuthMode('signin');
@@ -579,26 +551,27 @@ document.getElementById('claimControllerCancelBtn').addEventListener('click', ()
   document.getElementById('claimControllerModalBg').classList.remove('show');
 });
 
-document.getElementById('claimControllerSubmitBtn').addEventListener('click', async () => {
-  const code = document.getElementById('claimControllerCode').value.trim();
-  const errEl = document.getElementById('claimControllerError');
+// One place that redeems a controller code, used by both the popup and the "Join your company"
+// screen, so they can never behave differently. It runs with a real signed-in session, which is
+// the whole point of asking for the code here instead of at sign-up.
+async function submitControllerClaim(rawCode, errEl, btn, afterSuccess){
+  const code = String(rawCode || '').trim();
   errEl.style.display = 'none';
   if (!code){
-    errEl.textContent = 'Enter an invite code.';
+    errEl.textContent = 'Enter the controller code from your admin.';
     errEl.style.display = 'block';
     return;
   }
-  const btn = document.getElementById('claimControllerSubmitBtn');
   btn.disabled = true;
   try{
     const { data: claimed, error } = await sb.rpc('claim_controller', { p_code: code });
     if (error || !claimed){
-      errEl.textContent = 'That invite code is invalid or already used.';
+      errEl.textContent = 'That controller code is invalid or already used. Check it with your admin.';
       errEl.style.display = 'block';
       return;
     }
-    document.getElementById('claimControllerModalBg').classList.remove('show');
-    showToast('Controller access granted', '', 'success');
+    if (afterSuccess) afterSuccess();
+    showToast('Controller access granted', 'Welcome aboard.', 'success');
     await loadProfileAndApp();
   } catch(err){
     errEl.textContent = err.message;
@@ -606,7 +579,29 @@ document.getElementById('claimControllerSubmitBtn').addEventListener('click', as
   } finally {
     btn.disabled = false;
   }
+}
+
+document.getElementById('claimControllerSubmitBtn').addEventListener('click', () => {
+  submitControllerClaim(
+    document.getElementById('claimControllerCode').value,
+    document.getElementById('claimControllerError'),
+    document.getElementById('claimControllerSubmitBtn'),
+    () => document.getElementById('claimControllerModalBg').classList.remove('show')
+  );
 });
+
+// The "Join your company" screen (shown to anyone signed in with no site yet): the controller
+// code goes straight in here, no popup needed.
+function submitGateControllerClaim(){
+  submitControllerClaim(
+    document.getElementById('guardControllerCode').value,
+    document.getElementById('guardControllerError'),
+    document.getElementById('guardClaimControllerBtn'),
+    () => { document.getElementById('guardControllerCode').value = ''; }
+  );
+}
+document.getElementById('guardClaimControllerBtn').addEventListener('click', submitGateControllerClaim);
+document.getElementById('guardControllerCode').addEventListener('keydown', e => { if (e.key === 'Enter') submitGateControllerClaim(); });
 
 function openJoinSiteModal(){
   document.getElementById('joinSiteError').style.display = 'none';
@@ -719,10 +714,12 @@ async function loadProfileAndApp(){
     guardTabBtn.style.display = '';
     adminTabBtn.style.display = 'none';
     controllerTabBtn.style.display = 'none';
-    // Guards work off a shared/kiosk-style device — no self-service admin/controller
-    // claim codes and no sign-out control in their UI.
+    // Guards work off a shared/kiosk-style device — no self-service admin claim code and no
+    // sign-out control in their UI. Someone with no site yet might actually be a controller
+    // whose code never got redeemed, so that one stays available until they've joined somewhere
+    // (the same "Join your company" screen offers it too, more prominently).
     claimAdminBtn.style.display = 'none';
-    claimControllerBtn.style.display = 'none';
+    claimControllerBtn.style.display = guardSiteId ? 'none' : '';
     joinSiteBtn.style.display = guardSiteId ? 'none' : '';
     signOutBtn.style.display = 'none';
     guardTabBtn.click();
