@@ -424,7 +424,10 @@ function auditFilterText(f){
   return bits.join(' · ');
 }
 function auditQuery(f){
-  let q = sb.from('audit_log').select('*').order('id', { ascending: false });
+  // Belt and braces: this screen is this company's own trail, full stop - it never asks the
+  // server for "whatever I'm allowed to see," even though the database enforces the same
+  // boundary independently. Two separate guards, so a change to either one alone can't reopen this.
+  let q = sb.from('audit_log').select('*').eq('org_id', profile.org_id).order('id', { ascending: false });
   if (f.from) q = q.gte('occurred_at', f.from + 'T00:00:00+02:00');
   if (f.to) q = q.lt('occurred_at', auditNextDay(f.to) + 'T00:00:00+02:00');
   if (f.site) q = q.eq('site_id', f.site);
