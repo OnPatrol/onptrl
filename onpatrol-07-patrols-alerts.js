@@ -4,14 +4,17 @@ let notifications = [];
 function severityColor(sev){
   return sev === 'red' ? 'var(--danger)' : sev === 'orange' ? 'var(--warn)' : 'var(--success)';
 }
+// Every notification (alerts, resolved alerts, incidents, incident comments) shows the exact
+// moment it happened - "20:10 30/09/2026" - rather than a relative "25m ago" that keeps
+// changing and stops being precise once a shift or a day has passed. Kept the function's
+// existing name so every call site elsewhere in the app carries on working unchanged.
 function timeAgo(iso){
-  const ms = nowMs() - new Date(iso).getTime();
-  const mins = Math.round(ms/60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return mins + 'm ago';
-  const hrs = Math.round(mins/60);
-  if (hrs < 24) return hrs + 'h ago';
-  return new Date(iso).toLocaleDateString();
+  const d = new Date(iso);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  return `${hh}:${mm} ${dd}/${mo}/${d.getFullYear()}`;
 }
 
 async function loadNotifications(opts){
