@@ -602,7 +602,7 @@ const scanFrame = document.getElementById('scanFrame');
 const camToggleBtn = document.getElementById('camToggleBtn');
 
 let lastDecodedAtByQr = {}, decodeLocked = false;
-const AUTO_SCAN_COOLDOWN_MS = 3000;
+const AUTO_SCAN_COOLDOWN_MS = 5000;
 
 function handleDecoded(qrId){
   if (decodeLocked) return;

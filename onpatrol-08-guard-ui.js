@@ -628,6 +628,16 @@ document.getElementById('manualScanBtn').addEventListener('click', async () => {
   const btn = document.getElementById('manualScanBtn');
   setManualScanStatus('', false);
 
+  // The auto-scanner (or an earlier tap of this same button) may already be mid-scan -
+  // waiting on a GPS fix and the save to the server can take several seconds. Without this,
+  // a tap here would start a SECOND, fully independent scan of the same tag while the first
+  // is still in flight; neither one yet knows about the other's result, so both can pass the
+  // "already scanned" check and both get saved - a real duplicate, not just a visual glitch.
+  if (decodeLocked){
+    setManualScanStatus('Still processing the last scan — one moment.', false);
+    return;
+  }
+
   if (!scanning){
     setManualScanStatus('Start the camera first, then point it at the tag.', true);
     return;
