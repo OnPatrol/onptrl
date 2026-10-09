@@ -1094,3 +1094,28 @@ td {padding:15px 14px;font-family:var(--sans);font-size:12px;line-height:1.5;}
  .panel-head {gap:10px;}.panel h2 {font-size:20px;}
  .coverage-tile {padding:16px;}.track-map {min-height:260px;}
 }
+
+/* OnPatrol v3 — black / white / blood orange.
+   Theme-only overrides: original logo, embedded fonts, layouts, selectors
+   and JavaScript-driven visibility/behavior remain unchanged. */
+:root {
+ color-scheme:dark;
+ --bg:oklch(0 0 0); --panel:oklch(.17 0 0); --panel-2:oklch(.21 0 0); --panel-3:oklch(.25 0 0);
+ --border:oklch(.30 0 0); --border-strong:oklch(.43 0 0);
+ --text:oklch(1 0 0); --text-2:oklch(.88 0 0); --muted:oklch(.74 0 0); --faint:oklch(.68 0 0);
+ --accent:oklch(.70 .20 38); --accent-hi:oklch(.76 .17 38); --accent-ink:oklch(1 0 0);
+ --accent-dim:oklch(.25 .045 38); --accent-line:oklch(.50 .12 38);
+ --success:oklch(.77 .13 155); --success-dim:oklch(.23 .035 155);
+ --warn:oklch(.80 .13 75); --warn-dim:oklch(.25 .035 75);
+ --danger:oklch(.72 .19 25); --danger-dim:oklch(.25 .045 25);
+ --shell:oklch(.13 0 0); --shell-text:oklch(.80 0 0); --shell-active:var(--accent-dim);
+ --icon-surface:var(--accent-dim); --nav-rule:var(--accent);
+ --soft-shadow:0 2px 6px oklch(0 0 0 / .30);
+ --overlay-shadow:0 20px 60px oklch(0 0 0 / .65);
+}
+.sidebar .nav-item.active .icon{color:var(--accent);}
+.panel,.stat-card{box-shadow:var(--soft-shadow);}
+.stat-card{box-shadow:none;}
+.detail-modal,.face-modal{box-shadow:var(--overlay-shadow);}
+.perimeter-vertex{box-shadow:0 0 0 2px color-mix(in oklch,var(--accent) 45%,transparent);}
+.incident-banner{background:var(--panel);}
