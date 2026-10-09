@@ -862,3 +862,65 @@ body.no-sidebar #view-guard .cam-box .cam-instruction{font-size:11px; padding:5p
 /* Scan results and camera messages stay fully readable however small the camera box is. */
 body.no-sidebar #view-guard .cam-box .result-card{position:fixed; left:12px; right:12px; top:calc(var(--header-h) + 8px); z-index:70; max-height:60vh; overflow:auto;}
 body.no-sidebar #view-guard .cam-box #manualScanStatus{position:fixed; left:12px; right:12px; bottom:calc(12px + env(safe-area-inset-bottom, 0px)); z-index:70;}
+
+/* OnPatrol professional operations theme. Append-only compatibility layer.
+   Existing visibility, scan, attendance and emergency states are preserved. */
+:root {
+ color-scheme: light;
+ --bg:oklch(.976 .003 250); --panel:oklch(1 0 0); --panel-2:oklch(.96 .006 250); --panel-3:oklch(.93 .008 250);
+ --border:oklch(.90 .007 250); --border-strong:oklch(.84 .012 250);
+ --text:oklch(.26 .015 250); --text-2:oklch(.40 .015 250); --muted:oklch(.55 .018 250); --faint:oklch(.61 .012 250);
+ --accent:oklch(.48 .10 169); --accent-hi:oklch(.55 .11 169); --accent-ink:oklch(1 0 0); --accent-dim:oklch(.94 .027 169); --accent-line:oklch(.75 .07 169);
+ --success:oklch(.48 .12 160); --success-dim:oklch(.95 .03 160);
+ --warn:oklch(.57 .13 65); --warn-dim:oklch(.97 .035 80);
+ --danger:oklch(.55 .19 25); --danger-dim:oklch(.96 .025 25);
+ --sans:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+ --mono:'IBM Plex Mono',ui-monospace,monospace;
+ --r-sm:4px; --r-md:6px; --r-lg:8px; --sidebar-w:224px; --header-h:64px;
+ --shell:oklch(.22 .012 240); --shell-text:oklch(.76 .012 240); --shell-active:oklch(.32 .025 170);
+}
+body{letter-spacing:0;}
+.gh{background:var(--panel);backdrop-filter:none;}
+/* Preserve all original logo, mark and wordmark styling above. */
+.sidebar{background:var(--shell);border-right:0;padding:22px 12px;}
+.sidebar .nav-label{color:var(--shell-text);opacity:.55;letter-spacing:0;}
+.sidebar .nav-item{color:var(--shell-text);font-size:13px;min-height:42px;}
+.sidebar .nav-item .icon{color:var(--shell-text);}
+.sidebar .nav-item:hover{background:var(--shell-active);color:var(--accent-ink);}
+.sidebar .nav-item.active{background:var(--shell-active);color:var(--accent-ink);}
+.sidebar .nav-item.active .icon{color:oklch(.76 .13 169);}
+.sidebar .nav-item.active::before{display:none;}
+.main{max-width:1600px;padding:28px 30px 48px;}
+.page-title{font-size:26px;letter-spacing:0;}
+.panel,.stat-card{border-radius:6px;box-shadow:0 2px 6px oklch(.2 .01 240 / .03);}
+.stat-val{letter-spacing:0;}
+.stat-card.alert-on.k-crit,.stat-card.alert-on.k-warn{background:var(--panel);border-color:var(--border);}
+.stat-card.alert-on.k-crit .stat-val{color:var(--danger);}
+.stat-card.alert-on.k-warn .stat-val{color:var(--warn);}
+.btn{background:var(--panel);border-color:var(--border);color:var(--text);}
+.btn:hover{background:var(--panel-2);border-color:var(--border-strong);}
+.btn-primary,.btn-primary:hover{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);}
+.icon-btn{background:var(--panel);}
+.icon-btn:hover{border-color:var(--accent);}
+.st-info,.status-pill.active,.role-pill,.user-badge .role-pill{color:var(--accent);border-color:var(--accent-line);}
+.st-success,.badge.accepted,.status-pill.completed,.attendance-status-pill.on,.count-pill.is-ok,.sys-pill[data-state='ok'],.gh-chip.is-ok{color:var(--success);}
+.st-warn,.status-pill.due_soon,.status-pill.grace,.status-pill.late,.status-pill.completed_late,.attendance-status-pill.reliever,.sys-pill[data-state='warn']{color:var(--warn);}
+.st-crit,.badge.rejected,.status-pill.missed,.sys-pill[data-state='down'],.gh-chip.is-crit{color:var(--danger);}
+.status-pill.late{background:var(--danger-dim);color:var(--danger);border-color:var(--danger);}
+.coverage-guard-row .badge{color:var(--accent);}
+.alert-card.sev-red,.alert-card.is-panic{background:var(--danger-dim);}
+.alert-card.sev-orange{background:var(--warn-dim);}
+.alert-ico{background:var(--panel);}
+.ops-banner{background:var(--panel);}
+input:hover,select:hover,textarea:hover{border-color:var(--border-strong);}
+th{background:var(--panel-2);}
+tbody tr:hover td{background:var(--panel-2);}
+.auth-gate{background:var(--bg);}
+.detail-modal,.face-modal{box-shadow:0 20px 60px oklch(.2 .01 240 / .2);}
+/* Camera contrast is intentionally independent from the light operations theme. */
+.cam-box,.cam-placeholder,.face-video-box{background:oklch(.12 0 0);}
+.cam-placeholder{color:oklch(.8 0 0);}
+.cam-box .cam-instruction{background:oklch(.12 0 0 / .85);color:oklch(.8 .12 160);}
+.error-text,.cam-placeholder.error-text{color:var(--danger)!important;}
+@media(max-width:900px){.sidebar{background:var(--shell);}.main{padding:20px 16px 40px;}}
+@media(max-width:640px){.page-title{font-size:23px;}.main{padding:18px 14px 40px;}}
