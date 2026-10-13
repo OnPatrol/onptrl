@@ -373,6 +373,7 @@ async function openIncidentModal(){
   incidentStagedPhotos = [];
   incidentGpsPos = null;
   document.getElementById('incidentFormError').style.display = 'none';
+  clearFieldError('incidentTypeGrid'); clearFieldError('incidentSeverityGrid'); clearFieldError('incidentDescription');
   document.getElementById('incidentDescription').value = '';
   document.getElementById('incidentActionsTaken').value = '';
   document.getElementById('incidentResolution').value = '';
@@ -476,10 +477,18 @@ document.getElementById('reportIncidentBtn').addEventListener('click', openIncid
 document.getElementById('incidentSubmitBtn').addEventListener('click', async () => {
   const errEl = document.getElementById('incidentFormError');
   errEl.style.display = 'none';
-  if (!incidentSelectedType){ errEl.textContent = 'Select an incident type.'; errEl.style.display = 'block'; return; }
-  if (!incidentSelectedSeverity){ errEl.textContent = 'Select a severity.'; errEl.style.display = 'block'; return; }
   const description = document.getElementById('incidentDescription').value.trim();
-  if (!description){ errEl.textContent = 'Add a description of what happened.'; errEl.style.display = 'block'; return; }
+  const fields = [
+    { id: 'incidentTypeGrid', test: !!incidentSelectedType, message: 'Select an incident type.', group: true },
+    { id: 'incidentSeverityGrid', test: !!incidentSelectedSeverity, message: 'Select a severity.', group: true },
+    { id: 'incidentDescription', test: !!description, message: 'Add a description of what happened.' }
+  ];
+  const formOk = validateFields(fields);
+  if (!formOk){
+    errEl.textContent = 'Please fix the highlighted field' + (fields.filter(f => !f.test).length > 1 ? 's' : '') + ' below.';
+    errEl.style.display = 'block';
+    return;
+  }
 
   const btn = document.getElementById('incidentSubmitBtn');
   btn.disabled = true;

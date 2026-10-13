@@ -37,8 +37,14 @@ document.getElementById('addCpBtn').addEventListener('click', async () => {
   const lat = parseFloat(document.getElementById('newCpLat').value);
   const lng = parseFloat(document.getElementById('newCpLng').value);
   const radius = parseFloat(document.getElementById('newCpRadiusSlider').value) || 15;
-  if (!name || isNaN(lat) || isNaN(lng) || !activeSiteId){
-    document.getElementById('detectCpStatus').textContent = 'Name and a detected location are both required.';
+  const hasLocation = !isNaN(lat) && !isNaN(lng);
+  const ok = validateFields([
+    { id: 'newCpName', test: !!name, message: 'Checkpoint name is required.' },
+    { id: 'newCpLat', test: hasLocation, message: 'Tap "Use my location", or enter coordinates manually.' }
+  ]);
+  document.getElementById('newCpLng').classList.toggle('field-invalid', !hasLocation);
+  if (!ok || !activeSiteId){
+    if (!activeSiteId) document.getElementById('detectCpStatus').textContent = 'Select a site first.';
     return;
   }
 
@@ -56,6 +62,7 @@ document.getElementById('addCpBtn').addEventListener('click', async () => {
   document.getElementById('newCpName').value = '';
   document.getElementById('newCpLat').value = '';
   document.getElementById('newCpLng').value = '';
+  document.getElementById('newCpLng').classList.remove('field-invalid');
   document.getElementById('newCpRadiusSlider').value = 15;
   document.getElementById('newCpRadiusVal').textContent = '15 m';
   document.getElementById('detectCpStatus').textContent = '';
@@ -69,8 +76,11 @@ document.getElementById('addSiteBtn').addEventListener('click', async () => {
   const name = document.getElementById('newSiteName').value.trim();
   const address = document.getElementById('newSiteAddress').value.trim();
   const phone = cleanPhone(document.getElementById('newSitePhone').value);
-  if (!name) return;
-  if (!isValidPhone(phone)){ showToast('Site phone number needed', 'Enter the main phone number at this site, e.g. 082 123 4567 or +27 82 123 4567.', 'warn'); document.getElementById('newSitePhone').focus(); return; }
+  const ok = validateFields([
+    { id: 'newSiteName', test: !!name, message: 'Site name is required.' },
+    { id: 'newSitePhone', test: isValidPhone(phone), message: 'Enter a valid phone number (e.g. 082 123 4567 or +27 82 123 4567).' }
+  ]);
+  if (!ok) return;
   const { data, error } = await sb.from('sites').insert({ name, address: address || null, phone }).select().single();
   if (error){ showToast('Could not add site', error.message, 'danger'); return; }
   document.getElementById('newSiteName').value = '';

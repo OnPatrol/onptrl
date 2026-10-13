@@ -361,32 +361,28 @@ document.getElementById('authSubmitBtn').addEventListener('click', async () => {
   const password = document.getElementById('authPassword').value;
   const errEl = document.getElementById('authError');
   errEl.style.display = 'none';
-  if (!email || !password){
-    errEl.textContent = 'Email and password are both required.';
-    errEl.style.color = 'var(--danger)';
-    errEl.style.display = 'block';
-    return;
+
+  const fields = [
+    { id: 'authEmail', test: !!email, message: 'Email is required.' },
+    { id: 'authPassword', test: !!password, message: 'Password is required.' }
+  ];
+  if (authMode === 'signup'){
+    const phoneRaw = document.getElementById('authPhone').value;
+    fields.push({
+      id: 'authPhone',
+      test: !!phoneRaw.trim() && isValidPhone(phoneRaw),
+      message: phoneRaw.trim() ? 'Enter a valid phone number (at least 9 digits).' : 'A phone number is required so admins and controllers can reach you.'
+    });
+    if (authSignupRole === 'admin' && !authCreatingOrg){
+      fields.push({ id: 'authInviteCode', test: !!document.getElementById('authInviteCode').value.trim(), message: 'An admin invite code is required to sign up as an admin.' });
+    }
+    if (authSignupRole === 'admin' && authCreatingOrg){
+      fields.push({ id: 'authOrgName', test: !!document.getElementById('authOrgName').value.trim(), message: 'A company name is required to create your company.' });
+    }
   }
-  if (authMode === 'signup' && !document.getElementById('authPhone').value.trim()){
-    errEl.textContent = 'A phone number is required so admins and controllers can reach you.';
-    errEl.style.color = 'var(--danger)';
-    errEl.style.display = 'block';
-    return;
-  }
-  if (authMode === 'signup' && !isValidPhone(document.getElementById('authPhone').value)){
-    errEl.textContent = 'Enter a valid phone number (at least 9 digits).';
-    errEl.style.color = 'var(--danger)';
-    errEl.style.display = 'block';
-    return;
-  }
-  if (authMode === 'signup' && authSignupRole === 'admin' && !authCreatingOrg && !document.getElementById('authInviteCode').value.trim()){
-    errEl.textContent = 'An admin invite code is required to sign up as an admin.';
-    errEl.style.color = 'var(--danger)';
-    errEl.style.display = 'block';
-    return;
-  }
-  if (authMode === 'signup' && authSignupRole === 'admin' && authCreatingOrg && !document.getElementById('authOrgName').value.trim()){
-    errEl.textContent = 'A company name is required to create your company.';
+  const formOk = validateFields(fields);
+  if (!formOk){
+    errEl.textContent = 'Please fix the highlighted field' + (fields.filter(f => !f.test).length > 1 ? 's' : '') + ' below.';
     errEl.style.color = 'var(--danger)';
     errEl.style.display = 'block';
     return;

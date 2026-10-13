@@ -618,6 +618,7 @@ function renderManageSiteBasicInfo(){
     nameEl.value = ''; addrEl.value = ''; if (phoneEl) phoneEl.value = '';
     document.getElementById('manageSiteCode').textContent = '—';
     summaryEl.textContent = 'No site selected.';
+    clearFieldError('manageSiteName'); clearFieldError('manageSitePhone');
     return;
   }
   // Don't stomp on text the admin is mid-typing when a background refresh runs.
@@ -639,8 +640,11 @@ document.getElementById('manageSiteSaveBtn').addEventListener('click', async () 
   const name = document.getElementById('manageSiteName').value.trim();
   const address = document.getElementById('manageSiteAddress').value.trim();
   const phone = cleanPhone(document.getElementById('manageSitePhone').value);
-  if (!name){ statusEl.textContent = 'Site name is required.'; return; }
-  if (!isValidPhone(phone)){ statusEl.textContent = 'The site phone number is required (e.g. 082 123 4567 or +27 82 123 4567).'; return; }
+  const ok = validateFields([
+    { id: 'manageSiteName', test: !!name, message: 'Site name is required.' },
+    { id: 'manageSitePhone', test: isValidPhone(phone), message: 'Enter a valid phone number (e.g. 082 123 4567 or +27 82 123 4567).' }
+  ]);
+  if (!ok){ statusEl.textContent = ''; return; }
   statusEl.textContent = 'Saving…';
   const { error } = await sb.from('sites').update({ name, address: address || null, phone }).eq('id', activeSiteId);
   if (error){ statusEl.textContent = 'Could not save — ' + error.message; return; }
@@ -705,7 +709,8 @@ document.getElementById('addVehicleBtn').addEventListener('click', async () => {
   const label = document.getElementById('newVehicleLabel').value.trim();
   const plate = document.getElementById('newVehiclePlate').value.trim();
   const notes = document.getElementById('newVehicleNotes').value.trim();
-  if (!label){ showToast('Vehicle needs a name/label', '', 'warn'); return; }
+  const ok = validateFields([{ id: 'newVehicleLabel', test: !!label, message: 'Vehicle needs a name/label.' }]);
+  if (!ok) return;
   const { error } = await sb.from('site_vehicles').insert({ site_id: activeSiteId, label, plate: plate || null, notes: notes || null });
   if (error){ showToast('Could not add vehicle', error.message, 'danger'); return; }
   document.getElementById('newVehicleLabel').value = '';
@@ -775,7 +780,11 @@ document.getElementById('addSiteContactBtn').addEventListener('click', async () 
   const role = document.getElementById('newContactRole').value;
   const phone = document.getElementById('newContactPhone').value.trim();
   const email = document.getElementById('newContactEmail').value.trim();
-  if (!name || !role){ showToast('Name and role are required', '', 'warn'); return; }
+  const ok = validateFields([
+    { id: 'newContactName', test: !!name, message: 'Name is required.' },
+    { id: 'newContactRole', test: !!role, message: 'Pick a role.' }
+  ]);
+  if (!ok) return;
   if (!activeSiteId){ showToast('Select a site first', '', 'warn'); return; }
   const { error } = await sb.from('site_contacts').insert({
     site_id: activeSiteId, name, role, phone: phone || null, email: email || null

@@ -73,6 +73,64 @@ function showToast(title, sub, kind){
   setTimeout(() => el.remove(), 6000);
 }
 
+// ---------------- Form validation (shared across every form in the app) ----------------
+// Checks every field at once instead of stopping at the first problem, so a user who left
+// three fields blank sees all three messages immediately instead of fixing them one submit
+// at a time. The first invalid field is also scrolled into view and focused.
+//
+// Usage — right before you touch the database, pass the fields you already read off the form:
+//   const ok = validateFields([
+//     { id: 'manageSiteName', test: !!name, message: 'Site name is required.' },
+//     { id: 'manageSitePhone', test: isValidPhone(phone), message: 'Enter a valid phone number.' }
+//   ]);
+//   if (!ok) return;
+//
+// For a custom control that isn't a plain input (a button-grid for incident type/severity,
+// say), pass group:true and the id of the wrapper to outline — same message treatment, and
+// the outline clears as soon as something inside the group is clicked.
+function clearFieldError(id){
+  const el = document.getElementById(id);
+  if (el) el.classList.remove('field-invalid', 'field-group-invalid');
+  const msg = document.getElementById(id + '_err');
+  if (msg) msg.remove();
+}
+function setFieldError(id, message, group){
+  const el = document.getElementById(id);
+  if (!el) return null;
+  el.classList.add(group ? 'field-group-invalid' : 'field-invalid');
+  let msg = document.getElementById(id + '_err');
+  if (!msg){
+    msg = document.createElement('div');
+    msg.id = id + '_err';
+    msg.className = 'field-error-msg';
+    el.insertAdjacentElement('afterend', msg);
+  }
+  msg.textContent = message;
+  if (!el.dataset.fieldErrWired){
+    el.dataset.fieldErrWired = '1';
+    const clear = () => clearFieldError(id);
+    el.addEventListener('input', clear);
+    el.addEventListener('change', clear);
+    el.addEventListener('click', clear); // lets a click anywhere inside a button-grid group clear it
+  }
+  return el;
+}
+function validateFields(fields){
+  let firstInvalid = null;
+  fields.forEach(f => {
+    clearFieldError(f.id);
+    if (!f.test){
+      const el = setFieldError(f.id, f.message, !!f.group);
+      if (!firstInvalid && el) firstInvalid = el;
+    }
+  });
+  if (firstInvalid){
+    firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (typeof firstInvalid.focus === 'function') firstInvalid.focus({ preventScroll: true });
+  }
+  return !firstInvalid;
+}
+
 // ---------------- Patrol scheduling engine (pure — operates on local state) ----------------
 function parseHM(hm){
   const [h,m] = hm.split(':').map(Number);
