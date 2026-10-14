@@ -665,8 +665,11 @@ async function exportAttendanceCsv(fromStr, toStr, statusElId, btn){
         hoursWorked(r), r.is_reliever ? 'Yes' : 'No', coveringG ? (coveringG.full_name || '') : '', r.clock_out_reason || ''
       ].map(csvSafe));
     });
-    const csv = csvRows.map(row => row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
+    // A leading UTF-8 BOM plus \r\n line endings is what makes Excel/WPS reliably detect
+    // this as comma-delimited UTF-8 text rather than guessing (often wrongly, dumping the
+    // whole row into column A) — the audit trail CSV export already does this; matching it.
+    const csv = '\ufeff' + csvRows.map(row => row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = `attendance_${fromStr}_${toStr}.csv`;

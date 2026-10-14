@@ -596,18 +596,26 @@ document.getElementById('downloadReportBtn').addEventListener('click', async () 
   const siteLabel = document.getElementById('reportSiteSelect').selectedOptions[0].textContent;
   const from = document.getElementById('reportFrom').value;
   const to = document.getElementById('reportTo').value;
-  let csv = 'OnPatrol report\n';
-  csv += `Site,${siteLabel}\nFrom,${from}\nTo,${to}\n\n`;
-  csv += `Scheduled,On time,Late,Missed,On-time %\n`;
+  // Built as an array of cell arrays (not hand-joined strings) so every value — including
+  // a site or route name that happens to contain a comma or a quote — is escaped the same
+  // safe way, instead of being able to split a row into the wrong columns.
+  const csvCell = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
   const s = lastReportSummary;
   const pct = s.scheduled ? Math.round((s.onTime / s.scheduled) * 100) : 0;
-  csv += `${s.scheduled},${s.onTime},${s.late},${s.missed},${pct}%\n\n`;
-  csv += 'Site,Route,Scheduled,On time,Late,Missed,On-time %\n';
+  const csvRows = [
+    ['OnPatrol report'], ['Site', siteLabel], ['From', from], ['To', to], [],
+    ['Scheduled', 'On time', 'Late', 'Missed', 'On-time %'],
+    [s.scheduled, s.onTime, s.late, s.missed, pct + '%'], [],
+    ['Site', 'Route', 'Scheduled', 'On time', 'Late', 'Missed', 'On-time %']
+  ];
   lastReportRows.forEach(r => {
     const rp = r.scheduled ? Math.round((r.onTime / r.scheduled) * 100) : 0;
-    csv += `"${r.siteName}","${r.routeName}",${r.scheduled},${r.onTime},${r.late},${r.missed},${rp}%\n`;
+    csvRows.push([r.siteName, r.routeName, r.scheduled, r.onTime, r.late, r.missed, rp + '%']);
   });
-  const blob = new Blob([csv], { type: 'text/csv' });
+  // Same BOM + \r\n fix as the audit trail and attendance exports, so Excel/WPS reliably
+  // reads this as comma-delimited UTF-8 instead of guessing the delimiter.
+  const csv = '\ufeff' + csvRows.map(row => row.map(csvCell).join(',')).join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
