@@ -612,9 +612,11 @@ document.getElementById('downloadReportBtn').addEventListener('click', async () 
     const rp = r.scheduled ? Math.round((r.onTime / r.scheduled) * 100) : 0;
     csvRows.push([r.siteName, r.routeName, r.scheduled, r.onTime, r.late, r.missed, rp + '%']);
   });
-  // Same BOM + \r\n fix as the audit trail and attendance exports, so Excel/WPS reliably
-  // reads this as comma-delimited UTF-8 instead of guessing the delimiter.
-  const csv = '\ufeff' + csvRows.map(row => row.map(csvCell).join(',')).join('\r\n');
+  // "sep=," as the literal first line forces Excel/WPS to use comma as the delimiter no
+  // matter what the system's regional settings say (many South African setups default to
+  // semicolon because comma is used as the decimal separator) — without it, a correct
+  // comma-delimited file still gets dumped into a single column on those machines.
+  const csv = '\ufeffsep=,\r\n' + csvRows.map(row => row.map(csvCell).join(',')).join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

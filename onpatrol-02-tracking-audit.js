@@ -626,7 +626,11 @@ async function auditDownloadCsv(){
       r.id, auditWhen(r.occurred_at), r.actor_name || 'System', r.actor_role || '', r.action, r.entity, r.entity_label || '',
       r.site_id ? ((sites.find(s => s.id === r.site_id) || {}).name || '') : '', r.summary, auditHumanizeDetails(r.details).join('; '), r.source, (r.row_hash || '').slice(0, 12)
     ]));
-    const csv = '\ufeff' + lines.map(row => row.map(auditCsvCell).join(',')).join('\r\n');
+    // "sep=," as the literal first line forces Excel/WPS to use comma as the delimiter no
+    // matter what the system's regional settings say (many South African setups default to
+    // semicolon because comma is used as the decimal separator) — without it, a correct
+    // comma-delimited file still gets dumped into a single column on those machines.
+    const csv = '\ufeffsep=,\r\n' + lines.map(row => row.map(auditCsvCell).join(',')).join('\r\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');

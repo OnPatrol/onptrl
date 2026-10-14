@@ -665,10 +665,11 @@ async function exportAttendanceCsv(fromStr, toStr, statusElId, btn){
         hoursWorked(r), r.is_reliever ? 'Yes' : 'No', coveringG ? (coveringG.full_name || '') : '', r.clock_out_reason || ''
       ].map(csvSafe));
     });
-    // A leading UTF-8 BOM plus \r\n line endings is what makes Excel/WPS reliably detect
-    // this as comma-delimited UTF-8 text rather than guessing (often wrongly, dumping the
-    // whole row into column A) — the audit trail CSV export already does this; matching it.
-    const csv = '\ufeff' + csvRows.map(row => row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\r\n');
+    // "sep=," as the literal first line forces Excel/WPS to use comma as the delimiter no
+    // matter what the system's regional settings say (many South African setups default to
+    // semicolon because comma is used as the decimal separator) — without it, a correct
+    // comma-delimited file still gets dumped into a single column on those machines.
+    const csv = '\ufeffsep=,\r\n' + csvRows.map(row => row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\r\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
