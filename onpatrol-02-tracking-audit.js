@@ -448,12 +448,100 @@ function auditActionPill(a){
   const cls = { created: 'st-success', changed: 'st-info', deleted: 'st-crit', panic: 'st-crit', cleared: 'st-warn', resolved: 'st-success', scan_changed: 'st-crit' }[a] || 'st-info';
   return `<span class="st ${cls}">${escapeHtmlForPrint(String(a).replace(/_/g, ' '))}</span>`;
 }
+// ---------------- Human-readable audit details ----------------
+// The trail itself stores raw field-name diffs, e.g. {"clock_out_at":{"from":null,"to":"2026-10-14T18:10:26+00:00"}},
+// so that it's exact and tamper-evident. That's right for the database, but wrong for a
+// person reading a report, so this turns it into plain sentences before anything is shown
+// or exported: friendly field names, real names instead of raw ids where we have them
+// cached, and formatted dates/times instead of raw ISO strings.
+const AUDIT_FIELD_LABELS = {
+  status: 'Status', clock_in_at: 'Clock-in time', clock_out_at: 'Clock-out time',
+  clocked_in_by: 'Clocked in by', clocked_out_by: 'Clocked out by', clock_out_reason: 'Clock-out reason',
+  is_reliever: 'Covering for an absent guard', covering_guard_id: 'Covering for', guard_id: 'Guard',
+  clock_in_face_score: 'Face match score', clock_in_offline: 'Clocked in offline', shift_date: 'Shift date',
+  name: 'Name', address: 'Address', phone: 'Phone number', site_code: 'Site code', area: 'Area',
+  client_code: 'Client code', armed_response: 'Armed response company', armed_response_phone: 'Armed response phone',
+  lat: 'Latitude', lng: 'Longitude', perimeter: 'Site boundary',
+  qr_id: 'QR tag', radius_m: 'Radius (m)', strict_order: 'Strict checkpoint order', active: 'Active',
+  interval_minutes: 'Patrol interval (min)', shift_start: 'Shift start', shift_end: 'Shift end',
+  duration_minutes: 'Patrol duration (min)', grace_minutes: 'Grace period (min)',
+  start_time: 'Start time', end_time: 'End time', required_guards: 'Guards required',
+  role: 'Role', email: 'Email', incident_email_default: 'Default incident contact',
+  label: 'Vehicle name', plate: 'License plate', notes: 'Notes',
+  full_name: 'Full name', employee_number: 'Employee number', site_id: 'Site',
+  plan: 'Plan', subscription_status: 'Subscription status', billing_email: 'Billing email',
+  trial_ends_at: 'Trial ends', controller_audit_access: 'Controllers can view audit trail',
+  notify_dashboard: 'Notify on dashboard', notify_sms: 'Notify by SMS', notify_email: 'Notify by email',
+  escalation_threshold: 'Escalation threshold',
+  incident_type: 'Incident type', severity: 'Severity', description: 'Description',
+  actions_taken: 'Actions taken', resolution: 'Resolution', resolved_by: 'Resolved by',
+  resolved_at: 'Resolved at', client_emailed_at: 'Emailed to client at', client_emailed_to: 'Emailed to',
+  occurred_at: 'Occurred at', comment: 'Comment', body: 'Comment',
+  kind: 'Type', title: 'Title', detail: 'Detail', cleared_at: 'Cleared at', cleared_by: 'Cleared by',
+  auto_clear: 'Clears automatically', assigned_by: 'Assigned by', expected_time: 'Expected time',
+  requested_by: 'Requested by', requested_at: 'Requested at', expires_at: 'Expires at',
+  stopped_at: 'Stopped at', silent: 'Silent (covert) tracking',
+  raw_qr_id: 'Tag scanned', result: 'Result', distance_m: 'Distance from checkpoint (m)',
+  is_mock: 'Manual entry (no scan)', expected_qr_id: 'Expected tag', is_late: 'Scanned late',
+  skip_reason: 'Reason tag was skipped', received_at: 'Received at',
+  code: 'Code', used_by: 'Used by', used_at: 'Used at'
+};
+const AUDIT_PERSON_FIELDS = new Set(['clocked_in_by','clocked_out_by','marked_by','assigned_by','resolved_by','cleared_by','requested_by','author_id','used_by','guard_id','covering_guard_id']);
+function auditResolvePerson(id){
+  if (!id) return null;
+  const t = (teamDirectory || []).find(u => u.id === id);
+  return t ? (t.full_name || null) : null;
+}
+function auditFormatValue(field, raw){
+  if (raw === null || raw === undefined || raw === '') return 'empty';
+  if (raw === true) return 'Yes';
+  if (raw === false) return 'No';
+  if (typeof raw === 'object') return Array.isArray(raw) ? (raw.length ? raw.join(', ') : 'none') : '(updated)';
+  if (AUDIT_PERSON_FIELDS.has(field) || /_by$/.test(field)){
+    const person = auditResolvePerson(raw);
+    if (person) return person;
+  }
+  if (field === 'site_id'){
+    const s = sites.find(x => x.id === raw);
+    if (s) return s.name;
+  }
+  if (typeof raw === 'string'){
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(raw)) return auditWhen(raw);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return new Date(raw + 'T00:00:00Z').toLocaleDateString('en-ZA', { timeZone: AUDIT_TZ, year: 'numeric', month: 'short', day: '2-digit' });
+    if (/^\d{2}:\d{2}(:\d{2})?$/.test(raw)) return raw.slice(0, 5);
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw)) return 'unknown';
+    // A plain lowercase code word like "on_duty" or "clocked_out" (a status/enum value,
+    // not a sentence someone typed) reads better as "On duty" / "Clocked out".
+    if (/^[a-z]+(_[a-z]+)*$/.test(raw)) return raw.charAt(0).toUpperCase() + raw.slice(1).replace(/_/g, ' ');
+  }
+  return String(raw);
+}
+// Returns plain-text lines, e.g. ["Status: On duty → Clocked out", "Clock-out reason: S/O not feeling well"].
+function auditHumanizeDetails(details){
+  if (!details || typeof details !== 'object') return [];
+  const lines = [];
+  Object.keys(details).forEach(key => {
+    const val = details[key];
+    const label = AUDIT_FIELD_LABELS[key] || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    if (val && typeof val === 'object' && !Array.isArray(val) && ('to' in val || 'from' in val)){
+      const from = auditFormatValue(key, val.from), to = auditFormatValue(key, val.to);
+      if (from === to) return;
+      lines.push(`${label}: ${from} → ${to}`);
+    } else {
+      lines.push(`${label}: ${auditFormatValue(key, val)}`);
+    }
+  });
+  return lines;
+}
 function auditRowHtml(r){
   const site = r.site_id ? (sites.find(s => s.id === r.site_id) || {}).name || '' : '';
   const who = r.actor_name
     ? `${escapeHtmlForPrint(r.actor_name)} <span class="result-meta">${escapeHtmlForPrint(r.actor_role || '')}</span>`
     : '<span class="result-meta">System (automatic)</span>';
-  const details = r.details ? `<details style="margin-top:4px;"><summary class="result-meta" style="cursor:pointer;">details</summary><pre style="white-space:pre-wrap; font-size:11px; margin:4px 0 0;">${escapeHtmlForPrint(JSON.stringify(r.details, null, 1))}</pre></details>` : '';
+  const detailLines = auditHumanizeDetails(r.details);
+  const details = detailLines.length
+    ? `<details style="margin-top:4px;"><summary class="result-meta" style="cursor:pointer;">details</summary><div style="font-size:11px; margin:4px 0 0; display:flex; flex-direction:column; gap:2px; font-family:var(--sans);">${detailLines.map(l => `<div>${escapeHtmlForPrint(l)}</div>`).join('')}</div></details>`
+    : '';
   return `<tr>
     <td style="white-space:nowrap; font-family:var(--mono); font-size:12px;">${auditWhen(r.occurred_at)}</td>
     <td style="font-family:var(--sans);">${who}</td>
@@ -536,7 +624,7 @@ async function auditDownloadCsv(){
     lines.push(['Entry', 'Time (SAST)', 'Who', 'Role', 'What', 'Area', 'Item', 'Site', 'Summary', 'Details', 'Source', 'Entry fingerprint']);
     rows.forEach(r => lines.push([
       r.id, auditWhen(r.occurred_at), r.actor_name || 'System', r.actor_role || '', r.action, r.entity, r.entity_label || '',
-      r.site_id ? ((sites.find(s => s.id === r.site_id) || {}).name || '') : '', r.summary, r.details ? JSON.stringify(r.details) : '', r.source, (r.row_hash || '').slice(0, 12)
+      r.site_id ? ((sites.find(s => s.id === r.site_id) || {}).name || '') : '', r.summary, auditHumanizeDetails(r.details).join('; '), r.source, (r.row_hash || '').slice(0, 12)
     ]));
     const csv = '\ufeff' + lines.map(row => row.map(auditCsvCell).join(',')).join('\r\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
