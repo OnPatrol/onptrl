@@ -1089,6 +1089,22 @@
   </div>
 </div>
 
+<div class="qr-modal-bg" id="editAttendanceModalBg">
+  <div class="detail-modal">
+    <h2 style="margin:0 0 4px; font-size:16px;" id="editAttendanceTitle">Edit attendance</h2>
+    <div class="result-meta" style="margin-bottom:12px;" id="editAttendanceSub"></div>
+    <select id="editAttendanceGuardSelect" style="display:none;"></select>
+    <div id="editAttendanceReasonWrap" style="display:none;">
+      <textarea id="editAttendanceReason" rows="3" placeholder="Why are you clocking this guard out now?" style="width:100%; resize:vertical;"></textarea>
+    </div>
+    <div class="result-meta" id="editAttendanceStatus" style="margin-top:6px; min-height:14px;"></div>
+    <div class="btn-row" style="margin-top:14px;">
+      <button class="btn" id="editAttendanceCancelBtn">Cancel</button>
+      <button class="btn btn-primary" id="editAttendanceConfirmBtn">Confirm</button>
+    </div>
+  </div>
+</div>
+
 <div class="qr-modal-bg" id="qrModalBg">
   <div class="qr-modal">
     <canvas id="qrModalCanvas" width="200" height="200"></canvas>

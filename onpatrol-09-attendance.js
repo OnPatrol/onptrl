@@ -427,14 +427,18 @@ function renderCoverageGrid(containerId){
   el.innerHTML = rows.map(r => {
     const site = sites.find(s => s.id === r.shift.siteId);
     const covered = r.onDuty.length >= r.shift.required;
+    const canEditAttendance = profile && (profile.role === 'admin' || profile.role === 'controller');
     const guardRows = r.onDuty.map(a => {
       const badge = a.isReliever ? '<span class="badge">reliever</span>' : '';
-      // Admins can end a shift here directly - e.g. someone forgot to clock out, or their phone died,
-      // and it's blocking them from clocking in again anywhere else.
-      const clockOutBtn = profile && profile.role === 'admin'
-        ? `<button class="btn" data-force-clock-out="${a.id}" data-guard-label="${guardLabel(r.shift.siteId, a.guardId)}" style="width:auto; padding:2px 8px; font-size:10.5px; margin-left:auto;">Clock out</button>`
+      // Admins and controllers can edit attendance directly at any point in the shift -
+      // e.g. someone forgot to clock out, their phone died, or they need to be clocked
+      // out early. The pencil always asks why when it's a clock-out while on duty.
+      const editBtn = canEditAttendance
+        ? `<button class="icon-btn" data-edit-attendance="${a.id}" data-guard-label="${guardLabel(r.shift.siteId, a.guardId)}" title="Edit attendance" style="width:24px; height:24px; padding:0; display:inline-flex; align-items:center; justify-content:center; margin-left:auto;">
+            <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+          </button>`
         : '';
-      return `<div class="coverage-guard-row present"><span class="dot"></span>${guardLabel(r.shift.siteId, a.guardId)}${badge}${clockOutBtn}</div>`;
+      return `<div class="coverage-guard-row present"><span class="dot"></span>${guardLabel(r.shift.siteId, a.guardId)}${badge}${editBtn}</div>`;
     }).join('');
     const absentRows = r.openAbsences.map(a =>
       `<div class="coverage-guard-row absent"><span class="dot"></span>${guardLabel(r.shift.siteId, a.guardId)} — absent</div>`
@@ -453,6 +457,7 @@ function renderCoverageGrid(containerId){
         ${absentRows}
         <div class="btn-row" style="margin-top:8px;">
           <button class="btn" data-mark-absent="${r.shift.siteId}|${r.shift.id}|${r.shiftDate}" style="width:auto; padding:5px 10px; font-size:11px;">+ Mark absent</button>
+          ${canEditAttendance ? `<button class="btn" data-manual-clock-in="${r.shift.siteId}|${r.shift.id}|${r.shiftDate}" style="width:auto; padding:5px 10px; font-size:11px;">+ Clock in</button>` : ''}
         </div>
       </div>`;
   }).join('');
@@ -462,21 +467,104 @@ function renderCoverageGrid(containerId){
       openMarkAbsentModal(siteId, shiftId, shiftDate);
     });
   });
-  el.querySelectorAll('[data-force-clock-out]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const label = btn.dataset.guardLabel || 'this guard';
-      if (!confirm(`Clock ${label} out? Use this when someone forgot to clock out, or their phone is unreachable, and it's stopping them clocking in elsewhere.`)) return;
-      btn.disabled = true;
-      const { error } = await sb.from('attendance').update({
-        status: 'clocked_out', clock_out_at: new Date().toISOString(), clocked_out_by: session.user.id
-      }).eq('id', btn.dataset.forceClockOut).eq('status', 'on_duty');
-      if (error){ showToast('Could not clock out', error.message, 'danger'); btn.disabled = false; return; }
-      showToast('Clocked out', `${label} is now off duty.`, 'success');
-      await loadAttendanceRecent();
-      renderCoverageGrid('coverageGridAdmin');
+  el.querySelectorAll('[data-manual-clock-in]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const [siteId, shiftId, shiftDate] = btn.dataset.manualClockIn.split('|');
+      openEditAttendanceModal({ mode: 'clock_in', siteId, shiftId, shiftDate });
+    });
+  });
+  el.querySelectorAll('[data-edit-attendance]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      openEditAttendanceModal({ mode: 'clock_out', attendanceId: btn.dataset.editAttendance, guardLabel: btn.dataset.guardLabel || 'this guard' });
     });
   });
 }
+
+// ---------------- Edit attendance (admin/controller manual clock-in / clock-out) ----------------
+// One modal, two modes. Clock-out always asks why when a guard is clocked out mid-shift,
+// so there's a reason recorded right alongside the record in the attendance report.
+let editAttendanceContext = null;
+function openEditAttendanceModal(ctx){
+  editAttendanceContext = ctx;
+  const title = document.getElementById('editAttendanceTitle');
+  const sub = document.getElementById('editAttendanceSub');
+  const guardSelect = document.getElementById('editAttendanceGuardSelect');
+  const reasonWrap = document.getElementById('editAttendanceReasonWrap');
+  const reasonBox = document.getElementById('editAttendanceReason');
+  const confirmBtn = document.getElementById('editAttendanceConfirmBtn');
+  document.getElementById('editAttendanceStatus').textContent = '';
+  clearFieldError('editAttendanceGuardSelect'); clearFieldError('editAttendanceReason');
+  reasonBox.value = '';
+  if (ctx.mode === 'clock_out'){
+    title.textContent = 'Clock out';
+    sub.textContent = `Clocking out ${ctx.guardLabel} while the shift is still in progress. Say why — it's saved on the record and shows in the attendance report.`;
+    guardSelect.style.display = 'none';
+    reasonWrap.style.display = 'block';
+    confirmBtn.textContent = 'Clock out';
+  } else {
+    title.textContent = 'Clock in';
+    const site = sites.find(s => s.id === ctx.siteId);
+    sub.textContent = `Manually clock in a guard for this shift${site ? ' at ' + site.name : ''}. Use this when a guard couldn't clock themselves in.`;
+    reasonWrap.style.display = 'none';
+    guardSelect.style.display = 'block';
+    confirmBtn.textContent = 'Clock in';
+    (async () => {
+      const dir = await loadGuardDirectory(ctx.siteId);
+      const onDutyIds = new Set(attendance.filter(a => a.shiftId === ctx.shiftId && a.shiftDate === ctx.shiftDate && a.status === 'on_duty').map(a => a.guardId));
+      const options = dir.filter(g => !onDutyIds.has(g.id));
+      guardSelect.innerHTML = options.length
+        ? options.map(g => `<option value="${g.id}">${escapeHtmlForPrint(g.full_name || 'Guard')}${g.employee_number ? ' · #' + escapeHtmlForPrint(g.employee_number) : ''}</option>`).join('')
+        : '<option value="">No eligible guards at this site</option>';
+    })();
+  }
+  document.getElementById('editAttendanceModalBg').classList.add('show');
+}
+document.getElementById('editAttendanceCancelBtn').addEventListener('click', () => {
+  document.getElementById('editAttendanceModalBg').classList.remove('show');
+  editAttendanceContext = null;
+});
+document.getElementById('editAttendanceConfirmBtn').addEventListener('click', async () => {
+  if (!editAttendanceContext) return;
+  const ctx = editAttendanceContext;
+  const statusEl = document.getElementById('editAttendanceStatus');
+  const btn = document.getElementById('editAttendanceConfirmBtn');
+
+  if (ctx.mode === 'clock_out'){
+    const reason = document.getElementById('editAttendanceReason').value.trim();
+    const ok = validateFields([{ id: 'editAttendanceReason', test: !!reason, message: 'Enter a reason for clocking this guard out now.' }]);
+    if (!ok) return;
+    btn.disabled = true; statusEl.textContent = 'Saving…';
+    const { error } = await sb.from('attendance').update({
+      status: 'clocked_out', clock_out_at: new Date().toISOString(), clocked_out_by: session.user.id, clock_out_reason: reason
+    }).eq('id', ctx.attendanceId).eq('status', 'on_duty');
+    btn.disabled = false;
+    if (error){ statusEl.textContent = 'Could not clock out — ' + error.message; return; }
+    document.getElementById('editAttendanceModalBg').classList.remove('show');
+    showToast('Clocked out', `${ctx.guardLabel} is now off duty.`, 'success');
+    // Note: no manual logAudit() call here — the attendance table already has a
+    // database trigger (zz_audit) that records every clock-in/clock-out automatically,
+    // including who did it. Calling logAudit() too would just duplicate that entry.
+  } else {
+    const guardSelect = document.getElementById('editAttendanceGuardSelect');
+    const guardId = guardSelect.value;
+    const ok = validateFields([{ id: 'editAttendanceGuardSelect', test: !!guardId, message: 'Pick a guard to clock in.' }]);
+    if (!ok) return;
+    btn.disabled = true; statusEl.textContent = 'Saving…';
+    const { error } = await sb.from('attendance').insert({
+      site_id: ctx.siteId, shift_id: ctx.shiftId, shift_date: ctx.shiftDate, guard_id: guardId,
+      clock_in_at: new Date().toISOString(), clocked_in_by: session.user.id, status: 'on_duty'
+    });
+    btn.disabled = false;
+    if (error){ statusEl.textContent = 'Could not clock in — ' + error.message; return; }
+    document.getElementById('editAttendanceModalBg').classList.remove('show');
+    showToast('Clocked in', `${guardLabel(ctx.siteId, guardId)} is now on duty.`, 'success');
+    // Same as above — the zz_audit trigger on attendance logs this clock-in automatically.
+  }
+  editAttendanceContext = null;
+  await loadAttendanceRecent();
+  renderCoverageGrid('coverageGridAdmin');
+  renderCoverageGrid('coverageGridCtrl');
+});
 
 document.getElementById('refreshCoverageBtnAdmin').addEventListener('click', async () => {
   await loadAttendanceRecent(); await loadAbsencesRecent();
@@ -556,7 +644,15 @@ async function exportAttendanceCsv(fromStr, toStr, statusElId, btn){
     // content). A leading apostrophe is the standard mitigation - it forces
     // the cell to be read as plain text.
     const csvSafe = v => /^[=+\-@]/.test(String(v)) ? "'" + v : v;
-    const csvRows = [['Employee Number','Full Name','Site','Shift','Shift Date','Clock In','Clock Out','Reliever','Covering For']];
+    // Hours worked: clock-out minus clock-in for a completed shift; for a guard still on
+    // duty, hours worked so far (not a final figure), labelled so it isn't read as final.
+    const hoursWorked = r => {
+      const start = new Date(r.clock_in_at).getTime();
+      const end = r.clock_out_at ? new Date(r.clock_out_at).getTime() : Date.now();
+      const hrs = Math.max(0, (end - start) / 3600000);
+      return r.clock_out_at ? hrs.toFixed(2) : hrs.toFixed(2) + ' (in progress)';
+    };
+    const csvRows = [['Employee Number','Full Name','Site','Shift','Shift Date','Clock In','Clock Out','Hours Worked','Reliever','Covering For','Clock-Out Reason']];
     rows.forEach(r => {
       const dir = guardDirectoryCache[r.site_id] || [];
       const g = dir.find(x => x.id === r.guard_id);
@@ -566,7 +662,7 @@ async function exportAttendanceCsv(fromStr, toStr, statusElId, btn){
       csvRows.push([
         g?.employee_number || '', g?.full_name || '', site ? site.name : '', shift ? shift.name : '',
         r.shift_date, new Date(r.clock_in_at).toLocaleString([], { hour12: false }), r.clock_out_at ? new Date(r.clock_out_at).toLocaleString([], { hour12: false }) : '',
-        r.is_reliever ? 'Yes' : 'No', coveringG ? (coveringG.full_name || '') : ''
+        hoursWorked(r), r.is_reliever ? 'Yes' : 'No', coveringG ? (coveringG.full_name || '') : '', r.clock_out_reason || ''
       ].map(csvSafe));
     });
     const csv = csvRows.map(row => row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
