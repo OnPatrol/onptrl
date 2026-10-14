@@ -3,7 +3,7 @@
    It never touches the OnPatrol database, login or realtime traffic — those always go straight to the network.
    Put this file next to index.html (same folder, served over https). */
 
-const VERSION = 'v2';   // bumped: index.html now loads its CSS and JS as separate files (see LOCAL_ASSETS)
+const VERSION = 'v3';   // bumped: added xlsx (SheetJS) for real-spreadsheet report downloads (see LIB_URLS)
 const SHELL = 'onpatrol-shell-' + VERSION;
 const LIBS = 'onpatrol-libs-' + VERSION;
 
@@ -35,6 +35,7 @@ const LIB_URLS = [
   'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css',
   'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js',
   'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js',
+  'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
   'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap'
 ];
 

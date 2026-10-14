@@ -596,13 +596,12 @@ document.getElementById('downloadReportBtn').addEventListener('click', async () 
   const siteLabel = document.getElementById('reportSiteSelect').selectedOptions[0].textContent;
   const from = document.getElementById('reportFrom').value;
   const to = document.getElementById('reportTo').value;
-  // Built as an array of cell arrays (not hand-joined strings) so every value — including
-  // a site or route name that happens to contain a comma or a quote — is escaped the same
-  // safe way, instead of being able to split a row into the wrong columns.
-  const csvCell = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+  // Built as an array of cell arrays and written with SheetJS into real worksheet cells —
+  // a genuine .xlsx has no delimiter to misdetect, so a site or route name with a comma or
+  // quote in it can't split a row into the wrong columns the way a .csv could.
   const s = lastReportSummary;
   const pct = s.scheduled ? Math.round((s.onTime / s.scheduled) * 100) : 0;
-  const csvRows = [
+  const aoa = [
     ['OnPatrol report'], ['Site', siteLabel], ['From', from], ['To', to], [],
     ['Scheduled', 'On time', 'Late', 'Missed', 'On-time %'],
     [s.scheduled, s.onTime, s.late, s.missed, pct + '%'], [],
@@ -610,24 +609,15 @@ document.getElementById('downloadReportBtn').addEventListener('click', async () 
   ];
   lastReportRows.forEach(r => {
     const rp = r.scheduled ? Math.round((r.onTime / r.scheduled) * 100) : 0;
-    csvRows.push([r.siteName, r.routeName, r.scheduled, r.onTime, r.late, r.missed, rp + '%']);
+    aoa.push([r.siteName, r.routeName, r.scheduled, r.onTime, r.late, r.missed, rp + '%']);
   });
-  // "sep=," as the literal first line forces Excel/WPS to use comma as the delimiter no
-  // matter what the system's regional settings say (many South African setups default to
-  // semicolon because comma is used as the decimal separator) — without it, a correct
-  // comma-delimited file still gets dumped into a single column on those machines.
-  const csv = '\ufeffsep=,\r\n' + csvRows.map(row => row.map(csvCell).join(',')).join('\r\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `patrol-report_${from}_to_${to}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{ wch: 20 },{ wch: 20 },{ wch: 11 },{ wch: 9 },{ wch: 8 },{ wch: 9 },{ wch: 11 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Patrol report');
+  XLSX.writeFile(wb, `patrol-report_${from}_to_${to}.xlsx`);
   showToast('Report downloaded', '', 'success');
-  logAudit('export', 'patrol_report', null, document.getElementById('reportSiteSelect').value || null, `Downloaded the patrol report as CSV - ${siteLabel}, ${from} to ${to}`, { format: 'csv', from, to });
+  logAudit('export', 'patrol_report', null, document.getElementById('reportSiteSelect').value || null, `Downloaded the patrol report as Excel - ${siteLabel}, ${from} to ${to}`, { format: 'xlsx', from, to });
 });
 
 document.getElementById('printPdfReportBtn').addEventListener('click', async () => {

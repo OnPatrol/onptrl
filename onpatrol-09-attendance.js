@@ -637,13 +637,11 @@ async function exportAttendanceCsv(fromStr, toStr, statusElId, btn){
     const siteIds = [...new Set(rows.map(r => r.site_id).filter(Boolean))];
     await Promise.all(siteIds.map(id => loadGuardDirectory(id)));
 
-    // Guard names are self-provided at signup - a leading =, +, -, or @ gets
-    // interpreted as a live formula by Excel/Sheets when the CSV is opened,
-    // regardless of the CSV-level quoting below (that only protects the CSV
-    // structure itself, not what a spreadsheet app does with a cell's
-    // content). A leading apostrophe is the standard mitigation - it forces
-    // the cell to be read as plain text.
-    const csvSafe = v => /^[=+\-@]/.test(String(v)) ? "'" + v : v;
+    // Guard names are self-provided at signup - a leading =, +, -, or @ would get read as
+    // a live formula by Excel if it ever landed in a formula-typed cell. aoa_to_sheet below
+    // always stores these as plain string cells (not formulas), but a leading apostrophe is
+    // kept anyway as a belt-and-suspenders guard, since it costs nothing.
+    const formulaSafe = v => /^[=+\-@]/.test(String(v)) ? "'" + v : v;
     // Hours worked: clock-out minus clock-in for a completed shift; for a guard still on
     // duty, hours worked so far (not a final figure), labelled so it isn't read as final.
     const hoursWorked = r => {
@@ -652,34 +650,28 @@ async function exportAttendanceCsv(fromStr, toStr, statusElId, btn){
       const hrs = Math.max(0, (end - start) / 3600000);
       return r.clock_out_at ? hrs.toFixed(2) : hrs.toFixed(2) + ' (in progress)';
     };
-    const csvRows = [['Employee Number','Full Name','Site','Shift','Shift Date','Clock In','Clock Out','Hours Worked','Reliever','Covering For','Clock-Out Reason']];
+    const aoa = [['Employee Number','Full Name','Site','Shift','Shift Date','Clock In','Clock Out','Hours Worked','Reliever','Covering For','Clock-Out Reason']];
     rows.forEach(r => {
       const dir = guardDirectoryCache[r.site_id] || [];
       const g = dir.find(x => x.id === r.guard_id);
       const site = sites.find(s => s.id === r.site_id);
       const shift = siteShifts.find(s => s.id === r.shift_id);
       const coveringG = r.covering_guard_id ? dir.find(x => x.id === r.covering_guard_id) : null;
-      csvRows.push([
+      aoa.push([
         g?.employee_number || '', g?.full_name || '', site ? site.name : '', shift ? shift.name : '',
         r.shift_date, new Date(r.clock_in_at).toLocaleString([], { hour12: false }), r.clock_out_at ? new Date(r.clock_out_at).toLocaleString([], { hour12: false }) : '',
         hoursWorked(r), r.is_reliever ? 'Yes' : 'No', coveringG ? (coveringG.full_name || '') : '', r.clock_out_reason || ''
-      ].map(csvSafe));
+      ].map(formulaSafe));
     });
-    // "sep=," as the literal first line forces Excel/WPS to use comma as the delimiter no
-    // matter what the system's regional settings say (many South African setups default to
-    // semicolon because comma is used as the decimal separator) — without it, a correct
-    // comma-delimited file still gets dumped into a single column on those machines.
-    const csv = '\ufeffsep=,\r\n' + csvRows.map(row => row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\r\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `attendance_${fromStr}_${toStr}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    // A real .xlsx has actual cells, so there's no delimiter to misdetect — this sidesteps
+    // the regional-settings/column-splitting problem a .csv can hit entirely.
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [{ wch: 14 },{ wch: 20 },{ wch: 16 },{ wch: 14 },{ wch: 12 },{ wch: 20 },{ wch: 20 },{ wch: 14 },{ wch: 10 },{ wch: 18 },{ wch: 28 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Attendance');
+    XLSX.writeFile(wb, `attendance_${fromStr}_${toStr}.xlsx`);
     statusEl.textContent = `Exported ${rows.length} record${rows.length === 1 ? '' : 's'}.`;
-    logAudit('export', 'attendance', null, null, `Exported attendance as CSV (${rows.length} records) - ${fromStr} to ${toStr}`, { format: 'csv', records: rows.length, from: fromStr, to: toStr });
+    logAudit('export', 'attendance', null, null, `Exported attendance as Excel (${rows.length} records) - ${fromStr} to ${toStr}`, { format: 'xlsx', records: rows.length, from: fromStr, to: toStr });
   } catch (err) {
     console.error('Attendance export failed:', err);
     statusEl.textContent = 'Could not export — ' + (err?.message || 'unexpected error, see console.');

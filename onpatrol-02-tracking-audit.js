@@ -349,7 +349,7 @@ function auditPanelMarkup(prefix, showControllerToggle){
     </div>
     <div class="btn-row" style="margin-top:10px; flex-wrap:wrap;">
       <button class="btn btn-primary" id="${prefix}AuditShowBtn" style="width:auto; padding:9px 14px;">Show</button>
-      <button class="btn" id="${prefix}AuditCsvBtn" style="width:auto; padding:9px 14px;"><svg class="icon" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/></svg> Download CSV</button>
+      <button class="btn" id="${prefix}AuditCsvBtn" style="width:auto; padding:9px 14px;"><svg class="icon" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/></svg> Download Excel</button>
       <button class="btn" id="${prefix}AuditPrintBtn" style="width:auto; padding:9px 14px;"><svg class="icon" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 17v4h12v-4"/></svg> Print / PDF</button>
       <button class="btn" id="${prefix}AuditVerifyBtn" style="width:auto; padding:9px 14px;">Check integrity</button>
     </div>
@@ -607,7 +607,7 @@ async function auditIntegrity(){
 function auditCsvCell(v){
   let s = String(v == null ? '' : v);
   if (/^[=+\-@]/.test(s)) s = "'" + s;
-  return '"' + s.replace(/"/g, '""') + '"';
+  return s;
 }
 async function auditDownloadCsv(){
   const status = aEl('AuditStatus'); status.textContent = 'Preparing…';
@@ -626,18 +626,16 @@ async function auditDownloadCsv(){
       r.id, auditWhen(r.occurred_at), r.actor_name || 'System', r.actor_role || '', r.action, r.entity, r.entity_label || '',
       r.site_id ? ((sites.find(s => s.id === r.site_id) || {}).name || '') : '', r.summary, auditHumanizeDetails(r.details).join('; '), r.source, (r.row_hash || '').slice(0, 12)
     ]));
-    // "sep=," as the literal first line forces Excel/WPS to use comma as the delimiter no
-    // matter what the system's regional settings say (many South African setups default to
-    // semicolon because comma is used as the decimal separator) — without it, a correct
-    // comma-delimited file still gets dumped into a single column on those machines.
-    const csv = '\ufeffsep=,\r\n' + lines.map(row => row.map(auditCsvCell).join(',')).join('\r\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `audit-trail_${f.from || 'start'}_to_${f.to || 'today'}.csv`;
-    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    // A real .xlsx has actual cells, so there's no delimiter to misdetect — this sidesteps
+    // the regional-settings/column-splitting problem a .csv can hit entirely.
+    const aoa = lines.map(row => row.map(auditCsvCell));
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [{ wch: 8 },{ wch: 20 },{ wch: 16 },{ wch: 11 },{ wch: 14 },{ wch: 12 },{ wch: 18 },{ wch: 16 },{ wch: 40 },{ wch: 40 },{ wch: 10 },{ wch: 14 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Audit trail');
+    XLSX.writeFile(wb, `audit-trail_${f.from || 'start'}_to_${f.to || 'today'}.xlsx`);
     status.textContent = `Downloaded ${rows.length} entr${rows.length === 1 ? 'y' : 'ies'}.`;
-    logAudit('export', 'audit_trail', null, f.site || null, `Downloaded the audit trail as CSV (${rows.length} entries) - ${auditFilterText(f)}`, { format: 'csv', entries: rows.length });
+    logAudit('export', 'audit_trail', null, f.site || null, `Downloaded the audit trail as Excel (${rows.length} entries) - ${auditFilterText(f)}`, { format: 'xlsx', entries: rows.length });
   }catch(e){ status.textContent = 'Could not download — ' + (e.message || e); }
 }
 async function auditPrint(){
