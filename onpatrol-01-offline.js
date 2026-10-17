@@ -423,9 +423,21 @@ async function offlineRefreshFaceRoster(){
 }
 
 // ---- status banner + heartbeat ----
+// A new service worker install means new app code is sitting ready but not yet in control
+// (see sw.js) — this tells every role, not just guards, so nobody keeps using stale code
+// after a fix has shipped. It's a tap-to-refresh rather than an automatic reload, since
+// forcing a reload mid-scan or mid-incident-report would lose what someone's doing.
+let swUpdateAvailable = false;
 function offlineRenderBanner(){
   const el = document.getElementById('offlineBanner');
   if (!el) return;
+  if (swUpdateAvailable){
+    el.textContent = 'A new version of OnPatrol is available — tap to refresh.';
+    document.body.classList.add('has-offline-banner');
+    el.dataset.kind = 'update';
+    el.style.display = 'block';
+    return;
+  }
   const guard = OFFLINE_ENABLED && profile && profile.role === 'guard';
   let msg = '', kind = '';
   if (guard){
@@ -464,9 +476,28 @@ window.addEventListener('online', () => { offlineHeartbeat(true); });
 window.addEventListener('offline', () => { offlineRenderBanner(); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) offlineHeartbeat(true); });
 setInterval(offlineHeartbeat, 20000);
+document.getElementById('offlineBanner').addEventListener('click', () => {
+  if (swUpdateAvailable) window.location.reload();
+});
 if (OFFLINE_ENABLED && 'serviceWorker' in navigator){
   // Lets the app itself (page, libraries, face models) open with no signal. sw.js must sit next to index.html.
-  window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').catch(e => console.warn('service worker', e)); });
+  window.addEventListener('load', async () => {
+    try {
+      const reg = await navigator.serviceWorker.register('./sw.js');
+      reg.addEventListener('updatefound', () => {
+        const installing = reg.installing;
+        if (!installing) return;
+        installing.addEventListener('statechange', () => {
+          // "installed" while a controller already exists means this is a genuine update to
+          // an app already running, not the very first install on this device.
+          if (installing.state === 'installed' && navigator.serviceWorker.controller){
+            swUpdateAvailable = true;
+            offlineRenderBanner();
+          }
+        });
+      });
+    } catch (e){ console.warn('service worker', e); }
+  });
 }
 
 // Alerts change in bursts (the server writes a batch at once). Reload the alert list once

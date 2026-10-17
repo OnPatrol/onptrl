@@ -8,6 +8,16 @@ document.querySelectorAll('.tab-btn[data-view]').forEach(btn => {
   });
 });
 
+// Reports page: Attendance / Patrols / Audit trail used to all sit stacked on one long
+// page. One at a time, picked from the tab bar, is far less to scroll past to find any
+// one of them.
+document.querySelectorAll('.tab-btn[data-reports-tab]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn[data-reports-tab]').forEach(b => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('.reports-tab-panel').forEach(p => { p.style.display = p.dataset.reportsPanel === btn.dataset.reportsTab ? '' : 'none'; });
+  });
+});
+
 // ---------------- Enterprise UI layer (presentation only) ----------------
 // Everything below reads state the app already keeps (scans, notifications,
 // schedules, routes, sites, profile) and only ever writes to the DOM. It never
