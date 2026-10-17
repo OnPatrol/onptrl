@@ -267,7 +267,7 @@
       <div class="panel">
         <h2>Sites</h2>
         <div class="cp-row">
-          <input type="text" id="siteSearch" placeholder="Search sites by name or address…">
+          <input type="text" id="siteSearch" placeholder="Search sites by name, area, or address…">
         </div>
         <div class="cp-row">
           <input type="text" id="newSiteName" placeholder="Site name">
@@ -277,7 +277,7 @@
         </div>
         <div class="table-scroll">
         <table style="margin-top:10px;">
-          <thead><tr><th>Site</th><th>Address</th><th>Phone</th><th>Site code</th><th>Checkpoints</th><th>Routes</th><th></th></tr></thead>
+          <thead><tr><th>Site</th><th>Category</th><th>Area</th><th>Address</th><th>Phone</th><th>Site code</th><th>Checkpoints</th><th>Routes</th><th></th></tr></thead>
           <tbody id="siteTableBody"></tbody>
         </table>
         </div>
@@ -300,6 +300,19 @@
           <input type="tel" id="manageSitePhone" placeholder="Site phone number (required)">
         </div>
         <div class="result-meta" style="margin:4px 0 0;">Site code: <b id="manageSiteCode">—</b> — share this with guards joining the site.</div>
+        <div class="field-label" style="margin-top:16px;">Categorization &amp; armed response</div>
+        <div class="result-meta" style="margin:-2px 0 8px;">Area is your own company's grouping — e.g. all Alberton sites as "Area1", or "Area Jozi" — separate from category. Both, plus armed response and the client's reference code, are shown to controllers alongside the rest of the site's details.</div>
+        <div class="cp-row">
+          <select id="manageSiteCategory"></select>
+          <input type="text" id="manageSiteArea" placeholder="Area (e.g. Area1, Area Jozi)">
+        </div>
+        <div class="cp-row" style="margin-top:8px;">
+          <input type="text" id="manageSiteClientCode" placeholder="Client code">
+          <input type="text" id="manageSiteArmedResponse" placeholder="Armed response company / division">
+        </div>
+        <div class="cp-row" style="margin-top:8px;">
+          <input type="tel" id="manageSiteArmedResponsePhone" placeholder="Armed response phone number">
+        </div>
         <div class="btn-row">
           <button class="btn btn-primary" id="manageSiteSaveBtn" style="width:auto; padding:9px 14px;">Save changes</button>
           <span class="result-meta" id="manageSiteSaveStatus" style="align-self:center;"></span>
@@ -866,11 +879,11 @@
       <h2>Sites</h2>
       <div class="result-meta" style="margin-bottom:10px;">Read-only — tap Map to see where a site is located.</div>
       <div class="cp-row" style="margin-bottom:10px;">
-        <input type="text" id="ctrlSiteSearch" placeholder="Search sites by name or address…">
+        <input type="text" id="ctrlSiteSearch" placeholder="Search sites by name, area, or address…">
       </div>
       <div class="table-scroll">
         <table>
-          <thead><tr><th>Site</th><th>Address</th><th>Phone</th><th>Checkpoints</th><th>Routes</th><th></th></tr></thead>
+          <thead><tr><th>Site</th><th>Category</th><th>Area</th><th>Address</th><th>Phone</th><th>Checkpoints</th><th>Routes</th><th></th></tr></thead>
           <tbody id="ctrlSiteTableBody"></tbody>
         </table>
       </div>
@@ -1050,10 +1063,16 @@
     <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
       <div>
         <div id="ctrlSiteDetailTitle" style="font-weight:700; font-size:16px;"></div>
+        <div id="ctrlSiteDetailCategory" style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap;"></div>
         <div id="ctrlSiteDetailAddress" class="result-meta" style="margin-top:4px;"></div>
         <div id="ctrlSiteDetailPhone" class="result-meta" style="margin-top:4px;"></div>
       </div>
       <button class="btn" style="width:auto; padding:5px 10px; font-size:11px; flex:0 0 auto;" id="ctrlSiteDetailCloseBtn">Close</button>
+    </div>
+
+    <div style="margin-top:18px;">
+      <h2 style="margin:0 0 8px; font-size:13px;"><svg class="icon" viewBox="0 0 24 24"><path d="M7.86 2h8.28L22 7.86v8.28L16.14 22H7.86L2 16.14V7.86Z"/><path d="M12 8v4M12 16h.01"/></svg> Armed response &amp; client code</h2>
+      <div id="ctrlSiteDetailArmedResponse" style="display:flex; flex-direction:column; gap:6px;"></div>
     </div>
 
     <div style="margin-top:18px;">

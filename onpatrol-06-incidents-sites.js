@@ -286,9 +286,9 @@ function wireIncidentClientEmailSection(inc, incidentId, who, contacts){
 function renderSiteTable(){
   const body = document.getElementById('siteTableBody');
   const q = (document.getElementById('siteSearch').value || '').toLowerCase();
-  const filtered = sites.filter(s => s.name.toLowerCase().includes(q) || s.address.toLowerCase().includes(q) || (s.phone || '').toLowerCase().includes(q));
+  const filtered = sites.filter(s => s.name.toLowerCase().includes(q) || s.address.toLowerCase().includes(q) || (s.phone || '').toLowerCase().includes(q) || (s.area || '').toLowerCase().includes(q));
   if (filtered.length === 0){
-    body.innerHTML = '<tr><td colspan="8" style="font-family:var(--sans); color:var(--muted);">No sites match.</td></tr>';
+    body.innerHTML = '<tr><td colspan="9" style="font-family:var(--sans); color:var(--muted);">No sites match.</td></tr>';
     return;
   }
   body.innerHTML = filtered.map(s => {
@@ -297,6 +297,8 @@ function renderSiteTable(){
     return `
       <tr>
         <td style="font-family:var(--sans); font-weight:600;">${escapeHtmlForPrint(s.name)}</td>
+        <td>${s.category ? `<span class="badge">${escapeHtmlForPrint(siteCategoryLabel(s.category))}</span>` : '<span class="result-meta">—</span>'}</td>
+        <td style="font-family:var(--sans);">${s.area ? escapeHtmlForPrint(s.area) : '<span class="result-meta">—</span>'}</td>
         <td style="font-family:var(--sans); color:var(--muted);">${escapeHtmlForPrint(s.address)}</td>
         <td style="font-family:var(--sans);">${s.phone ? phoneLinkHtml(s.phone) : '<span style="color:var(--warn);">Not set</span>'}</td>
         <td style="letter-spacing:0.5px;">${s.siteCode || '—'}</td>
@@ -339,16 +341,16 @@ function renderControllerSiteTable(){
   const body = document.getElementById('ctrlSiteTableBody');
   if (!body) return;
   if (sites.length === 0){
-    body.innerHTML = '<tr><td colspan="6" style="font-family:var(--sans); color:var(--muted);">No sites yet.</td></tr>';
+    body.innerHTML = '<tr><td colspan="8" style="font-family:var(--sans); color:var(--muted);">No sites yet.</td></tr>';
     return;
   }
   const searchEl = document.getElementById('ctrlSiteSearch');
   const q = searchEl ? searchEl.value.trim().toLowerCase() : '';
   const filtered = q
-    ? sites.filter(s => (s.name || '').toLowerCase().includes(q) || (s.address || '').toLowerCase().includes(q) || (s.phone || '').toLowerCase().includes(q))
+    ? sites.filter(s => (s.name || '').toLowerCase().includes(q) || (s.address || '').toLowerCase().includes(q) || (s.phone || '').toLowerCase().includes(q) || (s.area || '').toLowerCase().includes(q))
     : sites;
   if (filtered.length === 0){
-    body.innerHTML = '<tr><td colspan="6" style="font-family:var(--sans); color:var(--muted);">No sites match your search.</td></tr>';
+    body.innerHTML = '<tr><td colspan="8" style="font-family:var(--sans); color:var(--muted);">No sites match your search.</td></tr>';
     return;
   }
   body.innerHTML = filtered.map(s => {
@@ -357,6 +359,8 @@ function renderControllerSiteTable(){
     return `
       <tr>
         <td style="font-family:var(--sans); font-weight:600;">${escapeHtmlForPrint(s.name)}</td>
+        <td>${s.category ? `<span class="badge">${escapeHtmlForPrint(siteCategoryLabel(s.category))}</span>` : '<span class="result-meta">—</span>'}</td>
+        <td style="font-family:var(--sans);">${s.area ? escapeHtmlForPrint(s.area) : '<span class="result-meta">—</span>'}</td>
         <td style="font-family:var(--sans); color:var(--muted);">${escapeHtmlForPrint(s.address)}</td>
         <td style="font-family:var(--sans);">${s.phone ? phoneLinkHtml(s.phone) : '<span style="color:var(--warn);">Not set</span>'}</td>
         <td>${cpCount}</td>
@@ -381,10 +385,20 @@ document.getElementById('ctrlSiteSearch').addEventListener('input', renderContro
 async function openCtrlSiteDetailModal(siteId){
   const s = sites.find(x => x.id === siteId);
   document.getElementById('ctrlSiteDetailTitle').textContent = s ? s.name : 'Site';
+  const badgeHtml = [
+    s && s.category ? `<span class="badge">${escapeHtmlForPrint(siteCategoryLabel(s.category))}</span>` : '',
+    s && s.area ? `<span class="badge">${escapeHtmlForPrint(s.area)}</span>` : ''
+  ].filter(Boolean).join('');
+  document.getElementById('ctrlSiteDetailCategory').innerHTML = badgeHtml;
   document.getElementById('ctrlSiteDetailAddress').textContent = s ? (s.address || '') : '';
   document.getElementById('ctrlSiteDetailPhone').innerHTML = s && s.phone
     ? `Site phone: ${phoneLinkHtml(s.phone)}`
     : '<span style="color:var(--warn);">No site phone number set</span>';
+  const arEl = document.getElementById('ctrlSiteDetailArmedResponse');
+  const arRows = [];
+  if (s && s.clientCode) arRows.push(`<div class="site-contact-row"><div style="flex:1; min-width:0;"><div class="result-meta">Client code</div><div class="site-contact-name">${escapeHtmlForPrint(s.clientCode)}</div></div></div>`);
+  if (s && (s.armedResponse || s.armedResponsePhone)) arRows.push(`<div class="site-contact-row"><div style="flex:1; min-width:0;"><div class="result-meta">Armed response</div><div class="site-contact-name">${escapeHtmlForPrint(s.armedResponse || 'Company not named')}</div>${s.armedResponsePhone ? `<div class="result-meta" style="margin-top:2px;">${phoneLinkHtml(s.armedResponsePhone)}</div>` : ''}</div></div>`);
+  arEl.innerHTML = arRows.length ? arRows.join('') : '<div class="result-meta">No armed response or client code set for this site yet.</div>';
 
   const contactsEl = document.getElementById('ctrlSiteContactsList');
   const guardsEl = document.getElementById('ctrlSiteGuardsList');
@@ -614,17 +628,33 @@ function renderManageSiteBasicInfo(){
   const addrEl = document.getElementById('manageSiteAddress');
   const summaryEl = document.getElementById('manageSiteLocationSummary');
   const phoneEl = document.getElementById('manageSitePhone');
+  const categoryEl = document.getElementById('manageSiteCategory');
+  const areaEl = document.getElementById('manageSiteArea');
+  const clientCodeEl = document.getElementById('manageSiteClientCode');
+  const armedResponseEl = document.getElementById('manageSiteArmedResponse');
+  const armedResponsePhoneEl = document.getElementById('manageSiteArmedResponsePhone');
+  if (categoryEl && !categoryEl.dataset.built){ categoryEl.innerHTML = siteCategoryOptionsHtml(''); categoryEl.dataset.built = '1'; }
   if (!s){
     nameEl.value = ''; addrEl.value = ''; if (phoneEl) phoneEl.value = '';
+    if (categoryEl) categoryEl.value = '';
+    if (areaEl) areaEl.value = '';
+    if (clientCodeEl) clientCodeEl.value = '';
+    if (armedResponseEl) armedResponseEl.value = '';
+    if (armedResponsePhoneEl) armedResponsePhoneEl.value = '';
     document.getElementById('manageSiteCode').textContent = '—';
     summaryEl.textContent = 'No site selected.';
-    clearFieldError('manageSiteName'); clearFieldError('manageSitePhone');
+    clearFieldError('manageSiteName'); clearFieldError('manageSitePhone'); clearFieldError('manageSiteArmedResponsePhone');
     return;
   }
   // Don't stomp on text the admin is mid-typing when a background refresh runs.
   if (document.activeElement !== nameEl) nameEl.value = s.name || '';
   if (document.activeElement !== addrEl) addrEl.value = (s.address && s.address !== '—') ? s.address : '';
   if (phoneEl && document.activeElement !== phoneEl) phoneEl.value = s.phone || '';
+  if (categoryEl && document.activeElement !== categoryEl) categoryEl.value = s.category || '';
+  if (areaEl && document.activeElement !== areaEl) areaEl.value = s.area || '';
+  if (clientCodeEl && document.activeElement !== clientCodeEl) clientCodeEl.value = s.clientCode || '';
+  if (armedResponseEl && document.activeElement !== armedResponseEl) armedResponseEl.value = s.armedResponse || '';
+  if (armedResponsePhoneEl && document.activeElement !== armedResponsePhoneEl) armedResponsePhoneEl.value = s.armedResponsePhone || '';
   document.getElementById('manageSiteCode').textContent = s.siteCode || '—';
 
   const hasLoc = s.lat != null && s.lng != null;
@@ -640,13 +670,23 @@ document.getElementById('manageSiteSaveBtn').addEventListener('click', async () 
   const name = document.getElementById('manageSiteName').value.trim();
   const address = document.getElementById('manageSiteAddress').value.trim();
   const phone = cleanPhone(document.getElementById('manageSitePhone').value);
+  const category = document.getElementById('manageSiteCategory').value;
+  const area = document.getElementById('manageSiteArea').value.trim();
+  const clientCode = document.getElementById('manageSiteClientCode').value.trim();
+  const armedResponse = document.getElementById('manageSiteArmedResponse').value.trim();
+  const armedResponsePhoneRaw = document.getElementById('manageSiteArmedResponsePhone').value;
+  const armedResponsePhone = armedResponsePhoneRaw.trim() ? cleanPhone(armedResponsePhoneRaw) : '';
   const ok = validateFields([
     { id: 'manageSiteName', test: !!name, message: 'Site name is required.' },
-    { id: 'manageSitePhone', test: isValidPhone(phone), message: 'Enter a valid phone number (e.g. 082 123 4567 or +27 82 123 4567).' }
+    { id: 'manageSitePhone', test: isValidPhone(phone), message: 'Enter a valid phone number (e.g. 082 123 4567 or +27 82 123 4567).' },
+    { id: 'manageSiteArmedResponsePhone', test: !armedResponsePhoneRaw.trim() || isValidPhone(armedResponsePhone), message: 'Enter a valid phone number, or leave this blank.' }
   ]);
   if (!ok){ statusEl.textContent = ''; return; }
   statusEl.textContent = 'Saving…';
-  const { error } = await sb.from('sites').update({ name, address: address || null, phone }).eq('id', activeSiteId);
+  const { error } = await sb.from('sites').update({
+    name, address: address || null, phone, category: category || null, area: area || null, client_code: clientCode || null,
+    armed_response: armedResponse || null, armed_response_phone: armedResponsePhone || null
+  }).eq('id', activeSiteId);
   if (error){ statusEl.textContent = 'Could not save — ' + error.message; return; }
   await loadSites();
   renderAll();

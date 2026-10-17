@@ -328,11 +328,36 @@ function rowToScan(row){
 async function loadSites(){
   const { data, error } = await sb.from('sites').select('*').order('created_at');
   if (error){ showToast('Could not load sites', error.message, 'danger'); return; }
-  sites = (data || []).map(s => ({ id: s.id, name: s.name, address: s.address || '—', siteCode: s.site_code, phone: s.phone || '', lat: s.lat, lng: s.lng, perimeter: s.perimeter || null, createdAt: s.created_at ? new Date(s.created_at).getTime() : null }));
+  sites = (data || []).map(s => ({
+    id: s.id, name: s.name, address: s.address || '—', siteCode: s.site_code, phone: s.phone || '', lat: s.lat, lng: s.lng, perimeter: s.perimeter || null, createdAt: s.created_at ? new Date(s.created_at).getTime() : null,
+    category: s.category || '', area: s.area || '', clientCode: s.client_code || '', armedResponse: s.armed_response || '', armedResponsePhone: s.armed_response_phone || ''
+  }));
   if (!activeSiteId || !sites.some(s => s.id === activeSiteId)){
     activeSiteId = sites[0] ? sites[0].id : null;
   }
 }
+// A site's category groups it for quick scanning in the sites tables and the controller's
+// site detail view — stored as a stable key (not the label text) so relabelling later
+// doesn't touch existing data.
+const SITE_CATEGORIES = [
+  { value: 'residential', label: 'Residential / Estate' },
+  { value: 'commercial', label: 'Commercial / Office' },
+  { value: 'retail', label: 'Retail / Shopping Centre' },
+  { value: 'industrial', label: 'Industrial / Warehouse' },
+  { value: 'construction', label: 'Construction Site' },
+  { value: 'government', label: 'Government / Municipal' },
+  { value: 'hospitality', label: 'Hospitality / Leisure' },
+  { value: 'other', label: 'Other' }
+];
+function siteCategoryLabel(value){
+  const c = SITE_CATEGORIES.find(x => x.value === value);
+  return c ? c.label : '';
+}
+function siteCategoryOptionsHtml(selected){
+  return '<option value="">No category set</option>' + SITE_CATEGORIES.map(c =>
+    `<option value="${c.value}"${c.value === selected ? ' selected' : ''}>${c.label}</option>`).join('');
+}
+
 let teamDirectory = [];
 async function loadTeamDirectory(){
   const { data, error } = await sb.from('profiles').select('id, full_name, phone, role, site_id, employee_number').order('full_name');
@@ -449,7 +474,7 @@ function rowToAttendance(r){
     isReliever: r.is_reliever, coveringGuardId: r.covering_guard_id,
     clockInAt: new Date(r.clock_in_at).getTime(),
     clockOutAt: r.clock_out_at ? new Date(r.clock_out_at).getTime() : null,
-    status: r.status
+    status: r.status, clockOutReason: r.clock_out_reason || null
   };
 }
 // Attendance/absences are loaded on a rolling 30h window so an overnight shift that
