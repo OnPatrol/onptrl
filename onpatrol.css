@@ -729,6 +729,8 @@ tbody tr:hover td{background:rgba(255,255,255,.025);}
 .toast{border-radius:var(--r-md); border:1px solid var(--border-strong); border-left:3px solid var(--accent); padding:12px 14px; font-size:13px; box-shadow:0 10px 30px rgba(0,0,0,.5);}
 .toast-title{font-weight:600;}
 .toast-sub{font-family:var(--sans); font-size:12.5px;}
+.coverage-progress-track{height:8px; border-radius:999px; background:var(--panel-3); border:1px solid var(--border-strong); overflow:hidden;}
+.coverage-progress-fill{height:100%; background:var(--success); transition:width .3s ease;}
 .coverage-grid{gap:12px;}
 .coverage-tile{border:1px solid var(--border); border-left-width:4px; border-radius:var(--r-md); padding:14px 16px; box-shadow:none;}
 .coverage-tile.covered{border-color:var(--border); border-left-color:var(--success); box-shadow:none;}

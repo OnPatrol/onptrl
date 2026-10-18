@@ -418,10 +418,46 @@ function shiftInstancesForRender(){
 function renderCoverageGrid(containerId){
   const el = document.getElementById(containerId);
   if (!el) return;
-  const rows = shiftInstancesForRender();
-  if (!rows.length){
+  const suffix = containerId === 'coverageGridAdmin' ? 'Admin' : 'Ctrl';
+  const allRows = shiftInstancesForRender();
+
+  // Progress bar always reflects every site currently on shift, regardless of the search
+  // or "short-staffed only" filter below it — so filtering to find the gaps doesn't also
+  // hide the overall picture.
+  const labelEl = document.getElementById('coverageProgressLabel' + suffix);
+  const fillEl = document.getElementById('coverageProgressFill' + suffix);
+  if (labelEl && fillEl){
+    const siteIds = [...new Set(allRows.map(r => r.shift.siteId))];
+    const staffedSiteIds = siteIds.filter(id => allRows.filter(r => r.shift.siteId === id).every(r => r.onDuty.length >= r.shift.required));
+    const total = siteIds.length, staffed = staffedSiteIds.length;
+    const pct = total ? Math.round((staffed / total) * 100) : 0;
+    fillEl.style.width = pct + '%';
+    if (!total){ labelEl.textContent = 'No sites on shift right now'; labelEl.style.color = ''; }
+    else if (staffed === total){ labelEl.textContent = `All ${total} site${total === 1 ? '' : 's'} fully staffed`; labelEl.style.color = 'var(--success)'; }
+    else { labelEl.textContent = `${staffed} of ${total} site${total === 1 ? '' : 's'} fully staffed`; labelEl.style.color = 'var(--warn)'; }
+  }
+
+  const searchEl = document.getElementById('coverageSearch' + suffix);
+  const shortOnlyEl = document.getElementById('coverageShortOnly' + suffix);
+  const q = searchEl ? searchEl.value.trim().toLowerCase() : '';
+  const shortOnly = shortOnlyEl ? shortOnlyEl.checked : false;
+  const rows = allRows.filter(r => {
+    if (shortOnly && r.onDuty.length >= r.shift.required) return false;
+    if (q){
+      const site = sites.find(s => s.id === r.shift.siteId);
+      const hay = ((site && site.name) || '') + ' ' + ((site && site.area) || '');
+      if (!hay.toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
+
+  if (!allRows.length){
     const anyShifts = siteShifts.some(s => s.active);
     el.innerHTML = `<div class="result-meta">${anyShifts ? 'No shift is currently running — check back when a shift starts.' : 'No shifts configured yet — set up shift staffing first.'}</div>`;
+    return;
+  }
+  if (!rows.length){
+    el.innerHTML = `<div class="result-meta">${shortOnly ? 'No short-staffed sites right now — everything on shift is covered.' : 'No sites match your search.'}</div>`;
     return;
   }
   el.innerHTML = rows.map(r => {
@@ -574,6 +610,11 @@ document.getElementById('refreshCoverageBtnCtrl').addEventListener('click', asyn
   await loadAttendanceRecent(); await loadAbsencesRecent();
   renderCoverageGrid('coverageGridCtrl');
 });
+
+document.getElementById('coverageSearchAdmin').addEventListener('input', () => renderCoverageGrid('coverageGridAdmin'));
+document.getElementById('coverageShortOnlyAdmin').addEventListener('change', () => renderCoverageGrid('coverageGridAdmin'));
+document.getElementById('coverageSearchCtrl').addEventListener('input', () => renderCoverageGrid('coverageGridCtrl'));
+document.getElementById('coverageShortOnlyCtrl').addEventListener('change', () => renderCoverageGrid('coverageGridCtrl'));
 
 // ---------------- Mark absent ----------------
 let markAbsentContext = null;
