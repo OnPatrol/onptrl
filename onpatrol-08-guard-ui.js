@@ -373,7 +373,9 @@ async function openIncidentModal(){
   incidentStagedPhotos = [];
   incidentGpsPos = null;
   document.getElementById('incidentFormError').style.display = 'none';
-  clearFieldError('incidentTypeGrid'); clearFieldError('incidentSeverityGrid'); clearFieldError('incidentDescription');
+  clearFieldError('incidentTypeGrid'); clearFieldError('incidentSeverityGrid'); clearFieldError('incidentDescription'); clearFieldError('incidentTypeOther');
+  document.getElementById('incidentTypeOther').value = '';
+  document.getElementById('incidentTypeOther').style.display = 'none';
   document.getElementById('incidentDescription').value = '';
   document.getElementById('incidentActionsTaken').value = '';
   document.getElementById('incidentResolution').value = '';
@@ -439,6 +441,9 @@ document.getElementById('incidentTypeGrid').addEventListener('click', e => {
   if (!btn) return;
   incidentSelectedType = btn.dataset.incidentType;
   document.querySelectorAll('#incidentTypeGrid [data-incident-type]').forEach(b => b.classList.toggle('btn-primary', b === btn));
+  const otherEl = document.getElementById('incidentTypeOther');
+  otherEl.style.display = incidentSelectedType === 'other' ? 'block' : 'none';
+  if (incidentSelectedType !== 'other'){ otherEl.value = ''; clearFieldError('incidentTypeOther'); }
 });
 document.getElementById('incidentSeverityGrid').addEventListener('click', e => {
   const btn = e.target.closest('[data-incident-severity]');
@@ -478,8 +483,10 @@ document.getElementById('incidentSubmitBtn').addEventListener('click', async () 
   const errEl = document.getElementById('incidentFormError');
   errEl.style.display = 'none';
   const description = document.getElementById('incidentDescription').value.trim();
+  const incidentTypeOtherText = document.getElementById('incidentTypeOther').value;
   const fields = [
     { id: 'incidentTypeGrid', test: !!incidentSelectedType, message: 'Select an incident type.', group: true },
+    { id: 'incidentTypeOther', test: incidentSelectedType !== 'other' || !!incidentTypeOtherText.trim(), message: 'Say what kind of incident it is.' },
     { id: 'incidentSeverityGrid', test: !!incidentSelectedSeverity, message: 'Select a severity.', group: true },
     { id: 'incidentDescription', test: !!description, message: 'Add a description of what happened.' }
   ];
@@ -517,7 +524,7 @@ document.getElementById('incidentSubmitBtn').addEventListener('click', async () 
       id: incidentId,
       site_id: dutySiteId,
       guard_id: incidentReportingAsGuardId,
-      incident_type: incidentSelectedType,
+      incident_type: otherValueCombine(incidentSelectedType, incidentTypeOtherText),
       severity: incidentSelectedSeverity,
       description,
       actions_taken: document.getElementById('incidentActionsTaken').value.trim(),

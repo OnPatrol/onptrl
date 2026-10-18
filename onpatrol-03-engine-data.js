@@ -351,7 +351,21 @@ const SITE_CATEGORIES = [
 ];
 function siteCategoryLabel(value){
   const c = SITE_CATEGORIES.find(x => x.value === value);
-  return c ? c.label : '';
+  return c ? c.label : (value || '');
+}
+// Shared pattern for any fixed list that also offers "Other": picking Other reveals a
+// textbox, and what's typed there is stored as "<text> (Other)" — genuinely free text, but
+// the "(Other)" suffix makes clear at a glance it was typed in rather than picked from the
+// list, everywhere it's later shown (tables, badges, detail views).
+function otherValueSplit(raw, knownValues){
+  if (!raw) return { value: '', otherText: '' };
+  if (knownValues.includes(raw)) return { value: raw, otherText: '' };
+  return { value: 'other', otherText: raw.replace(/\s*\(Other\)\s*$/i, '') };
+}
+function otherValueCombine(selectValue, otherText){
+  if (selectValue !== 'other') return selectValue;
+  const t = (otherText || '').trim();
+  return t ? `${t} (Other)` : 'other';
 }
 function siteCategoryOptionsHtml(selected){
   return '<option value="">No category set</option>' + SITE_CATEGORIES.map(c =>

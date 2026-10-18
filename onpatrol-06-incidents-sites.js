@@ -629,6 +629,7 @@ function renderManageSiteBasicInfo(){
   const summaryEl = document.getElementById('manageSiteLocationSummary');
   const phoneEl = document.getElementById('manageSitePhone');
   const categoryEl = document.getElementById('manageSiteCategory');
+  const categoryOtherEl = document.getElementById('manageSiteCategoryOther');
   const areaEl = document.getElementById('manageSiteArea');
   const clientCodeEl = document.getElementById('manageSiteClientCode');
   const armedResponseEl = document.getElementById('manageSiteArmedResponse');
@@ -637,6 +638,7 @@ function renderManageSiteBasicInfo(){
   if (!s){
     nameEl.value = ''; addrEl.value = ''; if (phoneEl) phoneEl.value = '';
     if (categoryEl) categoryEl.value = '';
+    if (categoryOtherEl){ categoryOtherEl.value = ''; categoryOtherEl.style.display = 'none'; }
     if (areaEl) areaEl.value = '';
     if (clientCodeEl) clientCodeEl.value = '';
     if (armedResponseEl) armedResponseEl.value = '';
@@ -650,7 +652,15 @@ function renderManageSiteBasicInfo(){
   if (document.activeElement !== nameEl) nameEl.value = s.name || '';
   if (document.activeElement !== addrEl) addrEl.value = (s.address && s.address !== '—') ? s.address : '';
   if (phoneEl && document.activeElement !== phoneEl) phoneEl.value = s.phone || '';
-  if (categoryEl && document.activeElement !== categoryEl) categoryEl.value = s.category || '';
+  // A category that doesn't match any fixed option was typed in via "Other" — reconstruct
+  // that: select "Other" and show the original text (without the "(Other)" suffix) ready to
+  // edit, rather than just showing nothing because it doesn't match a known value.
+  if (categoryEl && categoryOtherEl && document.activeElement !== categoryEl && document.activeElement !== categoryOtherEl){
+    const split = otherValueSplit(s.category || '', SITE_CATEGORIES.map(c => c.value));
+    categoryEl.value = split.value;
+    categoryOtherEl.value = split.otherText;
+    categoryOtherEl.style.display = split.value === 'other' ? 'block' : 'none';
+  }
   if (areaEl && document.activeElement !== areaEl) areaEl.value = s.area || '';
   if (clientCodeEl && document.activeElement !== clientCodeEl) clientCodeEl.value = s.clientCode || '';
   if (armedResponseEl && document.activeElement !== armedResponseEl) armedResponseEl.value = s.armedResponse || '';
@@ -664,13 +674,19 @@ function renderManageSiteBasicInfo(){
     : 'No location set yet — open the map to drop a pin.';
 }
 
+document.getElementById('manageSiteCategory').addEventListener('change', (e) => {
+  const otherEl = document.getElementById('manageSiteCategoryOther');
+  otherEl.style.display = e.target.value === 'other' ? 'block' : 'none';
+  if (e.target.value !== 'other'){ otherEl.value = ''; clearFieldError('manageSiteCategoryOther'); }
+});
 document.getElementById('manageSiteSaveBtn').addEventListener('click', async () => {
   if (!activeSiteId) return;
   const statusEl = document.getElementById('manageSiteSaveStatus');
   const name = document.getElementById('manageSiteName').value.trim();
   const address = document.getElementById('manageSiteAddress').value.trim();
   const phone = cleanPhone(document.getElementById('manageSitePhone').value);
-  const category = document.getElementById('manageSiteCategory').value;
+  const categorySelect = document.getElementById('manageSiteCategory').value;
+  const categoryOtherText = document.getElementById('manageSiteCategoryOther').value;
   const area = document.getElementById('manageSiteArea').value.trim();
   const clientCode = document.getElementById('manageSiteClientCode').value.trim();
   const armedResponse = document.getElementById('manageSiteArmedResponse').value.trim();
@@ -679,10 +695,12 @@ document.getElementById('manageSiteSaveBtn').addEventListener('click', async () 
   const ok = validateFields([
     { id: 'manageSiteName', test: !!name, message: 'Site name is required.' },
     { id: 'manageSitePhone', test: isValidPhone(phone), message: 'Enter a valid phone number (e.g. 082 123 4567 or +27 82 123 4567).' },
-    { id: 'manageSiteArmedResponsePhone', test: !armedResponsePhoneRaw.trim() || isValidPhone(armedResponsePhone), message: 'Enter a valid phone number, or leave this blank.' }
+    { id: 'manageSiteArmedResponsePhone', test: !armedResponsePhoneRaw.trim() || isValidPhone(armedResponsePhone), message: 'Enter a valid phone number, or leave this blank.' },
+    { id: 'manageSiteCategoryOther', test: categorySelect !== 'other' || !!categoryOtherText.trim(), message: 'Enter the category.' }
   ]);
   if (!ok){ statusEl.textContent = ''; return; }
   statusEl.textContent = 'Saving…';
+  const category = otherValueCombine(categorySelect, categoryOtherText);
   const { error } = await sb.from('sites').update({
     name, address: address || null, phone, category: category || null, area: area || null, client_code: clientCode || null,
     armed_response: armedResponse || null, armed_response_phone: armedResponsePhone || null
@@ -815,17 +833,25 @@ function renderSiteContacts(){
   });
 }
 
+document.getElementById('newContactRole').addEventListener('change', (e) => {
+  const otherEl = document.getElementById('newContactRoleOther');
+  otherEl.style.display = e.target.value === 'other' ? 'block' : 'none';
+  if (e.target.value !== 'other'){ otherEl.value = ''; clearFieldError('newContactRoleOther'); }
+});
 document.getElementById('addSiteContactBtn').addEventListener('click', async () => {
   const name = document.getElementById('newContactName').value.trim();
-  const role = document.getElementById('newContactRole').value;
+  const roleSelect = document.getElementById('newContactRole').value;
+  const roleOtherText = document.getElementById('newContactRoleOther').value;
   const phone = document.getElementById('newContactPhone').value.trim();
   const email = document.getElementById('newContactEmail').value.trim();
   const ok = validateFields([
     { id: 'newContactName', test: !!name, message: 'Name is required.' },
-    { id: 'newContactRole', test: !!role, message: 'Pick a role.' }
+    { id: 'newContactRole', test: !!roleSelect, message: 'Pick a role.' },
+    { id: 'newContactRoleOther', test: roleSelect !== 'other' || !!roleOtherText.trim(), message: "Enter their role." }
   ]);
   if (!ok) return;
   if (!activeSiteId){ showToast('Select a site first', '', 'warn'); return; }
+  const role = otherValueCombine(roleSelect, roleOtherText);
   const { error } = await sb.from('site_contacts').insert({
     site_id: activeSiteId, name, role, phone: phone || null, email: email || null
   });
@@ -833,6 +859,9 @@ document.getElementById('addSiteContactBtn').addEventListener('click', async () 
   document.getElementById('newContactName').value = '';
   document.getElementById('newContactPhone').value = '';
   document.getElementById('newContactEmail').value = '';
+  document.getElementById('newContactRole').value = 'site_manager';
+  document.getElementById('newContactRoleOther').value = '';
+  document.getElementById('newContactRoleOther').style.display = 'none';
   await loadSiteContactsFor(activeSiteId);
   renderSiteContacts();
 });

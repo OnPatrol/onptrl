@@ -306,6 +306,7 @@
           <select id="manageSiteCategory"></select>
           <input type="text" id="manageSiteArea" placeholder="Area (e.g. Area1, Area Jozi)">
         </div>
+        <input type="text" id="manageSiteCategoryOther" placeholder="What kind of site is this?" style="display:none; margin-top:8px;">
         <div class="cp-row" style="margin-top:8px;">
           <input type="text" id="manageSiteClientCode" placeholder="Client code">
           <input type="text" id="manageSiteArmedResponse" placeholder="Armed response company / division">
@@ -490,6 +491,7 @@
               <option value="other">Other</option>
             </select>
           </div>
+          <input type="text" id="newContactRoleOther" placeholder="What's their role?" style="display:none; margin-top:8px;">
           <div class="cp-row" style="margin-top:8px;">
             <input type="text" id="newContactPhone" placeholder="Phone">
             <input type="text" id="newContactEmail" placeholder="Email">
@@ -1222,6 +1224,7 @@
 
     <div class="field-label" style="margin-top:0;">Incident type</div>
     <div id="incidentTypeGrid" style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:12px;"></div>
+    <input type="text" id="incidentTypeOther" placeholder="What kind of incident is it?" style="display:none; margin-bottom:12px;">
 
     <div class="field-label">Severity</div>
     <div id="incidentSeverityGrid" style="display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-bottom:12px;"></div>
