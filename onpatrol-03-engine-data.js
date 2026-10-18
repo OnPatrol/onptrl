@@ -358,6 +358,19 @@ function siteCategoryOptionsHtml(selected){
     `<option value="${c.value}"${c.value === selected ? ' selected' : ''}>${c.label}</option>`).join('');
 }
 
+// A guard's shift is treated as 12 hours of normal working time; past that, still on duty
+// counts as overtime. At 24 hours the server auto-clocks them out (see the
+// auto_clock_out_overtime() scheduled job in the database) as a safety net, so this
+// client-side flag is purely informational/visual — it never performs the clock-out itself.
+const SHIFT_NORMAL_HOURS = 12;
+const SHIFT_AUTO_CLOCKOUT_HOURS = 24;
+function attendanceHoursOnDuty(a, atMs){
+  return Math.max(0, ((atMs || nowMs()) - a.clockInAt) / 3600000);
+}
+function attendanceIsOvertime(a, atMs){
+  return a.status === 'on_duty' && attendanceHoursOnDuty(a, atMs) >= SHIFT_NORMAL_HOURS;
+}
+
 let teamDirectory = [];
 async function loadTeamDirectory(){
   const { data, error } = await sb.from('profiles').select('id, full_name, phone, role, site_id, employee_number').order('full_name');

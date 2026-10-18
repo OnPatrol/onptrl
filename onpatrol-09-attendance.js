@@ -460,12 +460,29 @@ function renderCoverageGrid(containerId){
     el.innerHTML = `<div class="result-meta">${shortOnly ? 'No short-staffed sites right now — everything on shift is covered.' : 'No sites match your search.'}</div>`;
     return;
   }
+  const now = nowMs();
+  // Pin tiles with anyone in overtime to the top — a controller scanning the list should
+  // see those first, same priority as "short-staffed only" below. Array.sort is stable, so
+  // the existing alphabetical order (set in shiftInstancesForRender) is preserved within
+  // each group rather than being shuffled.
+  rows.sort((a, b) => {
+    const aOT = a.onDuty.some(x => attendanceIsOvertime(x, now)) ? 1 : 0;
+    const bOT = b.onDuty.some(x => attendanceIsOvertime(x, now)) ? 1 : 0;
+    return bOT - aOT;
+  });
   el.innerHTML = rows.map(r => {
     const site = sites.find(s => s.id === r.shift.siteId);
     const covered = r.onDuty.length >= r.shift.required;
+    const tileHasOvertime = r.onDuty.some(a => attendanceIsOvertime(a, now));
     const canEditAttendance = profile && (profile.role === 'admin' || profile.role === 'controller');
     const guardRows = r.onDuty.map(a => {
-      const badge = a.isReliever ? '<span class="badge">reliever</span>' : '';
+      const relieverBadge = a.isReliever ? '<span class="badge">reliever</span>' : '';
+      // 12 hours on duty is treated as a normal shift's length; past that, flag it so a
+      // controller can see it live — the system itself only steps in automatically at the
+      // 24-hour mark (see auto_clock_out_overtime in the database), as a safety net.
+      const hrs = attendanceHoursOnDuty(a, now);
+      const overtimeBadge = hrs >= SHIFT_NORMAL_HOURS
+        ? `<span class="badge badge-overtime" title="${hrs.toFixed(1)} hours on duty — auto clock-out at ${SHIFT_AUTO_CLOCKOUT_HOURS}h">overtime · ${hrs.toFixed(1)}h</span>` : '';
       // Admins and controllers can edit attendance directly at any point in the shift -
       // e.g. someone forgot to clock out, their phone died, or they need to be clocked
       // out early. The pencil always asks why when it's a clock-out while on duty.
@@ -474,15 +491,15 @@ function renderCoverageGrid(containerId){
             <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
           </button>`
         : '';
-      return `<div class="coverage-guard-row present"><span class="dot"></span>${guardLabel(r.shift.siteId, a.guardId)}${badge}${editBtn}</div>`;
+      return `<div class="coverage-guard-row present"><span class="dot"></span>${guardLabel(r.shift.siteId, a.guardId)}<span class="coverage-guard-badges">${relieverBadge}${overtimeBadge}</span>${editBtn}</div>`;
     }).join('');
     const absentRows = r.openAbsences.map(a =>
       `<div class="coverage-guard-row absent"><span class="dot"></span>${guardLabel(r.shift.siteId, a.guardId)} — absent</div>`
     ).join('');
     return `
-      <div class="coverage-tile ${covered ? 'covered' : 'short'}">
+      <div class="coverage-tile ${covered ? 'covered' : 'short'}${tileHasOvertime ? ' has-overtime' : ''}">
         <div class="coverage-tile-head">
-          <span class="coverage-tile-site">${site ? site.name : '—'}</span>
+          <span class="coverage-tile-site">${tileHasOvertime ? '<svg class="icon icon-sm" style="color:var(--warn); margin-right:2px;" viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="10"/></svg>' : ''}${site ? site.name : '—'}</span>
           <span style="display:inline-flex; align-items:center; gap:4px; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.3px; color:${covered ? 'var(--success)' : 'var(--danger)'};">
             ${covered ? '<svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>Staffed' : '<svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>Short'}
           </span>
