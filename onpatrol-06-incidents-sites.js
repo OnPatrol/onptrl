@@ -525,9 +525,17 @@ function initSiteMapWithLocation(lat, lng, isAdmin, siteName){
 
 // ---------------- Site map: address / company name search (Nominatim / OpenStreetMap) ----------------
 // Free, no API key, and consistent with the map tiles already shown (same OSM data source,
-// so a found point lines up with what the map itself considers correct). Biased toward South
-// Africa (viewbox + bounded=0 is a soft preference, not a hard restriction) since that's
-// where this company's sites are, without blocking a genuine result elsewhere.
+// so a found point lines up with what the map itself considers correct).
+//
+// Change this if the company's sites are based somewhere other than South Africa.
+const SITE_SEARCH_COUNTRY_CODE = 'za';
+
+// countrycodes is a HARD filter (unlike a viewbox, which only nudges Nominatim's own
+// ranking) — a soft bias still let a more "important" same-named place on another
+// continent outrank the real local one. Hard-filtering to one country means that can't
+// happen. If nothing local matches, it automatically retries with no country filter at
+// all, so a genuinely distant address can still be found rather than hitting a dead end —
+// those results are clearly labelled as being outside the usual area.
 async function siteMapSearchAddress(){
   const input = document.getElementById('siteMapSearchInput');
   const query = input.value.trim();
@@ -537,16 +545,19 @@ async function siteMapSearchAddress(){
   btn.disabled = true; btn.textContent = 'Searching…';
   resultsEl.style.display = 'block';
   resultsEl.innerHTML = '<div class="result-meta" style="padding:8px;">Searching…</div>';
+  const baseUrl = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=6&q=' + encodeURIComponent(query);
   try{
-    const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=6&viewbox=16.3,-22.0,33.5,-35.0&bounded=0&q=' + encodeURIComponent(query);
-    const res = await fetch(url, { headers: { 'Accept-Language': 'en' } });
-    if (!res.ok) throw new Error('Search request failed (' + res.status + ')');
-    const data = await res.json();
-    if (!Array.isArray(data) || !data.length){
+    let data = await fetchJson(baseUrl + '&countrycodes=' + SITE_SEARCH_COUNTRY_CODE);
+    let isWider = false;
+    if (!data.length){
+      data = await fetchJson(baseUrl);
+      isWider = true;
+    }
+    if (!data.length){
       resultsEl.innerHTML = '<div class="result-meta" style="padding:8px;">No matches — try a more specific address, or include the suburb or city.</div>';
       return;
     }
-    resultsEl.innerHTML = data.map((r, i) => `
+    resultsEl.innerHTML = (isWider ? '<div class="result-meta" style="padding:8px 10px 2px; color:var(--warn);">No local match — showing wider results:</div>' : '') + data.map((r, i) => `
       <div class="site-map-search-result" data-result-index="${i}">
         <div style="font-weight:600; font-size:12.5px; font-family:var(--sans);">${escapeHtmlForPrint((r.namedetails && r.namedetails.name) || r.display_name.split(',')[0])}</div>
         <div class="result-meta" style="margin-top:2px;">${escapeHtmlForPrint(r.display_name)}</div>
@@ -562,6 +573,12 @@ async function siteMapSearchAddress(){
   }finally{
     btn.disabled = false; btn.textContent = 'Search';
   }
+}
+async function fetchJson(url){
+  const res = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+  if (!res.ok) throw new Error('Search request failed (' + res.status + ')');
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
 }
 function siteMapPickSearchResult(lat, lng, label){
   document.getElementById('siteMapLat').value = lat.toFixed(6);
