@@ -468,6 +468,9 @@ async function openSiteMapModal(siteId){
   document.getElementById('siteMapLat').value = s.lat != null ? s.lat : '';
   document.getElementById('siteMapLng').value = s.lng != null ? s.lng : '';
   document.getElementById('siteMapEditStatus').textContent = '';
+  document.getElementById('siteMapSearchWrap').style.display = isAdmin ? 'flex' : 'none';
+  document.getElementById('siteMapSearchInput').value = '';
+  document.getElementById('siteMapSearchResults').style.display = 'none';
 
   const hasLoc = s.lat != null && s.lng != null;
   document.getElementById('siteMapNoLocation').style.display = hasLoc ? 'none' : 'block';
@@ -479,35 +482,98 @@ async function openSiteMapModal(siteId){
   document.getElementById('sitePerimeterStatus').style.display = 'none';
   document.getElementById('siteMapModalBg').classList.add('show');
 
-  if (hasLoc){
-    setTimeout(() => {
-      if (siteMapInstance){ siteMapInstance.remove(); siteMapInstance = null; }
-      siteMapInstance = L.map('siteMapBox').setView([s.lat, s.lng], 16);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors', maxZoom: 19
-      }).addTo(siteMapInstance);
-      siteMapMarker = L.marker([s.lat, s.lng], { draggable: isAdmin }).addTo(siteMapInstance).bindPopup(s.name);
-      siteMapMarker.on('dragend', () => {
-        const ll = siteMapMarker.getLatLng();
-        document.getElementById('siteMapLat').value = ll.lat.toFixed(6);
-        document.getElementById('siteMapLng').value = ll.lng.toFixed(6);
-        document.getElementById('siteMapEditStatus').textContent = 'Pin moved — GPS can be a few metres off, so drag it to the exact spot, then tap "Save location" to confirm.';
-      });
-      // Clicking the map only adds perimeter points while in "Draw perimeter" mode —
-      // it's a no-op in "Move pin" mode so a stray tap can't accidentally start a shape.
-      siteMapInstance.on('click', (e) => {
-        if (siteMapMode !== 'perimeter' || !isAdmin) return;
-        sitePerimeterPoints.push({ lat: e.latlng.lat, lng: e.latlng.lng });
-        redrawSitePerimeter();
-      });
-      redrawSitePerimeter();
-      setSiteMapMode('pin');
-    }, 50);
-  }
+  if (hasLoc) initSiteMapWithLocation(s.lat, s.lng, isAdmin, s.name);
 
   await loadSiteContactsFor(siteId);
   renderSiteContacts();
 }
+
+// Builds (or rebuilds) the Leaflet map with a pin at lat/lng — used both when the modal
+// opens on a site that already has a location, and when an address search or "Use my
+// location" sets one for the first time, so the map appears live without waiting for a
+// save-and-reopen round trip.
+function initSiteMapWithLocation(lat, lng, isAdmin, siteName){
+  document.getElementById('siteMapNoLocation').style.display = 'none';
+  document.getElementById('siteMapBox').style.display = 'block';
+  document.getElementById('siteMapModeRow').style.display = isAdmin ? 'flex' : 'none';
+  document.getElementById('siteMapPinHint').style.display = isAdmin ? 'block' : 'none';
+  document.getElementById('siteMapReadOnlyNote').style.display = isAdmin ? 'none' : 'block';
+  setTimeout(() => {
+    if (siteMapInstance){ siteMapInstance.remove(); siteMapInstance = null; }
+    siteMapInstance = L.map('siteMapBox').setView([lat, lng], 16);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors', maxZoom: 19
+    }).addTo(siteMapInstance);
+    siteMapMarker = L.marker([lat, lng], { draggable: isAdmin }).addTo(siteMapInstance).bindPopup(siteName);
+    siteMapMarker.on('dragend', () => {
+      const ll = siteMapMarker.getLatLng();
+      document.getElementById('siteMapLat').value = ll.lat.toFixed(6);
+      document.getElementById('siteMapLng').value = ll.lng.toFixed(6);
+      document.getElementById('siteMapEditStatus').textContent = 'Pin moved — GPS can be a few metres off, so drag it to the exact spot, then tap "Save location" to confirm.';
+    });
+    // Clicking the map only adds perimeter points while in "Draw perimeter" mode —
+    // it's a no-op in "Move pin" mode so a stray tap can't accidentally start a shape.
+    siteMapInstance.on('click', (e) => {
+      if (siteMapMode !== 'perimeter' || !isAdmin) return;
+      sitePerimeterPoints.push({ lat: e.latlng.lat, lng: e.latlng.lng });
+      redrawSitePerimeter();
+    });
+    redrawSitePerimeter();
+    setSiteMapMode('pin');
+  }, 50);
+}
+
+// ---------------- Site map: address / company name search (Nominatim / OpenStreetMap) ----------------
+// Free, no API key, and consistent with the map tiles already shown (same OSM data source,
+// so a found point lines up with what the map itself considers correct). Biased toward South
+// Africa (viewbox + bounded=0 is a soft preference, not a hard restriction) since that's
+// where this company's sites are, without blocking a genuine result elsewhere.
+async function siteMapSearchAddress(){
+  const input = document.getElementById('siteMapSearchInput');
+  const query = input.value.trim();
+  const resultsEl = document.getElementById('siteMapSearchResults');
+  const btn = document.getElementById('siteMapSearchBtn');
+  if (!query){ resultsEl.style.display = 'none'; resultsEl.innerHTML = ''; return; }
+  btn.disabled = true; btn.textContent = 'Searching…';
+  resultsEl.style.display = 'block';
+  resultsEl.innerHTML = '<div class="result-meta" style="padding:8px;">Searching…</div>';
+  try{
+    const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=6&viewbox=16.3,-22.0,33.5,-35.0&bounded=0&q=' + encodeURIComponent(query);
+    const res = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+    if (!res.ok) throw new Error('Search request failed (' + res.status + ')');
+    const data = await res.json();
+    if (!Array.isArray(data) || !data.length){
+      resultsEl.innerHTML = '<div class="result-meta" style="padding:8px;">No matches — try a more specific address, or include the suburb or city.</div>';
+      return;
+    }
+    resultsEl.innerHTML = data.map((r, i) => `
+      <div class="site-map-search-result" data-result-index="${i}">
+        <div style="font-weight:600; font-size:12.5px; font-family:var(--sans);">${escapeHtmlForPrint((r.namedetails && r.namedetails.name) || r.display_name.split(',')[0])}</div>
+        <div class="result-meta" style="margin-top:2px;">${escapeHtmlForPrint(r.display_name)}</div>
+      </div>`).join('');
+    resultsEl.querySelectorAll('[data-result-index]').forEach(row => {
+      row.addEventListener('click', () => {
+        const r = data[parseInt(row.dataset.resultIndex, 10)];
+        siteMapPickSearchResult(parseFloat(r.lat), parseFloat(r.lon), r.display_name);
+      });
+    });
+  }catch(e){
+    resultsEl.innerHTML = '<div class="result-meta" style="padding:8px; color:var(--danger);">Search failed — ' + escapeHtmlForPrint(e.message || 'check your connection') + '.</div>';
+  }finally{
+    btn.disabled = false; btn.textContent = 'Search';
+  }
+}
+function siteMapPickSearchResult(lat, lng, label){
+  document.getElementById('siteMapLat').value = lat.toFixed(6);
+  document.getElementById('siteMapLng').value = lng.toFixed(6);
+  document.getElementById('siteMapEditStatus').textContent = `Found "${label}" — drag the pin to fine-tune if needed, then tap "Save location" to confirm.`;
+  document.getElementById('siteMapSearchResults').style.display = 'none';
+  initSiteMapWithLocation(lat, lng, profile.role === 'admin', document.getElementById('siteMapTitle').textContent);
+}
+document.getElementById('siteMapSearchBtn').addEventListener('click', siteMapSearchAddress);
+document.getElementById('siteMapSearchInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter'){ e.preventDefault(); siteMapSearchAddress(); }
+});
 
 // Redraws the perimeter polygon and its draggable vertex handles from
 // sitePerimeterPoints. Called after every add/undo/clear/drag so the shape and the

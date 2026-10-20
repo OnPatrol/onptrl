@@ -758,6 +758,10 @@ tbody tr:hover td{background:rgba(255,255,255,.025);}
 .setup-step[open]{border-color:var(--accent-line);}
 .site-contact-row{border-radius:var(--r-md);}
 .site-map-box{border-radius:var(--r-md);}
+.site-map-search-results{margin-top:6px; max-height:200px; overflow-y:auto; border:1px solid var(--border-strong); border-radius:var(--r-md); background:var(--panel-2);}
+.site-map-search-result{padding:8px 10px; cursor:pointer; border-bottom:1px solid var(--border);}
+.site-map-search-result:last-child{border-bottom:none;}
+.site-map-search-result:hover{background:var(--panel-3);}
 .grid-2{gap:16px;}
 .result-card{border-radius:var(--r-md);}
 .slider-val{font-family:var(--sans); color:var(--accent-hi);}
