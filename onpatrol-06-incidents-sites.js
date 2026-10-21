@@ -762,9 +762,13 @@ document.getElementById('manageSiteCategory').addEventListener('change', (e) => 
   otherEl.style.display = e.target.value === 'other' ? 'block' : 'none';
   if (e.target.value !== 'other'){ otherEl.value = ''; clearFieldError('manageSiteCategoryOther'); }
 });
-document.getElementById('manageSiteSaveBtn').addEventListener('click', async () => {
+// Basic info and Categorization/armed response are two separate accordion steps (so the
+// page isn't one dense always-open block), but they still save together in one update —
+// whichever of the two "Save changes" buttons is clicked, so neither step needs the other
+// one open just to persist its own fields.
+async function saveManageSiteBasics(statusElId){
   if (!activeSiteId) return;
-  const statusEl = document.getElementById('manageSiteSaveStatus');
+  const statusEl = document.getElementById(statusElId);
   const name = document.getElementById('manageSiteName').value.trim();
   const address = document.getElementById('manageSiteAddress').value.trim();
   const phone = cleanPhone(document.getElementById('manageSitePhone').value);
@@ -793,7 +797,9 @@ document.getElementById('manageSiteSaveBtn').addEventListener('click', async () 
   renderAll();
   statusEl.textContent = 'Saved.';
   showToast('Site updated', '', 'success');
-});
+}
+document.getElementById('manageSiteSaveBtn').addEventListener('click', () => saveManageSiteBasics('manageSiteSaveStatus'));
+document.getElementById('manageSiteSaveBtn2').addEventListener('click', () => saveManageSiteBasics('manageSiteSaveStatus2'));
 
 document.getElementById('manageSiteOpenMapBtn').addEventListener('click', () => {
   if (activeSiteId) openSiteMapModal(activeSiteId);
@@ -874,6 +880,24 @@ async function refreshManageSitePanels(){
   await renderManageSiteGuards();
   await loadSiteVehicles(activeSiteId);
   renderSiteVehicles();
+  updateManageStepStatus();
+}
+// A green step number is a quick "is this already set up?" glance, for steps that genuinely
+// vary per site — Basic info and Guards aren't included here since the first is required at
+// creation (so it's trivially always done) and the second is read-only.
+function updateManageStepStatus(){
+  const s = sites.find(x => x.id === activeSiteId);
+  const mark = (id, done) => { const el = document.getElementById(id); if (el) el.dataset.done = done ? 'true' : 'false'; };
+  if (!s) return;
+  mark('step-categorization', !!(s.category || s.area || s.clientCode || s.armedResponse));
+  mark('step-location', s.lat != null && s.lng != null);
+  mark('step-checkpoints', checkpoints.some(c => c.siteId === activeSiteId));
+  const siteRouteIds = routes.filter(r => r.siteId === activeSiteId).map(r => r.id);
+  mark('step-routes', siteRouteIds.length > 0);
+  mark('step-shift-staffing', siteShifts.some(sh => sh.siteId === activeSiteId));
+  mark('step-patrol-schedule', siteRouteIds.some(rid => schedules.some(sc => sc.routeId === rid)));
+  mark('step-contacts', siteContacts.length > 0);
+  mark('step-vehicles', siteVehicles.length > 0);
 }
 
 // ---------------- Site contacts (site management personnel) ----------------

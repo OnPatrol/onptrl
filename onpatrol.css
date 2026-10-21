@@ -756,6 +756,8 @@ tbody tr:hover td{background:rgba(255,255,255,.025);}
 .setup-step > summary .step-title{text-transform:none; letter-spacing:0;}
 .setup-step > summary .step-num{background:var(--panel-3);}
 .setup-step[open]{border-color:var(--accent-line);}
+.setup-section-label{font-family:var(--sans); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.6px; color:var(--muted); margin:18px 2px 8px;}
+.setup-section-label:first-of-type{margin-top:0;}
 .site-contact-row{border-radius:var(--r-md);}
 .site-map-box{border-radius:var(--r-md);}
 .site-map-search-results{margin-top:6px; max-height:200px; overflow-y:auto; border:1px solid var(--border-strong); border-radius:var(--r-md); background:var(--panel-2);}

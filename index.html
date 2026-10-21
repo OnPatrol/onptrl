@@ -288,10 +288,11 @@
       <div class="panel" style="margin-bottom:16px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
         <span class="field-label" style="margin:0;">Managing site</span>
         <select id="siteQuickSwitchManage" style="max-width:260px;"></select>
-        <span class="result-meta">Steps below are in setup order — tap a step to expand it. List/table sections save as you go; Basic info uses the Save changes button.</span>
+        <span class="result-meta">Tap a step to expand it — a green number means it's already set up.</span>
       </div>
 
-      <details class="panel setup-step" open>
+      <div class="setup-section-label">Site identity</div>
+      <details class="panel setup-step" id="step-basic-info" open>
         <summary><span class="step-num">1</span><span class="step-title">Basic info</span></summary>
         <div class="setup-step-body">
         <div class="cp-row">
@@ -300,8 +301,17 @@
           <input type="tel" id="manageSitePhone" placeholder="Site phone number (required)">
         </div>
         <div class="result-meta" style="margin:4px 0 0;">Site code: <b id="manageSiteCode">—</b> — share this with guards joining the site.</div>
-        <div class="field-label" style="margin-top:16px;">Categorization &amp; armed response</div>
-        <div class="result-meta" style="margin:-2px 0 8px;">Area is your own company's grouping — e.g. all Alberton sites as "Area1", or "Area Jozi" — separate from category. Both, plus armed response and the client's reference code, are shown to controllers alongside the rest of the site's details.</div>
+        <div class="btn-row" style="margin-top:14px;">
+          <button class="btn btn-primary" id="manageSiteSaveBtn" style="width:auto; padding:9px 14px;">Save changes</button>
+          <span class="result-meta" id="manageSiteSaveStatus" style="align-self:center;"></span>
+        </div>
+        </div>
+      </details>
+
+      <details class="panel setup-step" id="step-categorization">
+        <summary><span class="step-num">2</span><span class="step-title">Categorization &amp; armed response</span><span class="step-status">Optional</span></summary>
+        <div class="setup-step-body">
+        <div class="result-meta" style="margin:0 0 8px;">Area is your own company's grouping — e.g. all Alberton sites as "Area1", or "Area Jozi" — separate from category. Both, plus armed response and the client's reference code, are shown to controllers alongside the rest of the site's details.</div>
         <div class="cp-row">
           <select id="manageSiteCategory"></select>
           <input type="text" id="manageSiteArea" placeholder="Area (e.g. Area1, Area Jozi)">
@@ -314,23 +324,24 @@
         <div class="cp-row" style="margin-top:8px;">
           <input type="tel" id="manageSiteArmedResponsePhone" placeholder="Armed response phone number">
         </div>
-        <div class="btn-row">
-          <button class="btn btn-primary" id="manageSiteSaveBtn" style="width:auto; padding:9px 14px;">Save changes</button>
-          <span class="result-meta" id="manageSiteSaveStatus" style="align-self:center;"></span>
+        <div class="btn-row" style="margin-top:14px;">
+          <button class="btn btn-primary" id="manageSiteSaveBtn2" style="width:auto; padding:9px 14px;">Save changes</button>
+          <span class="result-meta" id="manageSiteSaveStatus2" style="align-self:center;"></span>
         </div>
         </div>
       </details>
 
-      <details class="panel setup-step">
-        <summary><span class="step-num">2</span><span class="step-title">Location &amp; perimeter</span></summary>
+      <details class="panel setup-step" id="step-location">
+        <summary><span class="step-num">3</span><span class="step-title">Location &amp; perimeter</span></summary>
         <div class="setup-step-body">
         <div class="result-meta" id="manageSiteLocationSummary" style="margin-bottom:10px;">No location set yet.</div>
         <button class="btn" id="manageSiteOpenMapBtn" style="width:auto; padding:9px 14px;"><svg class="icon" viewBox="0 0 24 24"><path d="M9 20 3 17V4l6 3 6-3 6 3v13l-6-3-6 3Z"/><path d="M9 4v13M15 7v13"/></svg> Edit location &amp; perimeter</button>
         </div>
       </details>
 
-      <details class="panel setup-step">
-        <summary><span class="step-num">3</span><span class="step-title">Checkpoints</span><span class="step-status">Set these up before creating routes</span></summary>
+      <div class="setup-section-label">Patrol setup</div>
+      <details class="panel setup-step" id="step-checkpoints">
+        <summary><span class="step-num">4</span><span class="step-title">Checkpoints</span><span class="step-status">Set these up before creating routes</span></summary>
         <div class="setup-step-body">
         <div style="display:flex; justify-content:flex-end; margin-bottom:-6px;">
           <button class="btn" id="printCpTagsBtn" style="width:auto; padding:6px 12px; font-size:11px;"><svg class="icon" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 17v4h12v-4"/></svg> Print tags</button>
@@ -369,8 +380,8 @@
         </div>
       </details>
 
-      <details class="panel setup-step">
-        <summary><span class="step-num">4</span><span class="step-title">Routes</span><span class="step-status">Built from the checkpoints above</span></summary>
+      <details class="panel setup-step" id="step-routes">
+        <summary><span class="step-num">5</span><span class="step-title">Routes</span><span class="step-status">Built from the checkpoints above</span></summary>
         <div class="setup-step-body">
         <div class="cp-row">
           <input type="text" id="newRouteName" placeholder="Route name (e.g. Night perimeter)">
@@ -397,8 +408,8 @@
         </div>
       </details>
 
-      <details class="panel setup-step">
-        <summary><span class="step-num">5</span><span class="step-title">Shift staffing</span></summary>
+      <details class="panel setup-step" id="step-shift-staffing">
+        <summary><span class="step-num">6</span><span class="step-title">Shift staffing</span></summary>
         <div class="setup-step-body">
         <div class="result-meta" style="margin-bottom:10px;">How many guards <span id="attShiftSiteLabel">this site</span> should have clocked in per shift. Uses the site picked at the top of this page.</div>
         <div class="inline-fields">
@@ -417,8 +428,8 @@
         </div>
       </details>
 
-      <details class="panel setup-step">
-        <summary><span class="step-num">6</span><span class="step-title">Patrol schedule</span><span class="step-status">Needs a route from step 4</span></summary>
+      <details class="panel setup-step" id="step-patrol-schedule">
+        <summary><span class="step-num">7</span><span class="step-title">Patrol schedule</span><span class="step-status">Needs a route from step 5</span></summary>
         <div class="setup-step-body">
           <div class="field-label" style="margin-top:0;">Route</div>
           <select id="newSchedRoute"></select>
@@ -474,8 +485,9 @@
         </div>
       </details>
 
-      <details class="panel setup-step">
-        <summary><span class="step-num">7</span><span class="step-title">Site contacts</span><span class="step-status">Optional</span></summary>
+      <div class="setup-section-label">People &amp; extras</div>
+      <details class="panel setup-step" id="step-contacts">
+        <summary><span class="step-num">8</span><span class="step-title">Site contacts</span><span class="step-status">Optional</span></summary>
         <div class="setup-step-body">
         <div class="result-meta" style="margin-bottom:8px;">Site management personnel — no limit on how many.</div>
         <div id="siteContactsList" style="display:flex; flex-direction:column; gap:6px;"></div>
@@ -501,8 +513,8 @@
         </div>
       </details>
 
-      <details class="panel setup-step">
-        <summary><span class="step-num">8</span><span class="step-title">Vehicles</span><span class="step-status">Optional</span></summary>
+      <details class="panel setup-step" id="step-vehicles">
+        <summary><span class="step-num">9</span><span class="step-title">Vehicles</span><span class="step-status">Optional</span></summary>
         <div class="setup-step-body">
         <div class="result-meta" style="margin-bottom:8px;">Patrol vehicles assigned to this site, if any.</div>
         <div id="siteVehiclesList" style="display:flex; flex-direction:column; gap:6px; margin-bottom:10px;"></div>
@@ -517,8 +529,8 @@
         </div>
       </details>
 
-      <details class="panel setup-step">
-        <summary><span class="step-num">9</span><span class="step-title">Guards</span><span class="step-status">Read-only — edit in Users</span></summary>
+      <details class="panel setup-step" id="step-guards">
+        <summary><span class="step-num">10</span><span class="step-title">Guards</span><span class="step-status">Read-only — edit in Users</span></summary>
         <div class="setup-step-body">
         <div class="result-meta" style="margin-bottom:8px;">Guards whose home site is this one. Edit names/employee numbers in the <b>Users</b> tab.</div>
         <div id="manageSiteGuardsList" style="display:flex; flex-direction:column; gap:6px;"></div>

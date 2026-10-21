@@ -631,6 +631,7 @@ function renderAll(){
   defaultReportDates();
   renderNotifications();
   renderUsersTable();
+  updateManageStepStatus();
 }
 
 // ---------------- Scan processing ----------------
