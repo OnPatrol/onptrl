@@ -64,6 +64,7 @@
   .face-video-box video{width:100%; height:100%; object-fit:cover; transform:scaleX(-1);}
   .face-video-box.match{border-color:var(--success);}
   .face-video-box.nomatch{border-color:var(--danger);}
+  .face-video-box.verified{border-color:var(--success); box-shadow:0 0 0 3px var(--success-dim);}
 
   /* Coverage tiles (controller/admin "who's on duty") */
   .coverage-grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(260px,1fr)); gap:14px; margin-top:12px;}

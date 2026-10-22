@@ -706,14 +706,28 @@ document.getElementById('manualScanBtn').addEventListener('click', async () => {
 // Face capture uses face-api.js entirely client-side: a 128-float descriptor is
 // captured once at enrollment (a guard's first-ever clock-in) and stored on their
 // profile; every later clock-in captures a fresh descriptor and compares it against
-// the enrolled one. This stops casual buddy-punching (a different face won't match)
-// but isn't liveness-proof — a good photo of the enrolled guard could still fool it.
+// the enrolled one. This stops casual buddy-punching (a different face won't match).
+//
+// Capture is automatic — there's no button — and only fires once a live blink has been
+// seen, using the landmarks already being computed for the descriptor (no extra model).
+// A static printed photo or a phone screen held up to the camera has no eyelid movement
+// at all, so it can never produce a blink and can never auto-capture.
 let faceModelsLoaded = false;
 let faceStream = null;
 let faceDetectTimer = null;
 let lastFaceDescriptor = null;
 let faceModalResolve = null;
+let faceCaptureArmed = false;
+let faceEyeState = 'open';   // 'open' | 'closed' — tracks the blink state machine
+let faceEarHistory = [];     // recent eye-aspect-ratio readings, used as a self-calibrating "eyes open" baseline
+let faceBlinkSeen = false;
+let faceStableFrames = 0;
+let faceModalOpenedAt = 0;
 const FACE_MATCH_THRESHOLD = 0.55; // faceapi.euclideanDistance — lower is a closer match. Kept for reference; the actual match now happens server-side in clock-in-self/clock-in-teammate using the same value.
+const FACE_EAR_HISTORY_MAX = 30;   // ~10s of readings at the 350ms detection interval
+const FACE_EAR_CLOSE_RATIO = 0.75; // eye counted as "closing" once EAR drops below this fraction of the recent open-eye baseline
+const FACE_EAR_OPEN_RATIO = 0.85;  // and "reopened" once it recovers above this fraction — completing one blink
+const FACE_STABLE_FRAMES_REQUIRED = 3; // consecutive frames with a face found before a blink is allowed to trigger capture, so one noisy frame can't fire it early
 
 async function ensureFaceModels(){
   if (faceModelsLoaded) return;
@@ -724,15 +738,20 @@ async function ensureFaceModels(){
   faceModelsLoaded = true;
 }
 
-// Opens the face modal and resolves with { descriptor: number[] } once the guard
-// captures a face, or null if they cancel. Caller decides what to do with it
+// Opens the face modal and resolves with { descriptor: number[] } once a live blink
+// auto-captures a face, or null if the guard cancels. Caller decides what to do with it
 // (enroll vs. compare against an existing enrollment).
 function openFaceModal(title){
   document.getElementById('faceModalTitle').textContent = title;
   document.getElementById('faceModalStatus').textContent = 'Loading face recognition…';
-  document.getElementById('faceCaptureBtn').style.display = 'none';
   document.getElementById('faceVideoBox').className = 'face-video-box';
   document.getElementById('faceModalBg').classList.add('show');
+  faceCaptureArmed = false;
+  faceEyeState = 'open';
+  faceEarHistory = [];
+  faceBlinkSeen = false;
+  faceStableFrames = 0;
+  faceModalOpenedAt = nowMs();
   return new Promise((resolve) => {
     faceModalResolve = resolve;
     startFaceCapture();
@@ -757,35 +776,66 @@ async function startFaceCapture(){
     video.srcObject = faceStream;
     await video.play();
     statusEl.textContent = 'Position your face in frame…';
-    document.getElementById('faceCaptureBtn').style.display = 'block';
     detectFaceLoop();
   } catch (err){
     statusEl.textContent = 'Could not access the front camera — ' + err.message;
   }
 }
 
+// Eye-aspect-ratio (Soukupová & Čech): the ratio of an eye's height to its width from the
+// 6 landmark points face-api.js already gives us. It's high while an eye is open and drops
+// sharply during a blink, so watching it over time is enough to detect one — no extra model.
+function eyeAspectRatio(eye){
+  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  const vert = dist(eye[1], eye[5]) + dist(eye[2], eye[4]);
+  const horiz = dist(eye[0], eye[3]);
+  return horiz > 0 ? vert / (2 * horiz) : 0;
+}
+
 async function detectFaceLoop(){
-  if (!faceStream) return; // modal was closed mid-loop
+  if (!faceStream || faceCaptureArmed) return; // modal closed, or already capturing — stop touching state
   const video = document.getElementById('faceVideo');
   const box = document.getElementById('faceVideoBox');
+  const statusEl = document.getElementById('faceModalStatus');
   try {
     const det = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
       .withFaceLandmarks().withFaceDescriptor();
     if (det){
       lastFaceDescriptor = Array.from(det.descriptor);
       box.classList.add('match');
-      document.getElementById('faceModalStatus').textContent = 'Face detected — tap Capture.';
+      faceStableFrames++;
+
+      const ear = (eyeAspectRatio(det.landmarks.getLeftEye()) + eyeAspectRatio(det.landmarks.getRightEye())) / 2;
+      faceEarHistory.push(ear);
+      if (faceEarHistory.length > FACE_EAR_HISTORY_MAX) faceEarHistory.shift();
+      const openBaseline = Math.max(...faceEarHistory);
+      if (openBaseline > 0){
+        if (faceEyeState === 'open' && ear < openBaseline * FACE_EAR_CLOSE_RATIO){
+          faceEyeState = 'closed';
+        } else if (faceEyeState === 'closed' && ear > openBaseline * FACE_EAR_OPEN_RATIO){
+          faceEyeState = 'open';
+          faceBlinkSeen = true; // a full close-then-reopen cycle = one blink
+        }
+      }
+
+      if (faceBlinkSeen && faceStableFrames >= FACE_STABLE_FRAMES_REQUIRED){
+        faceCaptureArmed = true;
+        box.classList.remove('match'); box.classList.add('verified');
+        statusEl.textContent = 'Verified — capturing…';
+        setTimeout(() => closeFaceModal({ descriptor: lastFaceDescriptor }), 500);
+        return;
+      }
+      const waitedMs = nowMs() - faceModalOpenedAt;
+      statusEl.textContent = waitedMs > 12000
+        ? 'Still waiting for a blink — make sure your eyes are visible and well lit.'
+        : 'Face detected — blink naturally to verify it\u2019s really you…';
     } else {
       lastFaceDescriptor = null;
       box.classList.remove('match');
-      document.getElementById('faceModalStatus').textContent = 'Position your face in frame…';
+      faceStableFrames = 0;
+      statusEl.textContent = 'Position your face in frame…';
     }
   } catch (e){ /* transient detection error — just retry on the next tick */ }
-  if (faceStream) faceDetectTimer = setTimeout(detectFaceLoop, 350);
+  if (faceStream && !faceCaptureArmed) faceDetectTimer = setTimeout(detectFaceLoop, 350);
 }
-
-document.getElementById('faceCaptureBtn').addEventListener('click', () => {
-  if (!lastFaceDescriptor) return;
-  closeFaceModal({ descriptor: lastFaceDescriptor });
-});
 
