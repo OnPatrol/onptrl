@@ -711,7 +711,10 @@ document.getElementById('manualScanBtn').addEventListener('click', async () => {
 // Capture is automatic — there's no button — and only fires once a live blink has been
 // seen, using the landmarks already being computed for the descriptor (no extra model).
 // A static printed photo or a phone screen held up to the camera has no eyelid movement
-// at all, so it can never produce a blink and can never auto-capture.
+// at all, so it can never produce a blink and can never auto-capture. Detection speed and
+// how forgiving the blink test is both adapt to the camera/lighting (see faceLowLight and
+// the time-based relaxation below) — only the speed and sensitivity adapt, never whether
+// a genuine blink is required at all.
 let faceModelsLoaded = false;
 let faceStream = null;
 let faceDetectTimer = null;
@@ -723,11 +726,19 @@ let faceEarHistory = [];     // recent eye-aspect-ratio readings, used as a self
 let faceBlinkSeen = false;
 let faceStableFrames = 0;
 let faceModalOpenedAt = 0;
+let faceLowLight = false;
+let faceLastBrightnessCheckAt = 0;
+let faceBrightnessCanvas = null, faceBrightnessCtx = null;
 const FACE_MATCH_THRESHOLD = 0.55; // faceapi.euclideanDistance — lower is a closer match. Kept for reference; the actual match now happens server-side in clock-in-self/clock-in-teammate using the same value.
-const FACE_EAR_HISTORY_MAX = 30;   // ~10s of readings at the 350ms detection interval
-const FACE_EAR_CLOSE_RATIO = 0.75; // eye counted as "closing" once EAR drops below this fraction of the recent open-eye baseline
-const FACE_EAR_OPEN_RATIO = 0.85;  // and "reopened" once it recovers above this fraction — completing one blink
-const FACE_STABLE_FRAMES_REQUIRED = 3; // consecutive frames with a face found before a blink is allowed to trigger capture, so one noisy frame can't fire it early
+const FACE_DETECT_INTERVAL_MS = 150; // was 350ms — the model itself is the real bottleneck on a slow phone, so this just removes artificially-added wait on faster ones
+const FACE_EAR_HISTORY_MAX = 50;     // ~7-8s of readings at the interval above
+const FACE_EAR_CLOSE_RATIO = 0.78;        // normal conditions: eye counted as "closing" once EAR drops below this fraction of the recent open-eye baseline
+const FACE_EAR_CLOSE_RATIO_LENIENT = 0.88; // low light, or no blink caught for a while: a smaller dip is enough — camera noise can blur a fast blink's lowest point
+const FACE_EAR_OPEN_RATIO = 0.88;         // normal conditions: and "reopened" once it recovers above this fraction — completing one blink
+const FACE_EAR_OPEN_RATIO_LENIENT = 0.78;  // lenient: a partial recovery already counts as reopened
+const FACE_STABLE_FRAMES_REQUIRED = 2; // consecutive frames with a face found before a blink is allowed to trigger capture, so one noisy frame can't fire it early
+const FACE_LOW_LIGHT_LUMA = 60;        // average 0-255 luma below this counts as "low light" (typical well-lit indoor footage is well above 100)
+const FACE_RELAX_AFTER_MS = 6000;      // no blink caught in this long while a face IS present → relax thresholds even if lighting looks fine (handles a noisy/low-quality camera, not just low light)
 
 async function ensureFaceModels(){
   if (faceModelsLoaded) return;
@@ -752,6 +763,8 @@ function openFaceModal(title){
   faceBlinkSeen = false;
   faceStableFrames = 0;
   faceModalOpenedAt = nowMs();
+  faceLowLight = false;
+  faceLastBrightnessCheckAt = 0;
   return new Promise((resolve) => {
     faceModalResolve = resolve;
     startFaceCapture();
@@ -792,27 +805,66 @@ function eyeAspectRatio(eye){
   return horiz > 0 ? vert / (2 * horiz) : 0;
 }
 
+// Average of the highest few readings rather than a single all-time max, so one noisy
+// outlier frame (a landmark glitch producing one unusually large EAR) can't inflate the
+// "eyes open" baseline and make every real blink after it look too small to count.
+function openEyeBaseline(history){
+  const top = [...history].sort((a, b) => b - a).slice(0, 3);
+  return top.length ? top.reduce((a, b) => a + b, 0) / top.length : 0;
+}
+
+// Cheap average-luma sample from a downscaled video frame (24x24 is plenty — this is a
+// lighting estimate, not an image). Checked every ~1s, not every frame, since light doesn't
+// change that fast and getImageData isn't free.
+function sampleBrightness(video){
+  if (!faceBrightnessCanvas){
+    faceBrightnessCanvas = document.createElement('canvas');
+    faceBrightnessCanvas.width = 24; faceBrightnessCanvas.height = 24;
+    faceBrightnessCtx = faceBrightnessCanvas.getContext('2d', { willReadFrequently: true });
+  }
+  try{
+    faceBrightnessCtx.drawImage(video, 0, 0, 24, 24);
+    const { data } = faceBrightnessCtx.getImageData(0, 0, 24, 24);
+    let sum = 0;
+    for (let i = 0; i < data.length; i += 4) sum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    return sum / (data.length / 4);
+  }catch(e){ return 128; } // sampling failed for some reason — assume normal light rather than falsely flagging low light
+}
+
 async function detectFaceLoop(){
   if (!faceStream || faceCaptureArmed) return; // modal closed, or already capturing — stop touching state
   const video = document.getElementById('faceVideo');
   const box = document.getElementById('faceVideoBox');
   const statusEl = document.getElementById('faceModalStatus');
+  const t = nowMs();
+  if (t - faceLastBrightnessCheckAt > 1000){
+    faceLastBrightnessCheckAt = t;
+    faceLowLight = sampleBrightness(video) < FACE_LOW_LIGHT_LUMA;
+  }
+  // A lower score threshold gives the detector more leeway to still find a face it's less
+  // confident about in poor light, rather than reporting "no face" and leaving the guard
+  // staring at a camera that's technically pointed right at them.
+  const detectorOptions = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: faceLowLight ? 0.3 : 0.5 });
   try {
-    const det = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
-      .withFaceLandmarks().withFaceDescriptor();
+    const det = await faceapi.detectSingleFace(video, detectorOptions).withFaceLandmarks().withFaceDescriptor();
     if (det){
       lastFaceDescriptor = Array.from(det.descriptor);
       box.classList.add('match');
       faceStableFrames++;
 
+      const waitedMs = t - faceModalOpenedAt;
+      const lenient = faceLowLight || waitedMs > FACE_RELAX_AFTER_MS;
+      const closeRatio = lenient ? FACE_EAR_CLOSE_RATIO_LENIENT : FACE_EAR_CLOSE_RATIO;
+      const openRatio = lenient ? FACE_EAR_OPEN_RATIO_LENIENT : FACE_EAR_OPEN_RATIO;
+
       const ear = (eyeAspectRatio(det.landmarks.getLeftEye()) + eyeAspectRatio(det.landmarks.getRightEye())) / 2;
       faceEarHistory.push(ear);
       if (faceEarHistory.length > FACE_EAR_HISTORY_MAX) faceEarHistory.shift();
-      const openBaseline = Math.max(...faceEarHistory);
+      const openBaseline = openEyeBaseline(faceEarHistory);
       if (openBaseline > 0){
-        if (faceEyeState === 'open' && ear < openBaseline * FACE_EAR_CLOSE_RATIO){
+        if (faceEyeState === 'open' && ear < openBaseline * closeRatio){
           faceEyeState = 'closed';
-        } else if (faceEyeState === 'closed' && ear > openBaseline * FACE_EAR_OPEN_RATIO){
+        } else if (faceEyeState === 'closed' && ear > openBaseline * openRatio){
           faceEyeState = 'open';
           faceBlinkSeen = true; // a full close-then-reopen cycle = one blink
         }
@@ -822,20 +874,21 @@ async function detectFaceLoop(){
         faceCaptureArmed = true;
         box.classList.remove('match'); box.classList.add('verified');
         statusEl.textContent = 'Verified — capturing…';
-        setTimeout(() => closeFaceModal({ descriptor: lastFaceDescriptor }), 500);
+        setTimeout(() => closeFaceModal({ descriptor: lastFaceDescriptor }), 300);
         return;
       }
-      const waitedMs = nowMs() - faceModalOpenedAt;
-      statusEl.textContent = waitedMs > 12000
-        ? 'Still waiting for a blink — make sure your eyes are visible and well lit.'
-        : 'Face detected — blink naturally to verify it\u2019s really you…';
+      statusEl.textContent = faceLowLight
+        ? 'Low light detected — hold steady and blink naturally…'
+        : (waitedMs > FACE_RELAX_AFTER_MS
+          ? 'Still waiting for a blink — make sure your eyes are visible.'
+          : 'Face detected — blink naturally to verify it\u2019s really you…');
     } else {
       lastFaceDescriptor = null;
       box.classList.remove('match');
       faceStableFrames = 0;
-      statusEl.textContent = 'Position your face in frame…';
+      statusEl.textContent = faceLowLight ? 'Low light — position your face in frame…' : 'Position your face in frame…';
     }
   } catch (e){ /* transient detection error — just retry on the next tick */ }
-  if (faceStream && !faceCaptureArmed) faceDetectTimer = setTimeout(detectFaceLoop, 350);
+  if (faceStream && !faceCaptureArmed) faceDetectTimer = setTimeout(detectFaceLoop, FACE_DETECT_INTERVAL_MS);
 }
 
