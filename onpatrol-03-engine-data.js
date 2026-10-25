@@ -48,6 +48,15 @@ const SOUND = {
     if (navigator.vibrate) navigator.vibrate([120,70,120]);
   },
   lateReminder:   () => ring([{freq:420,duration:200},{freq:420,duration:200},{freq:420,duration:200}], 30000),
+  // Plays once, the moment every checkpoint on a round is accounted for — distinct from
+  // tagAccepted (which fires on every single scan) so finishing the whole round actually
+  // feels like finishing it. Clean completion resolves upward; a round with any skipped
+  // tags resolves back down instead, so the guard can tell which one it was by ear alone.
+  patrolComplete:           () => playTone([{freq:660,duration:120},{freq:880,duration:120},{freq:1320,duration:220}]),
+  patrolCompleteWithErrors: () => {
+    playTone([{freq:660,duration:120},{freq:880,duration:120},{freq:520,duration:220}]);
+    if (navigator.vibrate) navigator.vibrate([100,60,100]);
+  },
   // Deliberately harsh and impossible to mistake for anything else — rings for
   // a full 6 seconds (comfortably over the 5s minimum) so it can't be missed
   // by a controller who glanced away, and pairs with a strong vibration

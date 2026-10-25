@@ -486,6 +486,7 @@ function renderPatrolsAdmin(){
 
 // ---------------- Duty-route patrol notifications ----------------
 let notifiedFiveMin = new Set(), notifiedStart = new Set(), notifiedLate = new Set(), notifiedMissed = new Set();
+let notifiedPatrolComplete = new Set(); // per patrol instance, so the next round gets its own fresh notification
 
 function currentDutyRouteNextInstance(){
   const dutySiteId = activeDutySiteId || guardSiteId;
@@ -544,6 +545,21 @@ function renderGuardPatrolCard(){
   const st = instanceStatus(inst, now);
   const r = routes.find(r => r.id === inst.routeId);
   card.style.display = 'block';
+
+  // Fires once, right when the last checkpoint on this round gets accounted for (scanned
+  // or skipped) — a clear "you're done" moment distinct from the per-scan accept/reject
+  // feedback, and distinct depending on whether anything had to be skipped along the way.
+  if (st.totalCps > 0 && st.doneCps.length >= st.totalCps && !notifiedPatrolComplete.has(inst.id)){
+    notifiedPatrolComplete.add(inst.id);
+    if (st.skippedCps.length > 0){
+      SOUND.patrolCompleteWithErrors();
+      showToast('Patrol complete — with errors', `${st.skippedCps.length} of ${st.totalCps} checkpoint${st.skippedCps.length === 1 ? '' : 's'} skipped this round.`, 'warn');
+    } else {
+      SOUND.patrolComplete();
+      showToast('Patrol complete', `All ${st.totalCps} checkpoint${st.totalCps === 1 ? '' : 's'} scanned.`, 'success');
+    }
+  }
+
   document.getElementById('guardPatrolRouteName').textContent = r ? r.name : '—';
   const statusEl = document.getElementById('guardPatrolStatus');
   statusEl.className = 'status-pill ' + st.status;
