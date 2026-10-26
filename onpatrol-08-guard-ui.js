@@ -193,18 +193,23 @@ function setManualScanStatus(text, isError){
 // camera strap shouldn't be able to fire this. Holding for the full
 // duration is still fast enough in a genuine emergency, and a partial
 // hold cancels cleanly with no side effects.
-// Everyone currently on duty at a given site, self first — shared by the
-// panic "who's pressing this" selector and the per-patrol "who's on patrol"
-// lock below, so both agree on the same roster.
+// Everyone actually clocked in at a given site right now — self included only if the
+// logged-in guard is themselves on duty, not just because they're the one logged into this
+// device. Clocked in by their own face scan or manually by a controller both count the same
+// way here, since either leaves the same attendance row with status 'on_duty'. Shared by the
+// panic "who's pressing this" selector and the per-patrol "who's on patrol" lock below, so
+// both agree on the same roster.
 function onDutyGuardsAtSite(siteId){
-  const onDutyHere = [{ id: session.user.id, full_name: profile.full_name || 'You' }];
+  const onDutyHere = [];
   const dir = guardDirectoryCache[siteId] || [];
   attendance.forEach(a => {
-    if (a.status === 'on_duty' && a.siteId === siteId && a.guardId !== session.user.id){
-      const g = dir.find(x => x.id === a.guardId);
-      if (g && !onDutyHere.some(o => o.id === g.id)) onDutyHere.push({ id: g.id, full_name: g.full_name });
-    }
+    if (a.status !== 'on_duty' || a.siteId !== siteId) return;
+    const name = a.guardId === session.user.id ? (profile.full_name || 'You') : ((dir.find(x => x.id === a.guardId) || {}).full_name);
+    if (name && !onDutyHere.some(o => o.id === a.guardId)) onDutyHere.push({ id: a.guardId, full_name: name });
   });
+  // The logged-in guard first, if they're on duty, so they're the obvious default pick
+  // rather than wherever they happen to fall in attendance order.
+  onDutyHere.sort((a, b) => (a.id === session.user.id ? -1 : b.id === session.user.id ? 1 : 0));
   return onDutyHere;
 }
 
