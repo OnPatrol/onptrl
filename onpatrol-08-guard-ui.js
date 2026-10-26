@@ -788,7 +788,7 @@ async function startFaceCapture(){
     const video = document.getElementById('faceVideo');
     video.srcObject = faceStream;
     await video.play();
-    statusEl.textContent = 'Position your face in frame…';
+    statusEl.textContent = 'Position your face inside the oval…';
     detectFaceLoop();
   } catch (err){
     statusEl.textContent = 'Could not access the front camera — ' + err.message;
@@ -886,7 +886,7 @@ async function detectFaceLoop(){
       lastFaceDescriptor = null;
       box.classList.remove('match');
       faceStableFrames = 0;
-      statusEl.textContent = faceLowLight ? 'Low light — position your face in frame…' : 'Position your face in frame…';
+      statusEl.textContent = faceLowLight ? 'Low light — position your face inside the oval…' : 'Position your face inside the oval…';
     }
   } catch (e){ /* transient detection error — just retry on the next tick */ }
   if (faceStream && !faceCaptureArmed) faceDetectTimer = setTimeout(detectFaceLoop, FACE_DETECT_INTERVAL_MS);

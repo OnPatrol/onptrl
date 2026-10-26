@@ -65,6 +65,19 @@
   .face-video-box.match{border-color:var(--success);}
   .face-video-box.nomatch{border-color:var(--danger);}
   .face-video-box.verified{border-color:var(--success); box-shadow:0 0 0 3px var(--success-dim);}
+  /* Shows exactly where to put your face: an oval cut out of a dimmed mask over the rest of
+     the frame (the classic "box-shadow spread" trick — a transparent oval whose shadow fills
+     everything else). Tracks the same match/verified states the video box border already
+     uses, so there's one consistent signal instead of two that could disagree. */
+  .face-guide-oval{
+    position:absolute; left:50%; top:44%; width:60%; aspect-ratio:3/4;
+    transform:translate(-50%,-50%); border-radius:50%;
+    border:2px solid rgba(255,255,255,.55);
+    box-shadow:0 0 0 1000px rgba(4,6,9,.58);
+    pointer-events:none; transition:border-color .2s ease, box-shadow .2s ease;
+  }
+  .face-video-box.match .face-guide-oval{border-color:var(--success); box-shadow:0 0 0 1000px rgba(4,6,9,.4);}
+  .face-video-box.verified .face-guide-oval{border-color:var(--success); box-shadow:0 0 0 1000px rgba(4,6,9,.3), 0 0 20px 2px var(--success-dim);}
 
   /* Coverage tiles (controller/admin "who's on duty") */
   .coverage-grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(260px,1fr)); gap:14px; margin-top:12px;}
