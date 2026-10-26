@@ -334,7 +334,7 @@ function auditPanelMarkup(prefix, showControllerToggle){
         <div class="site-contact-name">Let controllers view this audit trail</div>
         <div class="result-meta">Controllers can already see everything they need to do their job. This only controls whether they can also open this trail (read-only - they can never edit or delete it either).</div>
       </div>
-      <label class="switch"><input type="checkbox" id="${prefix}AuditControllerAccess"><span class="slider"></span></label>
+      <label class="switch"><input type="checkbox" id="${prefix}AuditControllerAccess"><span class="slider-tog"></span></label>
     </div>` : '';
   return `
     <div class="result-meta" style="margin-bottom:12px;">A permanent record of who did what, and when, across your company: changes to sites, routes and people, alerts and panic, incidents, attendance, downloads and sign-ins. Entries can't be edited or deleted, and each is chained to the one before it, so any tampering shows up.</div>

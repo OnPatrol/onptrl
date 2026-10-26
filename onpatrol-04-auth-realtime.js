@@ -11,6 +11,20 @@ async function loadUsersAdmin(){
 }
 
 function renderUsersTable(){
+  const guardToggle = document.getElementById('guardSignOutToggle');
+  if (guardToggle && !guardToggle.dataset.wired && profile && profile.org_id){
+    guardToggle.dataset.wired = '1';
+    sb.from('organizations').select('guard_sign_out_enabled').eq('id', profile.org_id).single()
+      .then(({ data }) => { guardToggle.checked = !data || data.guard_sign_out_enabled !== false; });
+    guardToggle.addEventListener('change', async () => {
+      guardToggle.disabled = true;
+      const { error } = await sb.from('organizations').update({ guard_sign_out_enabled: guardToggle.checked }).eq('id', profile.org_id);
+      guardToggle.disabled = false;
+      if (error){ guardToggle.checked = !guardToggle.checked; showToast('Could not save', error.message, 'danger'); return; }
+      guardSignOutEnabled = guardToggle.checked;
+      showToast(guardToggle.checked ? 'Guards can now sign out' : 'Guards can no longer sign out', '', 'success');
+    });
+  }
   const body = document.getElementById('usersTableBody');
   if (!body) return;
   if (!allUsers.length){
@@ -455,6 +469,12 @@ document.getElementById('authSubmitBtn').addEventListener('click', async () => {
 });
 
 document.getElementById('signOutBtn').addEventListener('click', async () => {
+  // A guard phone is often shared between teammates (one logged-in session, several guards
+  // clocking in against it by face) — signing out takes the whole device down until someone
+  // signs back in with real credentials, so this always asks first for a guard specifically.
+  if (profile && profile.role === 'guard'){
+    if (!confirm('Sign out? If this phone is shared with teammates, they won\u2019t be able to clock in until someone signs back in.')) return;
+  }
   if (notificationInterval){ clearInterval(notificationInterval); notificationInterval = null; }
   if (notifSweepInterval){ clearInterval(notifSweepInterval); notifSweepInterval = null; }
   if (alertPollInterval){ clearInterval(alertPollInterval); alertPollInterval = null; }
@@ -710,14 +730,14 @@ async function loadProfileAndApp(){
     guardTabBtn.style.display = '';
     adminTabBtn.style.display = 'none';
     controllerTabBtn.style.display = 'none';
-    // Guards work off a shared/kiosk-style device — no self-service admin claim code and no
-    // sign-out control in their UI. Someone with no site yet might actually be a controller
-    // whose code never got redeemed, so that one stays available until they've joined somewhere
-    // (the same "Join your company" screen offers it too, more prominently).
+    // No self-service admin claim code for guards. Someone with no site yet might actually
+    // be a controller whose code never got redeemed, so that one stays available until
+    // they've joined somewhere (the same "Join your company" screen offers it too, more
+    // prominently).
     claimAdminBtn.style.display = 'none';
     claimControllerBtn.style.display = guardSiteId ? 'none' : '';
     joinSiteBtn.style.display = guardSiteId ? 'none' : '';
-    signOutBtn.style.display = 'none';
+    signOutBtn.style.display = 'none'; // revealed by loadGuardSignOutAccess() below once the org's setting is confirmed
     guardTabBtn.click();
   }
 
@@ -742,6 +762,7 @@ async function loadProfileAndApp(){
   loadCompanyName();
   auditSignIn();
   loadControllerAuditAccess();
+  loadGuardSignOutAccess();
   if (!notificationInterval){
     notificationInterval = setInterval(() => {
       checkGuardNotifications();
@@ -805,6 +826,20 @@ async function loadControllerAuditAccess(){
   const r = await withTimeout(sb.from('organizations').select('controller_audit_access').eq('id', profile.org_id).single(), 8000);
   controllerAuditAccess = !!(r.data && r.data.controller_audit_access);
   if (navBtn) navBtn.style.display = controllerAuditAccess ? '' : 'none';
+}
+
+// ---------------- Whether this company lets guards sign out of a shared/kiosk device ----------------
+let guardSignOutEnabled = true;
+async function loadGuardSignOutAccess(){
+  if (!profile || profile.role !== 'guard') return; // admins/controllers always keep the button; only guards are gated
+  const signOutBtn = document.getElementById('signOutBtn');
+  if (!profile.org_id) return;
+  if (offlineKnownDown()) return;
+  const r = await withTimeout(sb.from('organizations').select('guard_sign_out_enabled').eq('id', profile.org_id).single(), 8000);
+  // A failed or ambiguous fetch defaults to showing the button rather than hiding it — a
+  // network hiccup shouldn't silently trap someone who has a real reason to sign out.
+  guardSignOutEnabled = r.data ? r.data.guard_sign_out_enabled !== false : true;
+  if (signOutBtn) signOutBtn.style.display = guardSignOutEnabled ? '' : 'none';
 }
 
 // ---------------- Company name shown next to the logo ----------------

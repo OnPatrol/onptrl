@@ -636,6 +636,17 @@
     </div>
 
     <div class="admin-view" id="admin-users">
+      <div class="panel" style="margin-bottom:16px;">
+        <h2>Guard settings</h2>
+        <div class="site-contact-row">
+          <div style="flex:1; min-width:0;">
+            <div class="site-contact-name">Guards can sign out</div>
+            <div class="result-meta">Turn this off for shared/kiosk-style site phones — a guard won't be able to accidentally sign the whole device out of its session, so teammates can keep clocking in against it by face.</div>
+          </div>
+          <label class="switch"><input type="checkbox" id="guardSignOutToggle"><span class="slider-tog"></span></label>
+        </div>
+      </div>
+
       <div class="panel">
         <h2>Users</h2>
         <div class="result-meta" style="margin-bottom:10px;">Every account across guard, admin, and controller roles.</div>
