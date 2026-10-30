@@ -303,7 +303,7 @@ function renderSchedTable(){
     return r && r.siteId === activeSiteId;
   });
   if (scoped.length === 0){
-    body.innerHTML = '<tr><td colspan="6" style="font-family:var(--sans); color:var(--muted);">No schedules at this site yet.</td></tr>';
+    body.innerHTML = '<tr><td colspan="8" style="font-family:var(--sans); color:var(--muted);">No schedules at this site yet.</td></tr>';
     return;
   }
   body.innerHTML = scoped.map(s => {
@@ -313,6 +313,7 @@ function renderSchedTable(){
         <td style="font-family:var(--sans);">${r ? r.name : '—'}${s.active === false ? ' <span class="result-meta">(off)</span>' : ''}</td>
         <td>every ${s.intervalMinutes}m</td>
         <td>${s.shiftStart}–${s.shiftEnd}</td>
+        <td>${dayPickerLabel(s.daysOfWeek)}</td>
         <td>${s.durationMinutes}m</td>
         <td>${s.graceMinutes}m</td>
         <td>

@@ -418,10 +418,13 @@
           <div class="f"><label>End</label><input type="time" id="newShiftEnd" value="06:00"></div>
           <div class="f"><label>Guards required</label><input type="text" id="newShiftRequired" value="1" style="width:70px;"></div>
         </div>
+        <div class="field-label">Active days</div>
+        <div class="day-picker" id="newShiftDays"></div>
+        <div class="result-meta" style="margin:2px 0 10px;">Leave every day selected, or narrow it — e.g. add this shift twice: 2 guards on weekends only, 1 guard on weekdays only.</div>
         <div class="btn-row"><button class="btn btn-primary" id="addShiftBtn">Add shift</button></div>
         <div class="table-scroll">
           <table style="margin-top:14px;">
-            <thead><tr><th>Shift</th><th>Window</th><th>Required</th><th>Active</th><th></th></tr></thead>
+            <thead><tr><th>Shift</th><th>Window</th><th>Days</th><th>Required</th><th>Active</th><th></th></tr></thead>
             <tbody id="siteShiftsTableBody"></tbody>
           </table>
         </div>
@@ -460,6 +463,10 @@
           </div>
           <div class="result-meta" style="margin-top:4px;">End time earlier than start means the shift crosses midnight.</div>
 
+          <div class="field-label">Active days</div>
+          <div class="day-picker" id="newSchedDays"></div>
+          <div class="result-meta" style="margin:2px 0 10px;">Leave every day selected, or narrow it — e.g. add two schedules on the same route: patrols every 30 min on weekdays, every 60 on weekends.</div>
+
           <div class="field-label">Patrol duration</div>
           <div class="inline-fields">
             <div class="f"><label>Expected length (min)</label><input type="text" id="newSchedDuration" value="20" style="width:80px;"></div>
@@ -478,7 +485,7 @@
 
           <div class="table-scroll">
         <table style="margin-top:14px;">
-            <thead><tr><th>Route</th><th>Repeats</th><th>Shift</th><th>Duration</th><th>Grace</th><th>Active</th><th></th></tr></thead>
+            <thead><tr><th>Route</th><th>Repeats</th><th>Shift</th><th>Days</th><th>Duration</th><th>Grace</th><th>Active</th><th></th></tr></thead>
             <tbody id="schedTableBody"></tbody>
           </table>
         </div>

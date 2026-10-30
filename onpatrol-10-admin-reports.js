@@ -210,6 +210,7 @@ document.getElementById('newSchedDuration').addEventListener('input', updateSche
 document.getElementById('newSchedGrace').addEventListener('input', updateSchedConcludePreview);
 document.getElementById('newSchedIntervalCustom').addEventListener('input', updateSchedConcludePreview);
 
+dayPickerWire('newSchedDays');
 document.getElementById('addSchedBtn').addEventListener('click', async () => {
   const routeId = document.getElementById('newSchedRoute').value;
   if (!routeId) return;
@@ -221,13 +222,17 @@ document.getElementById('addSchedBtn').addEventListener('click', async () => {
   const shiftEnd = document.getElementById('newSchedEnd').value || '05:00';
   const durationMinutes = parseInt(document.getElementById('newSchedDuration').value) || 20;
   const graceMinutes = parseInt(document.getElementById('newSchedGrace').value) || 10;
+  const days = dayPickerGetSelected('newSchedDays');
+  const ok = validateFields([{ id: 'newSchedDays', test: days.length > 0, message: 'Pick at least one day, or leave every day selected.', group: true }]);
+  if (!ok) return;
 
   const { error } = await sb.from('schedules').insert({
     route_id: routeId, interval_minutes: intervalMinutes, shift_start: shiftStart,
-    shift_end: shiftEnd, duration_minutes: durationMinutes, grace_minutes: graceMinutes, active: true
+    shift_end: shiftEnd, duration_minutes: durationMinutes, grace_minutes: graceMinutes, active: true, days_of_week: days
   });
   if (error){ showToast('Could not add schedule', error.message, 'danger'); return; }
   document.getElementById('newSchedIntervalCustom').value = '';
+  dayPickerSetSelected('newSchedDays', [0,1,2,3,4,5,6]);
   showToast('Schedule added', `Guards will be prompted every ${intervalMinutes}m between ${shiftStart}\u2013${shiftEnd}.`, 'success');
   await loadSchedules();
   renderAll();

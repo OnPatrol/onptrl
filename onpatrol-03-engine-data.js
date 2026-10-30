@@ -140,6 +140,48 @@ function validateFields(fields){
   return !firstInvalid;
 }
 
+// ---------------- Day-of-week picker (shared by shift staffing and patrol schedule forms) ----------------
+// Day numbers match JS's Date.getDay(): 0=Sunday .. 6=Saturday.
+const DAY_NAMES_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const DAY_NAMES_FULL = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+function dayPickerHtml(){
+  return ['S','M','T','W','T','F','S'].map((l, i) =>
+    `<button type="button" class="day-btn active" data-day="${i}" title="${DAY_NAMES_FULL[i]}">${l}</button>`).join('');
+}
+function dayPickerGetSelected(containerId){
+  const el = document.getElementById(containerId);
+  if (!el) return [0,1,2,3,4,5,6];
+  return Array.from(el.querySelectorAll('.day-btn.active')).map(b => parseInt(b.dataset.day, 10)).sort((a, b) => a - b);
+}
+function dayPickerSetSelected(containerId, days){
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const set = new Set(days && days.length ? days : [0,1,2,3,4,5,6]);
+  el.querySelectorAll('.day-btn').forEach(b => b.classList.toggle('active', set.has(parseInt(b.dataset.day, 10))));
+}
+function dayPickerWire(containerId){
+  const el = document.getElementById(containerId);
+  if (!el || el.dataset.wired) return;
+  el.dataset.wired = '1';
+  el.innerHTML = dayPickerHtml();
+  el.addEventListener('click', e => {
+    const btn = e.target.closest('.day-btn');
+    if (btn) btn.classList.toggle('active');
+  });
+}
+// Short label for a days_of_week array, for the shift/schedule tables — "Every day" and
+// "Weekdays"/"Weekends" read far better at a glance than seven comma-separated day names.
+function dayPickerLabel(days){
+  if (!days || !days.length || days.length === 7) return 'Every day';
+  const sorted = [...days].sort((a, b) => a - b);
+  if (sorted.length === 2 && sorted[0] === 0 && sorted[1] === 6) return 'Weekends';
+  if (sorted.length === 5 && [1,2,3,4,5].every(d => sorted.includes(d))) return 'Weekdays';
+  return sorted.map(d => DAY_NAMES_SHORT[d]).join(', ');
+}
+function daysOfWeekOk(days, dayNum){
+  return !days || !days.length || days.includes(dayNum);
+}
+
 // ---------------- Patrol scheduling engine (pure — operates on local state) ----------------
 function parseHM(hm){
   const [h,m] = hm.split(':').map(Number);
@@ -170,6 +212,7 @@ function generateInstances(sched, winStart, winEnd){
   const firstDay = new Date(winStart - dayMs);
   firstDay.setHours(0,0,0,0);
   for (let dayStart = firstDay.getTime(); dayStart <= winEnd + dayMs; dayStart += dayMs){
+    if (!daysOfWeekOk(sched.daysOfWeek, new Date(dayStart).getDay())) continue;
     const shiftStart = dayStart + (start.h*60+start.m)*60000;
     let shiftEnd = dayStart + (end.h*60+end.m)*60000;
     if (shiftEnd <= shiftStart) shiftEnd += dayMs;
@@ -431,6 +474,7 @@ async function loadSchedules(){
     id: s.id, routeId: s.route_id, intervalMinutes: s.interval_minutes,
     shiftStart: (s.shift_start || '00:00:00').slice(0,5), shiftEnd: (s.shift_end || '00:00:00').slice(0,5),
     durationMinutes: s.duration_minutes, graceMinutes: s.grace_minutes, active: s.active,
+    daysOfWeek: s.days_of_week && s.days_of_week.length ? s.days_of_week : [0,1,2,3,4,5,6],
     createdAt: s.created_at ? new Date(s.created_at).getTime() : null
   }));
 }
@@ -501,7 +545,8 @@ async function loadSiteShifts(){
   siteShifts = (data || []).map(s => ({
     id: s.id, siteId: s.site_id, name: s.name,
     startTime: (s.start_time || '00:00:00').slice(0,5), endTime: (s.end_time || '00:00:00').slice(0,5),
-    required: s.required_guards, active: s.active
+    required: s.required_guards, active: s.active,
+    daysOfWeek: s.days_of_week && s.days_of_week.length ? s.days_of_week : [0,1,2,3,4,5,6]
   }));
 }
 function rowToAttendance(r){
@@ -582,10 +627,12 @@ function isShiftActiveAt(shift, atMs){
   const todayStart = new Date(at); todayStart.setHours(sh, sm, 0, 0);
   const todayEnd = new Date(at); todayEnd.setHours(eh, em, 0, 0);
   if (crossesMidnight) todayEnd.setDate(todayEnd.getDate() + 1);
-  if (at >= todayStart && at < todayEnd) return true;
+  // A shift's "day" is whichever day it STARTS on, same convention as its shift_date bucket
+  // elsewhere — an overnight Friday-start shift is a Friday shift even once it's past midnight.
+  if (at >= todayStart && at < todayEnd && daysOfWeekOk(shift.daysOfWeek, todayStart.getDay())) return true;
   const yStart = new Date(todayStart); yStart.setDate(yStart.getDate() - 1);
   const yEnd = new Date(todayEnd); yEnd.setDate(yEnd.getDate() - 1);
-  return at >= yStart && at < yEnd;
+  return at >= yStart && at < yEnd && daysOfWeekOk(shift.daysOfWeek, yStart.getDay());
 }
 // How early a guard can clock in before their shift officially starts — someone
 // arriving for handover/prep shouldn't be blocked, but clocking into a shift whose
@@ -603,6 +650,7 @@ function canClockInToShift(shift, atMs){
     const start = new Date(atMs); start.setDate(start.getDate() + dayOffset); start.setHours(sh, sm, 0, 0);
     const end = new Date(start); end.setHours(eh, em, 0, 0);
     if (crossesMidnight) end.setDate(end.getDate() + 1);
+    if (!daysOfWeekOk(shift.daysOfWeek, start.getDay())) continue;
     if (atMs >= start.getTime() - SHIFT_CLOCK_IN_EARLY_GRACE_MS && atMs < end.getTime()) return true;
   }
   return false;

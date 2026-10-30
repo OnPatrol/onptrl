@@ -338,6 +338,7 @@ function renderSiteShiftsTable(){
     <tr${s.active === false ? ' style="opacity:0.55;"' : ''}>
       <td style="font-family:var(--sans); font-weight:600;">${s.name}${s.active === false ? ' <span class="result-meta">(off)</span>' : ''}</td>
       <td>${s.startTime}–${s.endTime}</td>
+      <td>${dayPickerLabel(s.daysOfWeek)}</td>
       <td>${s.required}</td>
       <td>
         <label class="switch" title="${s.active === false ? 'Shift is off — no coverage expected' : 'Shift is on'}">
@@ -347,7 +348,7 @@ function renderSiteShiftsTable(){
       </td>
       <td><button class="del-btn" data-del-shift="${s.id}" aria-label="Delete shift"><i>&times;</i></button></td>
     </tr>
-  `).join('') : '<tr><td colspan="5" style="font-family:var(--sans); color:var(--muted);">No shifts configured for this site yet.</td></tr>';
+  `).join('') : '<tr><td colspan="6" style="font-family:var(--sans); color:var(--muted);">No shifts configured for this site yet.</td></tr>';
   body.querySelectorAll('.shift-active-toggle').forEach(tog => tog.addEventListener('change', async e => {
     const s = siteShifts.find(sh => sh.id === e.target.dataset.shiftActive);
     if (!s) return;
@@ -377,15 +378,20 @@ function renderSiteShiftsTable(){
   });
 }
 
+dayPickerWire('newShiftDays');
 document.getElementById('addShiftBtn').addEventListener('click', async () => {
   if (!activeSiteId){ showToast('Pick a site first', '', 'warn'); return; }
   const name = document.getElementById('newShiftName').value.trim() || 'Shift';
   const start = document.getElementById('newShiftStart').value || '18:00';
   const end = document.getElementById('newShiftEnd').value || '06:00';
   const required = parseInt(document.getElementById('newShiftRequired').value) || 1;
-  const { error } = await sb.from('site_shifts').insert({ site_id: activeSiteId, name, start_time: start, end_time: end, required_guards: required, active: true });
+  const days = dayPickerGetSelected('newShiftDays');
+  const ok = validateFields([{ id: 'newShiftDays', test: days.length > 0, message: 'Pick at least one day, or leave every day selected.', group: true }]);
+  if (!ok) return;
+  const { error } = await sb.from('site_shifts').insert({ site_id: activeSiteId, name, start_time: start, end_time: end, required_guards: required, active: true, days_of_week: days });
   if (error){ showToast('Could not add shift', error.message, 'danger'); return; }
   document.getElementById('newShiftName').value = '';
+  dayPickerSetSelected('newShiftDays', [0,1,2,3,4,5,6]);
   await loadSiteShifts();
   await Promise.all([...new Set(siteShifts.map(s => s.siteId))].map(id => loadGuardDirectory(id)));
   renderSiteShiftsTable();
