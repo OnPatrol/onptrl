@@ -3,13 +3,15 @@ function renderCpTable(){
   const body = document.getElementById('cpTableBody');
   const scoped = checkpoints.filter(c => c.siteId === activeSiteId);
   if (scoped.length === 0){
-    body.innerHTML = '<tr><td colspan="4" style="font-family:var(--sans); color:var(--muted);">No checkpoints at this site yet.</td></tr>';
+    body.innerHTML = '<tr><td colspan="6" style="font-family:var(--sans); color:var(--muted);">No checkpoints at this site yet.</td></tr>';
     return;
   }
   body.innerHTML = scoped.map(c => `
     <tr>
       <td><canvas class="qr-thumb" data-qr="${c.qrId}"></canvas></td>
       <td>${c.name}</td>
+      <td><input type="text" class="cp-coord-edit" data-qr-coord="${c.qrId}" data-axis="lat" value="${c.lat != null ? c.lat : ''}" style="width:88px; padding:4px 6px; font-size:11px;"></td>
+      <td><input type="text" class="cp-coord-edit" data-qr-coord="${c.qrId}" data-axis="lng" value="${c.lng != null ? c.lng : ''}" style="width:88px; padding:4px 6px; font-size:11px;"></td>
       <td><input type="number" class="cp-radius-edit" data-qr-radius="${c.qrId}" value="${c.radius}" min="5" max="200" style="width:56px; padding:4px 6px; font-size:11px;">m</td>
       <td><button class="del-btn" data-del="${c.qrId}" aria-label="Delete checkpoint"><i>&times;</i></button></td>
     </tr>
@@ -25,6 +27,24 @@ function renderCpTable(){
       const { error } = await sb.from('checkpoints').update({ radius_m: newRadius }).eq('id', cp.id);
       if (error){ cp.radius = prevRadius; inp.value = prevRadius; showToast('Could not update radius', error.message, 'danger'); }
       else showToast('Radius updated', `${cp.name} now accepts scans within ${newRadius}m.`, 'success');
+    });
+  });
+
+  // Fine-tunes a checkpoint's registered GPS position after the fact — the initial "Use my
+  // location" reading is rarely pixel-perfect, so this is how it gets corrected later without
+  // deleting and re-adding the tag (which would also orphan any route/schedule using it).
+  body.querySelectorAll('.cp-coord-edit').forEach(inp => {
+    inp.addEventListener('change', async () => {
+      const cp = checkpoints.find(c => c.qrId === inp.dataset.qrCoord);
+      if (!cp) return;
+      const axis = inp.dataset.axis; // 'lat' or 'lng'
+      const newVal = parseFloat(inp.value);
+      const prevVal = cp[axis];
+      if (isNaN(newVal)){ inp.value = prevVal != null ? prevVal : ''; return; }
+      cp[axis] = newVal;
+      const { error } = await sb.from('checkpoints').update({ [axis]: newVal }).eq('id', cp.id);
+      if (error){ cp[axis] = prevVal; inp.value = prevVal != null ? prevVal : ''; showToast('Could not update location', error.message, 'danger'); }
+      else showToast('Location updated', `${cp.name}'s ${axis === 'lat' ? 'latitude' : 'longitude'} was updated.`, 'success');
     });
   });
 

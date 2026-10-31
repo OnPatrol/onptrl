@@ -684,6 +684,21 @@ document.getElementById('siteMapUseLocBtn').addEventListener('click', () => {
   }, { enableHighAccuracy: true, timeout: 10000 });
 });
 
+// Typing coordinates directly was always technically accepted by these fields, but nothing
+// visibly happened until "Save location" was clicked — easy to mistake for the field not
+// working at all. This makes manually typing behave the same as dragging the pin or picking
+// a search result: the map updates live so there's immediate, visible confirmation.
+['siteMapLat', 'siteMapLng'].forEach(id => {
+  document.getElementById(id).addEventListener('change', () => {
+    const lat = parseFloat(document.getElementById('siteMapLat').value);
+    const lng = parseFloat(document.getElementById('siteMapLng').value);
+    if (isNaN(lat) || isNaN(lng)) return;
+    const isAdmin = profile.role === 'admin';
+    initSiteMapWithLocation(lat, lng, isAdmin, document.getElementById('siteMapTitle').textContent);
+    document.getElementById('siteMapEditStatus').textContent = 'Location updated — tap "Save location" to confirm.';
+  });
+});
+
 document.getElementById('siteMapSaveBtn').addEventListener('click', async () => {
   const lat = parseFloat(document.getElementById('siteMapLat').value);
   const lng = parseFloat(document.getElementById('siteMapLng').value);

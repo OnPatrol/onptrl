@@ -24,9 +24,7 @@ document.getElementById('detectCpLocBtn').addEventListener('click', () => {
       hintEl.textContent = `Suggested from ±${accuracy.toFixed(0)}m GPS accuracy — narrow it for tighter spots (e.g. server rooms), widen it for open yards.`;
     },
     err => {
-      statusEl.textContent = `Couldn't get location (${err.message}). You can still enter coordinates manually.`;
-      document.getElementById('newCpLat').removeAttribute('readonly');
-      document.getElementById('newCpLng').removeAttribute('readonly');
+      statusEl.textContent = `Couldn't get location (${err.message}). Enter coordinates manually instead.`;
     },
     { enableHighAccuracy: true, timeout: 10000 }
   );
