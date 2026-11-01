@@ -3,54 +3,29 @@ function renderCpTable(){
   const body = document.getElementById('cpTableBody');
   const scoped = checkpoints.filter(c => c.siteId === activeSiteId);
   if (scoped.length === 0){
-    body.innerHTML = '<tr><td colspan="6" style="font-family:var(--sans); color:var(--muted);">No checkpoints at this site yet.</td></tr>';
+    body.innerHTML = '<tr><td colspan="4" style="font-family:var(--sans); color:var(--muted);">No checkpoints at this site yet.</td></tr>';
     return;
   }
   body.innerHTML = scoped.map(c => `
     <tr>
       <td><canvas class="qr-thumb" data-qr="${c.qrId}"></canvas></td>
       <td>${c.name}</td>
-      <td><input type="text" class="cp-coord-edit" data-qr-coord="${c.qrId}" data-axis="lat" value="${c.lat != null ? c.lat : ''}" style="width:88px; padding:4px 6px; font-size:11px;"></td>
-      <td><input type="text" class="cp-coord-edit" data-qr-coord="${c.qrId}" data-axis="lng" value="${c.lng != null ? c.lng : ''}" style="width:88px; padding:4px 6px; font-size:11px;"></td>
-      <td><input type="number" class="cp-radius-edit" data-qr-radius="${c.qrId}" value="${c.radius}" min="5" max="200" style="width:56px; padding:4px 6px; font-size:11px;">m</td>
-      <td><button class="del-btn" data-del="${c.qrId}" aria-label="Delete checkpoint"><i>&times;</i></button></td>
+      <td>${c.radius}m</td>
+      <td style="white-space:nowrap;">
+        <button class="icon-btn" data-edit-cp="${c.qrId}" title="Edit checkpoint" style="width:28px; height:28px; padding:0; display:inline-flex; align-items:center; justify-content:center;">
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+        </button>
+        <button class="del-btn" data-del="${c.qrId}" aria-label="Delete checkpoint" style="margin-left:4px;"><i>&times;</i></button>
+      </td>
     </tr>
   `).join('');
-
-  body.querySelectorAll('.cp-radius-edit').forEach(inp => {
-    inp.addEventListener('change', async () => {
-      const cp = checkpoints.find(c => c.qrId === inp.dataset.qrRadius);
-      if (!cp) return;
-      const newRadius = parseFloat(inp.value) || cp.radius;
-      const prevRadius = cp.radius;
-      cp.radius = newRadius;
-      const { error } = await sb.from('checkpoints').update({ radius_m: newRadius }).eq('id', cp.id);
-      if (error){ cp.radius = prevRadius; inp.value = prevRadius; showToast('Could not update radius', error.message, 'danger'); }
-      else showToast('Radius updated', `${cp.name} now accepts scans within ${newRadius}m.`, 'success');
-    });
-  });
-
-  // Fine-tunes a checkpoint's registered GPS position after the fact — the initial "Use my
-  // location" reading is rarely pixel-perfect, so this is how it gets corrected later without
-  // deleting and re-adding the tag (which would also orphan any route/schedule using it).
-  body.querySelectorAll('.cp-coord-edit').forEach(inp => {
-    inp.addEventListener('change', async () => {
-      const cp = checkpoints.find(c => c.qrId === inp.dataset.qrCoord);
-      if (!cp) return;
-      const axis = inp.dataset.axis; // 'lat' or 'lng'
-      const newVal = parseFloat(inp.value);
-      const prevVal = cp[axis];
-      if (isNaN(newVal)){ inp.value = prevVal != null ? prevVal : ''; return; }
-      cp[axis] = newVal;
-      const { error } = await sb.from('checkpoints').update({ [axis]: newVal }).eq('id', cp.id);
-      if (error){ cp[axis] = prevVal; inp.value = prevVal != null ? prevVal : ''; showToast('Could not update location', error.message, 'danger'); }
-      else showToast('Location updated', `${cp.name}'s ${axis === 'lat' ? 'latitude' : 'longitude'} was updated.`, 'success');
-    });
-  });
 
   body.querySelectorAll('.qr-thumb').forEach(cv => {
     new QRious({ element: cv, value: cv.dataset.qr, size: 56, background: '#fff', foreground: '#000' });
     cv.addEventListener('click', () => openQrModal(cv.dataset.qr));
+  });
+  body.querySelectorAll('[data-edit-cp]').forEach(btn => {
+    btn.addEventListener('click', () => openEditCheckpointModal(btn.dataset.editCp));
   });
   body.querySelectorAll('[data-del]').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -65,6 +40,55 @@ function renderCpTable(){
     });
   });
 }
+
+// ---------------- Edit checkpoint modal (name, GPS position, detection radius) ----------------
+// One consolidated edit surface for everything about an already-registered tag, rather than
+// a mix of inline-editable table cells — a tag's initial "Use my location" reading is rarely
+// pixel-perfect, so this is how its name or position gets corrected afterwards without
+// deleting and re-adding it (which would orphan any route or schedule using it).
+let editCpQrId = null;
+function openEditCheckpointModal(qrId){
+  const cp = checkpoints.find(c => c.qrId === qrId);
+  if (!cp) return;
+  editCpQrId = qrId;
+  document.getElementById('editCpName').value = cp.name || '';
+  document.getElementById('editCpLat').value = cp.lat != null ? cp.lat : '';
+  document.getElementById('editCpLng').value = cp.lng != null ? cp.lng : '';
+  document.getElementById('editCpRadius').value = cp.radius;
+  document.getElementById('editCpStatus').textContent = '';
+  clearFieldError('editCpName'); clearFieldError('editCpLat'); clearFieldError('editCpLng'); clearFieldError('editCpRadius');
+  document.getElementById('editCheckpointModalBg').classList.add('show');
+}
+document.getElementById('editCpCancelBtn').addEventListener('click', () => {
+  document.getElementById('editCheckpointModalBg').classList.remove('show');
+  editCpQrId = null;
+});
+document.getElementById('editCpSaveBtn').addEventListener('click', async () => {
+  const cp = checkpoints.find(c => c.qrId === editCpQrId);
+  if (!cp) return;
+  const statusEl = document.getElementById('editCpStatus');
+  const name = document.getElementById('editCpName').value.trim();
+  const lat = parseFloat(document.getElementById('editCpLat').value);
+  const lng = parseFloat(document.getElementById('editCpLng').value);
+  const radius = parseFloat(document.getElementById('editCpRadius').value);
+  const ok = validateFields([
+    { id: 'editCpName', test: !!name, message: 'Checkpoint name is required.' },
+    { id: 'editCpLat', test: !isNaN(lat), message: 'Enter a valid latitude.' },
+    { id: 'editCpLng', test: !isNaN(lng), message: 'Enter a valid longitude.' },
+    { id: 'editCpRadius', test: !isNaN(radius) && radius >= 5 && radius <= 200, message: 'Radius must be between 5 and 200m.' }
+  ]);
+  if (!ok) return;
+  const btn = document.getElementById('editCpSaveBtn');
+  btn.disabled = true; statusEl.textContent = 'Saving…';
+  const { error } = await sb.from('checkpoints').update({ name, lat, lng, radius_m: radius }).eq('id', cp.id);
+  btn.disabled = false;
+  if (error){ statusEl.textContent = 'Could not save — ' + error.message; return; }
+  cp.name = name; cp.lat = lat; cp.lng = lng; cp.radius = radius;
+  document.getElementById('editCheckpointModalBg').classList.remove('show');
+  editCpQrId = null;
+  showToast('Checkpoint updated', `${name} was saved.`, 'success');
+  renderAll();
+});
 
 function openQrModal(qrId){
   const cp = checkpoints.find(c => c.qrId === qrId);

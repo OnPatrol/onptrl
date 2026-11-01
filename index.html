@@ -373,7 +373,7 @@
 
         <div class="table-scroll">
         <table style="margin-top:14px;">
-          <thead><tr><th>QR</th><th>Name</th><th>Lat</th><th>Lng</th><th>Radius</th><th></th></tr></thead>
+          <thead><tr><th>QR</th><th>Name</th><th>Radius</th><th></th></tr></thead>
           <tbody id="cpTableBody"></tbody>
         </table>
         </div>
@@ -1193,6 +1193,24 @@
     <div class="btn-row" style="margin-top:14px;">
       <button class="btn" id="editAttendanceCancelBtn">Cancel</button>
       <button class="btn btn-primary" id="editAttendanceConfirmBtn">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<div class="qr-modal-bg" id="editCheckpointModalBg">
+  <div class="detail-modal">
+    <h2 style="margin:0 0 4px; font-size:16px;">Edit checkpoint</h2>
+    <div class="result-meta" style="margin-bottom:12px;">Update the name, GPS position, or detection radius registered for this tag.</div>
+    <input type="text" id="editCpName" placeholder="Checkpoint name">
+    <div class="cp-row" style="margin-top:8px;">
+      <input type="text" id="editCpLat" placeholder="Latitude">
+      <input type="text" id="editCpLng" placeholder="Longitude">
+    </div>
+    <div class="f" style="margin-top:8px;"><label>Detection radius (m)</label><input type="number" id="editCpRadius" min="5" max="200" style="width:90px;"></div>
+    <div class="result-meta" id="editCpStatus" style="margin-top:8px; min-height:14px;"></div>
+    <div class="btn-row" style="margin-top:14px;">
+      <button class="btn" id="editCpCancelBtn">Cancel</button>
+      <button class="btn btn-primary" id="editCpSaveBtn">Save changes</button>
     </div>
   </div>
 </div>
