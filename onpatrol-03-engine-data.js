@@ -580,6 +580,24 @@ async function loadAbsencesRecent(){
     guardId: a.guard_id, markedBy: a.marked_by, coveredByAttendanceId: a.covered_by_attendance_id
   }));
 }
+// Leave windows that haven't fully ended yet - covers "currently on leave" and "upcoming
+// leave" without pulling in an ever-growing history of leave from years past. A guard on
+// leave can't clock in anywhere (enforced in the database, not just here - see
+// check_guard_not_on_leave() - so this is purely for showing status in the UI).
+let leaveRecords = [];
+async function loadLeaveRecords(){
+  const today = new Date().toISOString().slice(0, 10);
+  const { data, error } = await sb.from('leave_records').select('*').gte('end_date', today).order('start_date');
+  if (error){ showToast('Could not load leave records', error.message, 'danger'); return; }
+  leaveRecords = (data || []).map(l => ({
+    id: l.id, guardId: l.guard_id, siteId: l.site_id, startDate: l.start_date, endDate: l.end_date,
+    reason: l.reason, createdBy: l.created_by
+  }));
+}
+function activeLeaveFor(guardId, dateStr){
+  const d = dateStr || new Date().toISOString().slice(0, 10);
+  return leaveRecords.find(l => l.guardId === guardId && l.startDate <= d && l.endDate >= d);
+}
 // Guard names + employee numbers (never face_descriptor) for a site, via the
 // SECURITY DEFINER function so controllers/admins can see any site and a guard can
 // see their own site's roster. Cached per site for the session.
@@ -766,6 +784,7 @@ async function loadAllData(){
   await loadSiteShifts();
   await loadAttendanceRecent();
   await loadAbsencesRecent();
+  if (profile && (profile.role === 'admin' || profile.role === 'controller')) await loadLeaveRecords();
   // Warm the guard-directory cache for every site the current user can see shifts
   // for, so coverage tiles and the reliever/covering-for pickers render names
   // immediately rather than one lazy RPC per tile.

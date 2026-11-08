@@ -10,6 +10,69 @@ async function loadUsersAdmin(){
   allUsers = data.users || [];
 }
 
+// ---------------- Guard leave (set/edit/end a leave window) ----------------
+// Enforcement itself lives in the database (check_guard_not_on_leave(), a trigger on
+// attendance) so it can't be bypassed by any clock-in path - this modal is purely how an
+// admin records or changes a leave window.
+let leaveModalGuardId = null;
+function openLeaveModal(guardId, label){
+  leaveModalGuardId = guardId;
+  const existing = leaveRecords.find(l => l.guardId === guardId);
+  document.getElementById('leaveModalGuardName').textContent = label;
+  document.getElementById('leaveStartDate').value = existing ? existing.startDate : new Date().toISOString().slice(0, 10);
+  document.getElementById('leaveEndDate').value = existing ? existing.endDate : '';
+  document.getElementById('leaveReason').value = existing ? (existing.reason || '') : '';
+  document.getElementById('leaveModalStatus').textContent = '';
+  document.getElementById('leaveModalEndNowBtn').style.display = existing ? 'inline-block' : 'none';
+  clearFieldError('leaveStartDate'); clearFieldError('leaveEndDate');
+  document.getElementById('leaveModalBg').classList.add('show');
+}
+document.getElementById('leaveModalCancelBtn').addEventListener('click', () => {
+  document.getElementById('leaveModalBg').classList.remove('show');
+  leaveModalGuardId = null;
+});
+document.getElementById('leaveModalEndNowBtn').addEventListener('click', async () => {
+  const existing = leaveRecords.find(l => l.guardId === leaveModalGuardId);
+  if (!existing) return;
+  if (!confirm('End this leave now? The guard will be able to clock in again immediately.')) return;
+  const { error } = await sb.from('leave_records').delete().eq('id', existing.id);
+  if (error){ showToast('Could not end leave', error.message, 'danger'); return; }
+  document.getElementById('leaveModalBg').classList.remove('show');
+  leaveModalGuardId = null;
+  showToast('Leave ended', '', 'success');
+  await loadLeaveRecords();
+  renderUsersTable();
+});
+document.getElementById('leaveModalSaveBtn').addEventListener('click', async () => {
+  const guardId = leaveModalGuardId;
+  if (!guardId) return;
+  const statusEl = document.getElementById('leaveModalStatus');
+  const startDate = document.getElementById('leaveStartDate').value;
+  const endDate = document.getElementById('leaveEndDate').value;
+  const reason = document.getElementById('leaveReason').value.trim();
+  const ok = validateFields([
+    { id: 'leaveStartDate', test: !!startDate, message: 'Start date is required.' },
+    { id: 'leaveEndDate', test: !!endDate && endDate >= startDate, message: 'End date is required and must be on or after the start date.' }
+  ]);
+  if (!ok) return;
+  const guard = allUsers.find(u => u.id === guardId);
+  if (!guard || !guard.site_id){ statusEl.textContent = 'This guard has no site assigned yet.'; return; }
+  const btn = document.getElementById('leaveModalSaveBtn');
+  btn.disabled = true; statusEl.textContent = 'Saving…';
+  const existing = leaveRecords.find(l => l.guardId === guardId);
+  const payload = { guard_id: guardId, site_id: guard.site_id, start_date: startDate, end_date: endDate, reason: reason || null };
+  const { error } = existing
+    ? await sb.from('leave_records').update(payload).eq('id', existing.id)
+    : await sb.from('leave_records').insert({ ...payload, created_by: session.user.id });
+  btn.disabled = false;
+  if (error){ statusEl.textContent = 'Could not save — ' + error.message; return; }
+  document.getElementById('leaveModalBg').classList.remove('show');
+  leaveModalGuardId = null;
+  showToast('Leave saved', '', 'success');
+  await loadLeaveRecords();
+  renderUsersTable();
+});
+
 function renderUsersTable(){
   const guardToggle = document.getElementById('guardSignOutToggle');
   if (guardToggle && !guardToggle.dataset.wired && profile && profile.org_id){
@@ -51,9 +114,12 @@ function renderUsersTable(){
     const site = sites.find(s => s.id === u.site_id);
     const isSelf = session && u.id === session.user.id;
     const safeLabel = escapeHtmlForPrint(u.full_name || u.email);
+    const onLeave = u.role === 'guard' ? activeLeaveFor(u.id) : null;
+    const leaveBadge = onLeave
+      ? `<div class="result-meta" style="color:var(--warn); margin-top:2px;">On leave until ${new Date(onLeave.endDate + 'T00:00:00').toLocaleDateString()}</div>` : '';
     return `
       <tr>
-        <td style="font-family:var(--sans); font-weight:600;">${escapeHtmlForPrint(u.full_name || '—')}</td>
+        <td style="font-family:var(--sans); font-weight:600;">${escapeHtmlForPrint(u.full_name || '—')}${leaveBadge}</td>
         <td>${u.role === 'guard' ? `<input type="text" data-emp-num="${u.id}" value="${escapeHtmlForPrint(u.employee_number || '')}" placeholder="—" style="width:90px; padding:5px 7px; font-size:11px;">` : '<span class="result-meta">—</span>'}</td>
         <td><input type="tel" data-phone="${u.id}" value="${escapeHtmlForPrint(u.phone || '')}" placeholder="—" style="width:120px; padding:5px 7px; font-size:11px;"></td>
         <td style="font-family:var(--sans); color:var(--muted);">${escapeHtmlForPrint(u.email)}</td>
@@ -63,6 +129,7 @@ function renderUsersTable(){
         <td style="display:flex; gap:6px; flex-wrap:wrap;">
           <button class="btn" data-reset-pw="${u.id}" data-user-label="${safeLabel}" style="width:auto; padding:5px 10px; font-size:11px;">Reset password</button>
           ${u.role === 'guard' ? `<button class="btn" data-reset-face="${u.id}" data-user-label="${safeLabel}" style="width:auto; padding:5px 10px; font-size:11px;">Reset face</button>` : ''}
+          ${u.role === 'guard' ? `<button class="btn" data-manage-leave="${u.id}" data-user-label="${safeLabel}" style="width:auto; padding:5px 10px; font-size:11px;">${onLeave ? 'Edit leave' : 'Mark on leave'}</button>` : ''}
           ${isSelf ? '' : u.deactivated
             ? `<button class="btn" data-reactivate-user="${u.id}" data-user-label="${safeLabel}" style="width:auto; padding:5px 10px; font-size:11px;">Reactivate</button>`
             : `<button class="btn" data-deactivate-user="${u.id}" data-user-label="${safeLabel}" style="width:auto; padding:5px 10px; font-size:11px;">Deactivate</button>`}
@@ -108,6 +175,10 @@ function renderUsersTable(){
       if (error){ showToast('Could not reset face enrollment', error.message, 'danger'); return; }
       showToast('Face enrollment cleared', '', 'success');
     });
+  });
+
+  body.querySelectorAll('[data-manage-leave]').forEach(btn => {
+    btn.addEventListener('click', () => openLeaveModal(btn.dataset.manageLeave, btn.dataset.userLabel));
   });
 
   body.querySelectorAll('[data-del-user]').forEach(btn => {

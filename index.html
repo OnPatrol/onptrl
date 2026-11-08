@@ -1197,6 +1197,24 @@
   </div>
 </div>
 
+<div class="qr-modal-bg" id="leaveModalBg">
+  <div class="detail-modal">
+    <h2 style="margin:0 0 4px; font-size:16px;">Leave — <span id="leaveModalGuardName"></span></h2>
+    <div class="result-meta" style="margin-bottom:12px;">While on leave, this guard can't be clocked in anywhere — a reliever can still cover their site as normal.</div>
+    <div class="cp-row">
+      <div class="f"><label>Start date</label><input type="date" id="leaveStartDate"></div>
+      <div class="f"><label>End date</label><input type="date" id="leaveEndDate"></div>
+    </div>
+    <input type="text" id="leaveReason" placeholder="Reason (optional)" style="margin-top:8px;">
+    <div class="result-meta" id="leaveModalStatus" style="margin-top:8px; min-height:14px;"></div>
+    <div class="btn-row" style="margin-top:14px;">
+      <button class="btn" id="leaveModalCancelBtn">Cancel</button>
+      <button class="btn" id="leaveModalEndNowBtn" style="display:none; color:var(--danger);">End leave now</button>
+      <button class="btn btn-primary" id="leaveModalSaveBtn">Save</button>
+    </div>
+  </div>
+</div>
+
 <div class="qr-modal-bg" id="editCheckpointModalBg">
   <div class="detail-modal">
     <h2 style="margin:0 0 4px; font-size:16px;">Edit checkpoint</h2>
