@@ -3,7 +3,7 @@
    It never touches the OnPatrol database, login or realtime traffic — those always go straight to the network.
    Put this file next to index.html (same folder, served over https). */
 
-const VERSION = 'v3';   // bumped: added xlsx (SheetJS) for real-spreadsheet report downloads (see LIB_URLS)
+const VERSION = 'v4';   // bumped: 'Guards on leave' list on the attendance screens (v3 added xlsx/SheetJS for report downloads)
 const SHELL = 'onpatrol-shell-' + VERSION;
 const LIBS = 'onpatrol-libs-' + VERSION;
 

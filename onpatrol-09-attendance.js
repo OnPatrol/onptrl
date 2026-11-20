@@ -898,3 +898,79 @@ function stopCamera(){
   camToggleBtn.textContent = 'Start camera';
 }
 
+
+
+// ---------------- Guards on leave (controller / admin view) ----------------
+// A button beside Refresh on each attendance screen opens a hidden list of guards who are on
+// leave right now, plus anyone whose leave is coming up. Data is leaveRecords (loaded in
+// 03-engine-data for admins and controllers). Controllers see it read-only; admins also get
+// an Edit button that reuses the existing leave modal. The lists re-render whenever
+// loadLeaveRecords() runs, and the panel fetches fresh data each time it is opened.
+const LEAVE_SUFFIXES = ['Admin', 'Ctrl'];
+function leaveFmtDate(s){
+  return new Date(s + 'T00:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+}
+function leaveDaysBetween(fromStr, toStr){
+  return Math.round((new Date(toStr + 'T00:00:00') - new Date(fromStr + 'T00:00:00')) / 86400000);
+}
+async function renderLeaveLists(){
+  if (!profile || (profile.role !== 'admin' && profile.role !== 'controller')) return;
+  const today = ymd(new Date());
+  // Names come from the per-site guard directory; make sure every site in the list is loaded.
+  await Promise.all([...new Set(leaveRecords.map(l => l.siteId))].map(id => loadGuardDirectory(id)));
+  const current = leaveRecords.filter(l => l.startDate <= today && l.endDate >= today)
+    .sort((a, b) => a.endDate.localeCompare(b.endDate));
+  const upcoming = leaveRecords.filter(l => l.startDate > today)
+    .sort((a, b) => a.startDate.localeCompare(b.startDate));
+  const canEdit = profile.role === 'admin';
+
+  const rowHtml = (l, isCurrent) => {
+    const site = sites.find(s => s.id === l.siteId);
+    const back = leaveDaysBetween(today, l.endDate);
+    const when = isCurrent
+      ? `Until ${leaveFmtDate(l.endDate)}<br><span style="color:var(--muted);">${back === 0 ? 'last day today' : back + ' more day' + (back === 1 ? '' : 's')}</span>`
+      : `From ${leaveFmtDate(l.startDate)}<br><span style="color:var(--muted);">to ${leaveFmtDate(l.endDate)}</span>`;
+    const g = (guardDirectoryCache[l.siteId] || []).find(x => x.id === l.guardId);
+    const plainLabel = g ? (g.full_name || g.employee_number || 'Guard') : 'Guard';
+    return `
+      <div class="leave-row ${isCurrent ? 'current' : 'upcoming'}">
+        <div class="leave-main">
+          <div class="leave-name">${guardLabel(l.siteId, l.guardId)}</div>
+          <div class="leave-meta">${escapeHtmlForPrint(site ? site.name : '—')}</div>
+          ${l.reason ? `<div class="leave-reason">${escapeHtmlForPrint(l.reason)}</div>` : ''}
+        </div>
+        <div class="leave-when">${when}</div>
+        ${canEdit ? `<button class="btn" data-edit-leave="${l.guardId}" data-leave-label="${escapeHtmlForPrint(plainLabel)}" style="width:auto; padding:5px 10px; font-size:11px;">Edit</button>` : ''}
+      </div>`;
+  };
+
+  const html = (!current.length && !upcoming.length)
+    ? '<div class="result-meta">No guards are on leave, and none have leave coming up.</div>'
+    : (current.length ? `<div class="leave-group-title">On leave now (${current.length})</div>${current.map(l => rowHtml(l, true)).join('')}` : '<div class="leave-group-title">On leave now (0)</div><div class="result-meta">Nobody is on leave today.</div>')
+      + (upcoming.length ? `<div class="leave-group-title">Upcoming (${upcoming.length})</div>${upcoming.map(l => rowHtml(l, false)).join('')}` : '');
+
+  LEAVE_SUFFIXES.forEach(S => {
+    const countEl = document.getElementById('leaveCount' + S);
+    if (countEl) countEl.textContent = current.length ? String(current.length) : '';
+    const panel = document.getElementById('leavePanel' + S);
+    if (!panel) return;
+    panel.innerHTML = html;
+    panel.querySelectorAll('[data-edit-leave]').forEach(btn => {
+      btn.addEventListener('click', () => openLeaveModal(btn.dataset.editLeave, btn.dataset.leaveLabel));
+    });
+  });
+}
+LEAVE_SUFFIXES.forEach(S => {
+  const btn = document.getElementById('leaveToggleBtn' + S);
+  const panel = document.getElementById('leavePanel' + S);
+  if (!btn || !panel) return;
+  btn.addEventListener('click', async () => {
+    const open = !panel.classList.contains('open');
+    panel.classList.toggle('open', open);
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open){
+      await renderLeaveLists();       // show what we have straight away
+      await loadLeaveRecords();       // then pull fresh data (this re-renders the lists)
+    }
+  });
+});

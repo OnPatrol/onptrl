@@ -593,6 +593,7 @@ async function loadLeaveRecords(){
     id: l.id, guardId: l.guard_id, siteId: l.site_id, startDate: l.start_date, endDate: l.end_date,
     reason: l.reason, createdBy: l.created_by
   }));
+  if (typeof renderLeaveLists === 'function') renderLeaveLists();   // keep the attendance-screen leave lists current
 }
 function activeLeaveFor(guardId, dateStr){
   const d = dateStr || new Date().toISOString().slice(0, 10);
