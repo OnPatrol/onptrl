@@ -120,54 +120,106 @@ function renderUsersTable(){
     return `
       <tr>
         <td style="font-family:var(--sans); font-weight:600;">${escapeHtmlForPrint(u.full_name || '—')}${leaveBadge}</td>
-        <td>${u.role === 'guard' ? `<input type="text" data-emp-num="${u.id}" value="${escapeHtmlForPrint(u.employee_number || '')}" placeholder="—" style="width:90px; padding:5px 7px; font-size:11px;">` : '<span class="result-meta">—</span>'}</td>
-        <td><input type="tel" data-phone="${u.id}" value="${escapeHtmlForPrint(u.phone || '')}" placeholder="—" style="width:120px; padding:5px 7px; font-size:11px;"></td>
+        <td>${u.role === 'guard' && u.employee_number ? escapeHtmlForPrint(u.employee_number) : '<span class="result-meta">—</span>'}</td>
+        <td>${u.phone ? escapeHtmlForPrint(u.phone) : '<span class="result-meta">—</span>'}</td>
         <td style="font-family:var(--sans); color:var(--muted);">${escapeHtmlForPrint(u.email)}</td>
         <td>${escapeHtmlForPrint(u.role || '—')}${u.deactivated ? ' <span class="st st-warn" style="margin-left:4px;">Deactivated</span>' : ''}</td>
         <td style="font-family:var(--sans);">${escapeHtmlForPrint(site ? site.name : '—')}</td>
         <td>${u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</td>
-        <td style="display:flex; gap:6px; flex-wrap:wrap;">
-          <button class="btn" data-reset-pw="${u.id}" data-user-label="${safeLabel}" style="width:auto; padding:5px 10px; font-size:11px;">Reset password</button>
-          ${u.role === 'guard' ? `<button class="btn" data-reset-face="${u.id}" data-user-label="${safeLabel}" style="width:auto; padding:5px 10px; font-size:11px;">Reset face</button>` : ''}
-          ${u.role === 'guard' ? `<button class="btn" data-manage-leave="${u.id}" data-user-label="${safeLabel}" style="width:auto; padding:5px 10px; font-size:11px;">${onLeave ? 'Edit leave' : 'Mark on leave'}</button>` : ''}
-          ${isSelf ? '' : u.deactivated
-            ? `<button class="btn" data-reactivate-user="${u.id}" data-user-label="${safeLabel}" style="width:auto; padding:5px 10px; font-size:11px;">Reactivate</button>`
-            : `<button class="btn" data-deactivate-user="${u.id}" data-user-label="${safeLabel}" style="width:auto; padding:5px 10px; font-size:11px;">Deactivate</button>`}
-          ${isSelf ? '' : `<button class="del-btn" data-del-user="${u.id}" data-user-label="${safeLabel}" aria-label="Delete user"><i>&times;</i></button>`}
+        <td style="text-align:right;">
+          <button class="btn um-manage-btn" data-manage-user="${u.id}" aria-haspopup="dialog" aria-label="Manage ${safeLabel}"><svg class="icon" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>Manage</button>
         </td>
       </tr>
     `;
   }).join('');
 
-  body.querySelectorAll('[data-emp-num]').forEach(input => {
-    input.addEventListener('change', async () => {
-      const val = input.value.trim();
-      const { error } = await sb.from('profiles').update({ employee_number: val || null }).eq('id', input.dataset.empNum);
-      if (error){ showToast('Could not save employee number', error.message, 'danger'); return; }
-      const u = allUsers.find(x => x.id === input.dataset.empNum);
-      if (u) u.employee_number = val || null;
-      showToast('Employee number saved', '', 'success');
-    });
+  body.querySelectorAll('[data-manage-user]').forEach(btn => {
+    btn.addEventListener('click', () => openUserManageModal(btn.dataset.manageUser));
   });
 
-  body.querySelectorAll('[data-phone]').forEach(input => {
-    input.addEventListener('change', async () => {
-      const val = input.value.trim();
-      if (val && !isValidPhone(val)){
-        showToast('Could not save phone number', 'Enter a valid phone number (at least 9 digits), or leave it blank.', 'danger');
-        const u = allUsers.find(x => x.id === input.dataset.phone);
-        input.value = (u && u.phone) || '';
-        return;
-      }
-      const { error } = await sb.from('profiles').update({ phone: val || null }).eq('id', input.dataset.phone);
-      if (error){ showToast('Could not save phone number', error.message, 'danger'); return; }
-      const u = allUsers.find(x => x.id === input.dataset.phone);
-      if (u) u.phone = val || null;
-      showToast('Phone number saved', '', 'success');
-    });
-  });
+}
 
-  body.querySelectorAll('[data-reset-face]').forEach(btn => {
+// ---------------- Users: the Manage panel ----------------
+// One "Manage" button per person opens this panel: their editable details (employee number,
+// phone) and every action that used to sit in the table row. Delete is kept apart at the bottom.
+function userManageHtml(u, isSelf, onLeave){
+  const site = sites.find(s => s.id === u.site_id);
+  const safeLabel = escapeHtmlForPrint(u.full_name || u.email);
+  const isGuard = u.role === 'guard';
+  const act = (attrs, title, desc, cls) =>
+    `<button type="button" class="um-action${cls ? ' ' + cls : ''}" ${attrs} data-user-label="${safeLabel}"><span class="um-action-t">${title}</span><span class="um-action-d">${desc}</span></button>`;
+  const actions = [
+    act(`data-reset-pw="${u.id}"`, 'Reset password', 'Set a new password for this person.'),
+    isGuard ? act(`data-reset-face="${u.id}"`, 'Reset face', 'Clear their enrolled face. They enroll a new one at their next clock-in.') : '',
+    isGuard ? act(`data-manage-leave="${u.id}"`, onLeave ? 'Edit leave' : 'Mark on leave', onLeave ? `On leave until ${new Date(onLeave.endDate + 'T00:00:00').toLocaleDateString()}.` : 'Record leave dates so they are not expected on duty.') : '',
+    isSelf ? '' : (u.deactivated
+      ? act(`data-reactivate-user="${u.id}"`, 'Reactivate', 'Let them sign in again.')
+      : act(`data-deactivate-user="${u.id}"`, 'Deactivate', 'Blocks sign-in. All their history is kept.'))
+  ].join('');
+  return `
+    <div class="um-name">${escapeHtmlForPrint(u.full_name || '—')}${u.deactivated ? ' <span class="st st-warn" style="margin-left:4px;">Deactivated</span>' : ''}</div>
+    <div class="result-meta">${escapeHtmlForPrint(u.role || '—')}${site ? ' · ' + escapeHtmlForPrint(site.name) : ''} · ${escapeHtmlForPrint(u.email)}</div>
+
+    <div class="um-section">
+      <div class="um-title">Details</div>
+      <div class="um-fields${isGuard ? '' : ' single'}">
+        ${isGuard ? `<div><div class="field-label">Employee #</div><input type="text" id="umEmpNum" value="${escapeHtmlForPrint(u.employee_number || '')}" placeholder="—"></div>` : ''}
+        <div><div class="field-label">Phone</div><input type="tel" id="umPhone" value="${escapeHtmlForPrint(u.phone || '')}" placeholder="—"></div>
+      </div>
+      <button type="button" class="btn btn-primary" id="umSaveBtn" style="width:auto; padding:8px 16px;">Save changes</button>
+    </div>
+
+    <div class="um-section">
+      <div class="um-title">Actions</div>
+      ${actions}
+    </div>
+
+    ${isSelf ? '' : `
+    <div class="um-section um-danger">
+      <div class="um-title">Danger zone</div>
+      ${act(`data-del-user="${u.id}"`, 'Delete user', 'Permanently removes their login and profile. This can\'t be undone.', 'is-danger')}
+    </div>`}`;
+}
+function closeUserManageModal(){
+  const bg = document.getElementById('userManageModalBg');
+  if (bg) bg.classList.remove('show');
+}
+function openUserManageModal(userId){
+  const u = allUsers.find(x => x.id === userId);
+  if (!u) return;
+  const isSelf = !!(session && u.id === session.user.id);
+  const onLeave = u.role === 'guard' ? activeLeaveFor(u.id) : null;
+  const bodyEl = document.getElementById('userManageBody');
+  bodyEl.innerHTML = userManageHtml(u, isSelf, onLeave);
+
+  document.getElementById('umSaveBtn').addEventListener('click', async () => {
+    const saveBtn = document.getElementById('umSaveBtn');
+    const phoneEl = document.getElementById('umPhone');
+    const empEl = document.getElementById('umEmpNum');
+    const phone = phoneEl.value.trim();
+    if (phone && !isValidPhone(phone)){
+      showToast('Could not save', 'Enter a valid phone number (at least 9 digits), or leave it blank.', 'danger');
+      return;
+    }
+    const patch = { phone: phone || null };
+    if (empEl) patch.employee_number = empEl.value.trim() || null;
+    saveBtn.disabled = true;
+    const { error } = await sb.from('profiles').update(patch).eq('id', u.id);
+    saveBtn.disabled = false;
+    if (error){ showToast('Could not save changes', error.message, 'danger'); return; }
+    Object.assign(u, patch);
+    showToast('Changes saved', '', 'success');
+    renderUsersTable();          // refresh the row behind the panel; the panel stays open
+  });
+  wireUserActionButtons(bodyEl);
+  document.getElementById('userManageModalBg').classList.add('show');
+}
+document.getElementById('userManageCloseBtn').addEventListener('click', closeUserManageModal);
+document.getElementById('userManageModalBg').addEventListener('click', e => { if (e.target.id === 'userManageModalBg') closeUserManageModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeUserManageModal(); });
+
+function wireUserActionButtons(root){
+  root.querySelectorAll('[data-reset-face]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const label = btn.dataset.userLabel;
       if (!confirm(`Clear ${label}'s enrolled face? They'll enroll a new one the next time they clock in.`)) return;
@@ -177,11 +229,11 @@ function renderUsersTable(){
     });
   });
 
-  body.querySelectorAll('[data-manage-leave]').forEach(btn => {
-    btn.addEventListener('click', () => openLeaveModal(btn.dataset.manageLeave, btn.dataset.userLabel));
+  root.querySelectorAll('[data-manage-leave]').forEach(btn => {
+    btn.addEventListener('click', () => { closeUserManageModal(); openLeaveModal(btn.dataset.manageLeave, btn.dataset.userLabel); });
   });
 
-  body.querySelectorAll('[data-del-user]').forEach(btn => {
+  root.querySelectorAll('[data-del-user]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const label = btn.dataset.userLabel;
       if (!confirm(`Delete the account for "${label}"? This permanently removes their login and profile. This can't be undone.`)) return;
@@ -204,7 +256,7 @@ function renderUsersTable(){
             showToast('Could not deactivate user', await functionErrorMessage(r2.data, r2.error, 'Unknown error'), 'danger');
           } else {
             showToast('User deactivated', `${label} can no longer sign in. Their records are unchanged.`, 'success');
-            await loadUsersAdmin(); renderUsersTable();
+            await loadUsersAdmin(); closeUserManageModal(); renderUsersTable();
           }
         } else {
           showToast('Could not delete user', msg, 'danger');
@@ -214,11 +266,11 @@ function renderUsersTable(){
       }
       showToast('User deleted', `${label} was removed.`, 'success');
       await loadUsersAdmin();
-      renderUsersTable();
+      closeUserManageModal(); renderUsersTable();
     });
   });
 
-  body.querySelectorAll('[data-deactivate-user]').forEach(btn => {
+  root.querySelectorAll('[data-deactivate-user]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const label = btn.dataset.userLabel;
       if (!confirm(`Deactivate "${label}"? They won't be able to sign in until reactivated. Nothing else changes - their history stays exactly as it is.`)) return;
@@ -231,11 +283,11 @@ function renderUsersTable(){
       }
       showToast('User deactivated', `${label} can no longer sign in.`, 'success');
       await loadUsersAdmin();
-      renderUsersTable();
+      closeUserManageModal(); renderUsersTable();
     });
   });
 
-  body.querySelectorAll('[data-reactivate-user]').forEach(btn => {
+  root.querySelectorAll('[data-reactivate-user]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const label = btn.dataset.userLabel;
       btn.disabled = true;
@@ -247,12 +299,12 @@ function renderUsersTable(){
       }
       showToast('User reactivated', `${label} can sign in again.`, 'success');
       await loadUsersAdmin();
-      renderUsersTable();
+      closeUserManageModal(); renderUsersTable();
     });
   });
 
-  body.querySelectorAll('[data-reset-pw]').forEach(btn => {
-    btn.addEventListener('click', () => openResetPasswordModal(btn.dataset.resetPw, btn.dataset.userLabel));
+  root.querySelectorAll('[data-reset-pw]').forEach(btn => {
+    btn.addEventListener('click', () => { closeUserManageModal(); openResetPasswordModal(btn.dataset.resetPw, btn.dataset.userLabel); });
   });
 }
 
