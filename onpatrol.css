@@ -939,23 +939,12 @@ body.no-sidebar #view-guard .cam-box #manualScanStatus{position:fixed; left:12px
 .join-pending-ico.pulse{animation:joinPulse 1.8s ease-in-out infinite;}
 .alert-actions .btn[data-join-decide]{flex:0 0 auto; width:auto; padding:8px 18px;}
 
-/* ---- Users: one Manage button per person, details + actions in a panel ---- */
+/* ---- Users: one Manage button per person; details + actions in a panel ---- */
 .um-manage-btn{width:auto; padding:6px 12px; font-size:12px; display:inline-flex; align-items:center; gap:7px; white-space:nowrap;}
 .um-manage-btn .icon{width:14px; height:14px; margin:0;}
 .um-modal{max-width:460px;}
-.um-name{font-size:16px; font-weight:600; font-family:var(--sans);}
-.um-section{border-top:1px solid var(--border); margin-top:16px; padding-top:14px;}
-.um-title{font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:var(--muted); margin-bottom:8px; font-family:var(--sans);}
-.um-fields{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;}
-.um-fields .field-label{margin-top:0;}
-.um-fields.single{grid-template-columns:1fr;}
-.um-action{display:flex; flex-direction:column; align-items:flex-start; gap:2px; width:100%; text-align:left; padding:9px 12px; margin-bottom:6px; background:var(--panel-2); border:1px solid var(--border); border-radius:8px; color:var(--text); cursor:pointer; font-family:var(--sans);}
 .um-action:hover{border-color:var(--accent);}
 .um-action:disabled{opacity:.55; cursor:default;}
-.um-action .um-action-t{font-size:13px; font-weight:600;}
-.um-action .um-action-d{font-size:11.5px; color:var(--muted);}
-.um-danger .um-title{color:var(--danger);}
-.um-action.is-danger{border-color:rgba(229,83,75,.35);}
-.um-action.is-danger .um-action-t{color:var(--danger);}
+.um-action.is-danger{color:var(--danger); border-color:rgba(229,83,75,.35);}
 .um-action.is-danger:hover{background:var(--danger-dim); border-color:var(--danger);}
-@media (max-width:480px){ .um-fields{grid-template-columns:1fr;} }
+@media (max-width:420px){ .um-modal [style*="grid-template-columns:1fr 1fr"]{grid-template-columns:1fr !important;} }

@@ -142,42 +142,56 @@ function renderUsersTable(){
 // ---------------- Users: the Manage panel ----------------
 // One "Manage" button per person opens this panel: their editable details (employee number,
 // phone) and every action that used to sit in the table row. Delete is kept apart at the bottom.
+// Small stroke icons for the Manage panel (styled inline so the panel looks right on its own).
+const UM_ICON = {
+  key:   '<path d="m21 2-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4"/>',
+  face:  '<path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><path d="M9 9h.01M15 9h.01"/>',
+  cal:   '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+  ban:   '<circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>',
+  redo:  '<path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>',
+  trash: '<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"/>'
+};
 function userManageHtml(u, isSelf, onLeave){
   const site = sites.find(s => s.id === u.site_id);
   const safeLabel = escapeHtmlForPrint(u.full_name || u.email);
   const isGuard = u.role === 'guard';
-  const act = (attrs, title, desc, cls) =>
-    `<button type="button" class="um-action${cls ? ' ' + cls : ''}" ${attrs} data-user-label="${safeLabel}"><span class="um-action-t">${title}</span><span class="um-action-d">${desc}</span></button>`;
+  const btnStyle = 'display:flex; align-items:center; justify-content:flex-start; gap:9px; width:100%; padding:10px 12px; font-size:12.5px; font-weight:600; text-align:left;';
+  const act = (attrs, icon, label, tip, cls) =>
+    `<button type="button" class="btn um-action${cls ? ' ' + cls : ''}" ${attrs} data-user-label="${safeLabel}" title="${escapeHtmlForPrint(tip)}" style="${btnStyle}">`
+    + `<svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 16px;">${UM_ICON[icon]}</svg>`
+    + `<span>${label}</span></button>`;
   const actions = [
-    act(`data-reset-pw="${u.id}"`, 'Reset password', 'Set a new password for this person.'),
-    isGuard ? act(`data-reset-face="${u.id}"`, 'Reset face', 'Clear their enrolled face. They enroll a new one at their next clock-in.') : '',
-    isGuard ? act(`data-manage-leave="${u.id}"`, onLeave ? 'Edit leave' : 'Mark on leave', onLeave ? `On leave until ${new Date(onLeave.endDate + 'T00:00:00').toLocaleDateString()}.` : 'Record leave dates so they are not expected on duty.') : '',
+    act(`data-reset-pw="${u.id}"`, 'key', 'Reset password', 'Set a new password for this person'),
+    isGuard ? act(`data-reset-face="${u.id}"`, 'face', 'Reset face', 'Clear their enrolled face; they enroll again at their next clock-in') : '',
+    isGuard ? act(`data-manage-leave="${u.id}"`, 'cal', onLeave ? 'Edit leave' : 'Mark on leave', onLeave ? 'On leave until ' + new Date(onLeave.endDate + 'T00:00:00').toLocaleDateString() : 'Record leave dates') : '',
     isSelf ? '' : (u.deactivated
-      ? act(`data-reactivate-user="${u.id}"`, 'Reactivate', 'Let them sign in again.')
-      : act(`data-deactivate-user="${u.id}"`, 'Deactivate', 'Blocks sign-in. All their history is kept.'))
-  ].join('');
+      ? act(`data-reactivate-user="${u.id}"`, 'redo', 'Reactivate', 'Let them sign in again')
+      : act(`data-deactivate-user="${u.id}"`, 'ban', 'Deactivate', 'Blocks sign-in; all history is kept'))
+  ].filter(Boolean).join('');
+  const secTitle = 'font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:var(--muted); margin-bottom:8px;';
+  const section = 'border-top:1px solid var(--border); margin-top:16px; padding-top:14px;';
+  const inputStyle = 'width:100%; box-sizing:border-box;';
   return `
-    <div class="um-name">${escapeHtmlForPrint(u.full_name || '—')}${u.deactivated ? ' <span class="st st-warn" style="margin-left:4px;">Deactivated</span>' : ''}</div>
-    <div class="result-meta">${escapeHtmlForPrint(u.role || '—')}${site ? ' · ' + escapeHtmlForPrint(site.name) : ''} · ${escapeHtmlForPrint(u.email)}</div>
+    <div class="um-name" style="font-size:16px; font-weight:600;">${escapeHtmlForPrint(u.full_name || '—')}${u.deactivated ? ' <span class="st st-warn" style="margin-left:4px;">Deactivated</span>' : ''}</div>
+    <div class="result-meta" style="margin-top:2px;">${escapeHtmlForPrint(u.role || '—')}${site ? ' · ' + escapeHtmlForPrint(site.name) : ''} · ${escapeHtmlForPrint(u.email)}</div>
 
-    <div class="um-section">
-      <div class="um-title">Details</div>
-      <div class="um-fields${isGuard ? '' : ' single'}">
-        ${isGuard ? `<div><div class="field-label">Employee #</div><input type="text" id="umEmpNum" value="${escapeHtmlForPrint(u.employee_number || '')}" placeholder="—"></div>` : ''}
-        <div><div class="field-label">Phone</div><input type="tel" id="umPhone" value="${escapeHtmlForPrint(u.phone || '')}" placeholder="—"></div>
+    <div style="${section}">
+      <div style="${secTitle}">Details</div>
+      <div style="display:grid; grid-template-columns:${isGuard ? '1fr 1fr' : '1fr'}; gap:10px; margin-bottom:12px;">
+        ${isGuard ? `<div><div class="field-label" style="margin-top:0;">Employee #</div><input type="text" id="umEmpNum" value="${escapeHtmlForPrint(u.employee_number || '')}" placeholder="—" style="${inputStyle}"></div>` : ''}
+        <div><div class="field-label" style="margin-top:0;">Phone</div><input type="tel" id="umPhone" value="${escapeHtmlForPrint(u.phone || '')}" placeholder="—" style="${inputStyle}"></div>
       </div>
-      <button type="button" class="btn btn-primary" id="umSaveBtn" style="width:auto; padding:8px 16px;">Save changes</button>
+      <button type="button" class="btn btn-primary" id="umSaveBtn" style="width:auto; padding:8px 18px;">Save changes</button>
     </div>
 
-    <div class="um-section">
-      <div class="um-title">Actions</div>
-      ${actions}
+    <div style="${section}">
+      <div style="${secTitle}">Actions</div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">${actions}</div>
     </div>
 
     ${isSelf ? '' : `
-    <div class="um-section um-danger">
-      <div class="um-title">Danger zone</div>
-      ${act(`data-del-user="${u.id}"`, 'Delete user', 'Permanently removes their login and profile. This can\'t be undone.', 'is-danger')}
+    <div style="${section}">
+      ${act(`data-del-user="${u.id}"`, 'trash', 'Delete user', 'Permanently removes their login and profile. This can\'t be undone', 'is-danger')}
     </div>`}`;
 }
 function closeUserManageModal(){
