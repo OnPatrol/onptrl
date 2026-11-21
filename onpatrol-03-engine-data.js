@@ -190,6 +190,30 @@ function parseHM(hm){
 // A schedule only actually runs while both it and its route are switched
 // on — turning a route off should pause every schedule built on it without
 // having to also flip each schedule individually.
+// Off-periods: every time a schedule or route is switched off, the database records the
+// start (and, once it is switched back on, the end) in its off_periods list. No patrol is ever
+// expected inside an off-period — so a schedule that was off for three days doesn't suddenly
+// show three days of "missed" rounds when it is switched back on, and reports never invent
+// misses for a time when the schedule was off.
+function parseOffPeriods(v){
+  if (!Array.isArray(v)) return [];
+  return v.map(p => ({
+    from: p && p.from ? new Date(p.from).getTime() : NaN,
+    to: p && p.to ? new Date(p.to).getTime() : null
+  })).filter(p => !isNaN(p.from));
+}
+function isOffAt(ent, t){
+  if (!ent) return false;
+  const ps = ent.offPeriods || [];
+  let hasOpen = false;
+  for (const p of ps){
+    if (p.to == null) hasOpen = true;
+    if (t >= p.from && (p.to == null || t < p.to)) return true;
+  }
+  // Switched off but no start time on record (shouldn't happen): treat it as off throughout —
+  // better to show nothing than to invent missed patrols.
+  return ent.active === false && !hasOpen;
+}
 function isScheduleLive(sched){
   if (sched.active === false) return false;
   const r = routes.find(rt => rt.id === sched.routeId);
@@ -206,6 +230,7 @@ function patrolCreationFloor(sched){
 function generateInstances(sched, winStart, winEnd){
   const out = [];
   const floorMs = patrolCreationFloor(sched);
+  const sRoute = routes.find(x => x.id === sched.routeId);
   const start = parseHM(sched.shiftStart);
   const end = parseHM(sched.shiftEnd);
   const dayMs = 24*60*60*1000;
@@ -218,7 +243,7 @@ function generateInstances(sched, winStart, winEnd){
     if (shiftEnd <= shiftStart) shiftEnd += dayMs;
     const stepMs = sched.intervalMinutes * 60000;
     for (let t = shiftStart; t < shiftEnd; t += stepMs){
-      if (t >= winStart && t <= winEnd && t >= floorMs){
+      if (t >= winStart && t <= winEnd && t >= floorMs && !isOffAt(sched, t) && !isOffAt(sRoute, t)){
         out.push({ id: sched.id + '-' + t, scheduleId: sched.id, routeId: sched.routeId, expectedTime: t, intervalMinutes: sched.intervalMinutes, durationMinutes: sched.durationMinutes, graceMinutes: sched.graceMinutes });
       }
     }
@@ -459,6 +484,7 @@ async function loadRoutes(){
     siteId: r.site_id,
     strictOrder: r.strict_order,
     active: r.active !== false,
+    offPeriods: parseOffPeriods(r.off_periods),
     createdAt: r.created_at ? new Date(r.created_at).getTime() : null,
     cpIds: (rcRows || [])
       .filter(rc => rc.route_id === r.id)
@@ -474,6 +500,7 @@ async function loadSchedules(){
     id: s.id, routeId: s.route_id, intervalMinutes: s.interval_minutes,
     shiftStart: (s.shift_start || '00:00:00').slice(0,5), shiftEnd: (s.shift_end || '00:00:00').slice(0,5),
     durationMinutes: s.duration_minutes, graceMinutes: s.grace_minutes, active: s.active,
+    offPeriods: parseOffPeriods(s.off_periods),
     daysOfWeek: s.days_of_week && s.days_of_week.length ? s.days_of_week : [0,1,2,3,4,5,6],
     createdAt: s.created_at ? new Date(s.created_at).getTime() : null
   }));
