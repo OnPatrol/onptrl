@@ -3,7 +3,7 @@
    It never touches the OnPatrol database, login or realtime traffic — those always go straight to the network.
    Put this file next to index.html (same folder, served over https). */
 
-const VERSION = 'v8';   // bumped: Manage panel uses icon buttons (v7: tidy Users table with a Manage panel (v6: site join approval (v5: switches respected via off-periods (v4 added the 'Guards on leave' list) (v3 added xlsx/SheetJS for report downloads)
+const VERSION = 'v9';   // bumped: hover hints replace long explanations (v8: Manage panel uses icon buttons (v7: tidy Users table with a Manage panel (v6: site join approval (v5: switches respected via off-periods (v4 added the 'Guards on leave' list) (v3 added xlsx/SheetJS for report downloads)
 const SHELL = 'onpatrol-shell-' + VERSION;
 const LIBS = 'onpatrol-libs-' + VERSION;
 

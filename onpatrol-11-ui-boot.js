@@ -324,6 +324,121 @@ function uiAfterNotifications(){
 }
 
 // ---- Navigation shell: workspace state, page title, sidebar visibility ----
+// ---------------- Hover hints ----------------
+// One small tooltip used across the app, so screens can stay clean:
+//  - anything with data-tip="..." shows it on hover or keyboard focus (and on tap, for touch screens);
+//  - an icon-only button shows its aria-label;
+//  - old title="..." tooltips are adopted so they look the same;
+//  - a paragraph marked class="hint" folds into an (i) icon beside the heading it sits under.
+const UI_INFO_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path d="M12 16v-4.5M12 8h.01"/></svg>';
+(function initHints(){
+  const tip = document.createElement('div');
+  tip.id = 'uiTip'; tip.setAttribute('role', 'tooltip');
+  document.body.appendChild(tip);
+  let cur = null, lastPointer = 'mouse';
+  const norm = s => String(s || '').replace(/\s+/g, ' ').trim();
+  const ICONLESS = 'button[aria-label],a[aria-label],[role="button"][aria-label]';
+  function tipText(el){
+    if (el._hintEl) return norm(el._hintEl.textContent);
+    const t = el.getAttribute('data-tip');
+    if (t) return norm(t);
+    if (el.matches(ICONLESS) && !norm(el.textContent)) return norm(el.getAttribute('aria-label'));
+    return '';
+  }
+  function tipTarget(node){
+    const el = node && node.closest ? node.closest('[data-tip],.info-tip,' + ICONLESS) : null;
+    return el && tipText(el) ? el : null;
+  }
+  function place(el){
+    const r = el.getBoundingClientRect(), m = 8;
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    let left = Math.max(m, Math.min(r.left + r.width / 2 - tw / 2, window.innerWidth - tw - m));
+    let top = r.top - th - 8;
+    if (top < m) top = r.bottom + 8;
+    tip.style.left = left + 'px'; tip.style.top = top + 'px';
+  }
+  function show(el){
+    const text = tipText(el);
+    if (!text) return;
+    cur = el; tip.textContent = text; place(el); tip.classList.add('show');
+  }
+  function hide(){ cur = null; tip.classList.remove('show'); }
+  document.addEventListener('pointerdown', e => { lastPointer = e.pointerType || 'mouse'; }, true);
+  document.addEventListener('pointerover', e => {
+    if (e.pointerType !== 'mouse') return;
+    if (cur && !cur.isConnected) hide();
+    const el = tipTarget(e.target);
+    if (el){ if (el !== cur) show(el); } else if (cur){ hide(); }
+  });
+  document.addEventListener('pointerout', e => {
+    if (e.pointerType !== 'mouse' || !cur) return;
+    if (!e.relatedTarget || !cur.contains(e.relatedTarget)) hide();
+  });
+  document.addEventListener('focusin', e => {
+    const el = tipTarget(e.target);
+    if (el && e.target.matches && e.target.matches(':focus-visible')) show(el);
+  });
+  document.addEventListener('focusout', hide);
+  // Tapping an (i) icon toggles its hint (touch has no hover); tapping anywhere else closes it.
+  document.addEventListener('click', e => {
+    const icon = e.target.closest ? e.target.closest('.info-tip') : null;
+    if (icon){
+      e.preventDefault(); e.stopPropagation();      // don't let a summary/heading underneath react to it
+      if (cur === icon && tip.classList.contains('show') && lastPointer !== 'mouse') hide(); else show(icon);
+      return;
+    }
+    if (cur && !tipTarget(e.target)) hide();
+  }, true);
+  window.addEventListener('scroll', hide, true);
+  window.addEventListener('resize', hide);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') hide(); });
+
+  // Adopt old title="" tooltips so every hint in the app looks and behaves the same.
+  function adoptTitles(root){
+    const els = root.nodeType === 1 ? [root, ...root.querySelectorAll('[title]')] : [];
+    els.forEach(el => {
+      if (el.namespaceURI !== 'http://www.w3.org/1999/xhtml' || !el.hasAttribute('title')) return;
+      const t = el.getAttribute('title');
+      if (t && !el.hasAttribute('data-tip')) el.setAttribute('data-tip', t);
+      el.removeAttribute('title');
+    });
+  }
+  // Fold class="hint" paragraphs into an (i) icon beside the heading above them.
+  const HEAD_SEL = 'h1,h2,h3,h4,.field-label,.step-title,.site-contact-name,.hint-target';
+  function hintTarget(h){
+    if (h.dataset.hintFor) return document.querySelector(h.dataset.hintFor);
+    let node = h;
+    for (let depth = 0; depth < 3 && node && node.parentElement; depth++){
+      let p = node.previousElementSibling, hops = 0;
+      while (p && hops < 8){
+        if (p.matches(HEAD_SEL)) return p;
+        if (p.tagName === 'SUMMARY'){ const st = p.querySelector('.step-title'); if (st) return st; }
+        p = p.previousElementSibling; hops++;
+      }
+      node = node.parentElement;
+    }
+    return null;
+  }
+  function hintify(root){
+    const list = root.nodeType === 1 ? [...(root.matches('.hint') ? [root] : []), ...root.querySelectorAll('.hint:not(.hint-done)')] : [];
+    list.forEach(h => {
+      if (h.classList.contains('hint-done')) return;
+      const target = hintTarget(h);
+      if (!target) return;                           // nothing sensible to attach to: leave the text visible
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'info-tip'; b.setAttribute('aria-label', 'More info');
+      b.innerHTML = UI_INFO_SVG; b._hintEl = h;
+      target.appendChild(b);
+      h.classList.add('hint-done');
+    });
+  }
+  function processAll(root){ adoptTitles(root); hintify(root); }
+  processAll(document.body);
+  new MutationObserver(muts => muts.forEach(m => m.addedNodes.forEach(n => { if (n.nodeType === 1 && n.id !== 'uiTip') processAll(n); })))
+    .observe(document.body, { childList: true, subtree: true });
+  window.uiHintify = hintify;
+})();
+
 const UI_PAGE_META = {
   guard:    ['Guard scan', 'Scan checkpoints, clock in and report incidents.'],
   platform: ['Platform', 'Every client company, their subscription and their usage.'],
@@ -374,7 +489,13 @@ function uiSyncShell(){
   }
   const t = document.getElementById('pageTitle'), d = document.getElementById('pageDesc');
   if (t && meta){ t.textContent = meta[0]; }
-  if (d && meta){ d.textContent = meta[1] || ''; d.style.display = meta[1] ? '' : 'none'; }
+  if (d && meta){ d.textContent = meta[1] || ''; d.style.display = 'none'; }   // the subtitle now lives in the (i) icon beside the title
+  const info = document.getElementById('pageInfo');
+  if (info){
+    if (!info.firstChild) info.innerHTML = UI_INFO_SVG;
+    info.setAttribute('data-tip', (meta && meta[1]) || '');
+    info.style.display = (meta && meta[1]) ? '' : 'none';
+  }
 
   // A panel heading that just repeats the page title is noise — hide it.
   document.querySelectorAll('.dup-title').forEach(h => h.classList.remove('dup-title'));
