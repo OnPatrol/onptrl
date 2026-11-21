@@ -929,3 +929,12 @@ body.no-sidebar #view-guard .cam-box #manualScanStatus{position:fixed; left:12px
 .leave-row .leave-when{flex:0 0 auto; text-align:right; font-size:12px; color:var(--warn); white-space:nowrap;}
 .leave-row.upcoming .leave-when{color:var(--muted);}
 @media (max-width:560px){ .leave-row{flex-wrap:wrap;} .leave-row .leave-when{text-align:left; white-space:normal;} }
+
+/* ---- Site join approval ---- */
+.join-pending-card{border:1px solid var(--border); background:var(--panel-2); border-radius:12px; padding:18px 14px; margin-bottom:14px;}
+.join-pending-card.is-declined{border-color:rgba(227,161,58,.35);}
+.join-pending-ico{width:44px; height:44px; margin:0 auto 10px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:var(--warn-dim); color:var(--warn);}
+.join-pending-ico .icon{width:22px; height:22px; margin:0;}
+@keyframes joinPulse{50%{opacity:.45;}}
+.join-pending-ico.pulse{animation:joinPulse 1.8s ease-in-out infinite;}
+.alert-actions .btn[data-join-decide]{flex:0 0 auto; width:auto; padding:8px 18px;}

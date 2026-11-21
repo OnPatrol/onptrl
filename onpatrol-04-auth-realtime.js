@@ -714,15 +714,25 @@ document.getElementById('joinSiteSubmitBtn').addEventListener('click', async () 
   const btn = document.getElementById('joinSiteSubmitBtn');
   btn.disabled = true;
   try{
-    const { data: joinedSiteId, error } = await sb.rpc('join_site', { p_site_code: code });
-    if (error || !joinedSiteId){
-      errEl.textContent = 'That site code is invalid, or you already belong to a site.';
+    const { data: res, error } = await sb.rpc('request_join_site', { p_site_code: code });
+    if (error){
+      errEl.textContent = 'Could not send your request. Check your connection and try again.';
+      errEl.style.display = 'block';
+      return;
+    }
+    if (!res || res.status !== 'pending'){
+      const reasons = {
+        invalid_code: 'That site code is not valid. Check it with your admin.',
+        not_eligible: 'This account already belongs to a site, or cannot join one.',
+        too_many: 'Too many requests. Please wait a while and try again.'
+      };
+      errEl.textContent = reasons[res && res.reason] || 'That site code is not valid, or this account cannot join a site.';
       errEl.style.display = 'block';
       return;
     }
     document.getElementById('joinSiteModalBg').classList.remove('show');
-    showToast('Joined site', '', 'success');
-    await loadProfileAndApp();
+    showToast('Request sent', 'An admin or controller will review it. You will get access once it is approved.', 'success');
+    await refreshJoinRequestState();
   } catch(err){
     errEl.textContent = err.message;
     errEl.style.display = 'block';
@@ -730,6 +740,62 @@ document.getElementById('joinSiteSubmitBtn').addEventListener('click', async () 
     btn.disabled = false;
   }
 });
+
+// ---- Site join approval: what a guard without a site sees ----
+// A guard who entered a site code has a PENDING request until an admin or controller decides.
+// While pending we check every few seconds (and whenever the app comes back to the screen), and the
+// moment it is approved we reload so the site opens by itself.
+let myJoinRequest = null, joinPollTimer = null;
+function stopJoinPolling(){ if (joinPollTimer){ clearInterval(joinPollTimer); joinPollTimer = null; } }
+function startJoinPolling(){
+  if (joinPollTimer) return;
+  joinPollTimer = setInterval(() => { if (!document.hidden) refreshJoinRequestState(); }, 8000);
+}
+function renderJoinGate(){
+  const pending = !!(myJoinRequest && myJoinRequest.status === 'pending');
+  const declined = !!(myJoinRequest && myJoinRequest.status === 'declined');
+  const set = (id, show) => { const el = document.getElementById(id); if (el) el.style.display = show ? (id === 'guardJoinOptions' ? '' : 'block') : 'none'; };
+  set('guardJoinPending', pending);
+  set('guardJoinDeclined', declined);
+  set('guardJoinOptions', !pending);
+  const siteName = myJoinRequest ? myJoinRequest.site_name : '';
+  const pt = document.getElementById('guardJoinPendingText');
+  if (pt) pt.textContent = pending ? `Your request to join ${siteName} has been sent.` : '';
+  const dt = document.getElementById('guardJoinDeclinedText');
+  if (dt) dt.textContent = declined ? `Your request to join ${siteName} was declined.` : '';
+  if (pending) startJoinPolling(); else stopJoinPolling();
+}
+async function refreshJoinRequestState(){
+  if (!profile || profile.role !== 'guard' || guardSiteId || !session || session.offline){ stopJoinPolling(); return; }
+  if (offlineMode || navigator.onLine === false) return;
+  try{
+    const { data, error } = await sb.from('site_join_requests').select('*').eq('guard_id', session.user.id)
+      .order('requested_at', { ascending: false }).limit(1);
+    if (error) return;
+    myJoinRequest = (data && data[0]) || null;
+    if (myJoinRequest && myJoinRequest.status === 'approved'){
+      // Only act if the profile really has a site now (not, say, a guard who was later removed from one).
+      const { data: fresh } = await sb.from('profiles').select('site_id').eq('id', session.user.id).single();
+      if (fresh && fresh.site_id){
+        stopJoinPolling();
+        showToast('Approved', `You now have access to ${myJoinRequest.site_name}.`, 'success');
+        await loadProfileAndApp();
+        return;
+      }
+    }
+    renderJoinGate();
+  }catch(e){ console.warn('join request check', e); }
+}
+document.getElementById('guardJoinCancelBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('guardJoinCancelBtn');
+  btn.disabled = true;
+  try{
+    const { error } = await sb.rpc('cancel_join_request');
+    if (error){ showToast('Could not cancel', error.message, 'danger'); return; }
+    await refreshJoinRequestState();
+  } finally { btn.disabled = false; }
+});
+document.addEventListener('visibilitychange', () => { if (!document.hidden && myJoinRequest && myJoinRequest.status === 'pending') refreshJoinRequestState(); });
 
 async function loadProfileAndApp(){
   let prof = null, error = null;
@@ -815,6 +881,7 @@ async function loadProfileAndApp(){
   const hasSite = profile.role !== 'guard' || !!guardSiteId;
   document.getElementById('guardNoSiteGate').style.display = hasSite ? 'none' : 'block';
   document.getElementById('guardMainContent').style.display = hasSite ? '' : 'none';   // '' lets the stylesheet decide (flex on a guard's phone)
+  if (profile.role === 'guard' && !hasSite) refreshJoinRequestState(); else { myJoinRequest = null; stopJoinPolling(); }
 
   // Platform tab is separate from the role switch above — it's not a
   // client-facing role at all, just a hidden extra flag on top of whatever

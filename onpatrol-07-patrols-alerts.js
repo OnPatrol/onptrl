@@ -62,7 +62,9 @@ function announceNewAlerts(){
   const news = fresh.filter(n => !n.cleared_at && n.severity !== 'green'
     && nowMs() - new Date(n.occurred_at).getTime() < 15 * 60 * 1000);
   news.filter(n => n.kind === 'panic').forEach(n => { SOUND.panic(); showToast('Panic alert', n.title + (sitePhoneOf(n.site_id) ? ' · Site phone ' + cleanPhone(sitePhoneOf(n.site_id)) : ''), 'danger'); });
-  const others = news.filter(n => n.kind !== 'panic');
+  const joins = news.filter(n => n.kind === 'join_request');
+  if (joins.length){ SOUND.fiveMinWarning(); joins.slice(0, 3).forEach(n => showToast('Join request', n.title, 'warn')); }
+  const others = news.filter(n => n.kind !== 'panic' && n.kind !== 'join_request');
   others.slice(0, 3).forEach(n => showToast(n.severity === 'red' ? 'New critical alert' : 'New warning', n.title, n.severity === 'red' ? 'danger' : 'warn'));
   if (others.length > 3) showToast(`${others.length - 3} more new alerts`, 'See Attention required on the dashboard.', 'warn');
 }
@@ -152,7 +154,7 @@ function renderNotificationsInto(activeId, resolvedId, filterKey){
   // still exists in the DB (and in admin → reports) for follow-up, it just isn't
   // surfaced as a live alert for the current shift anymore.
   const shiftStart = currentShiftStart(nowMs());
-  let active = notifications.filter(n => !n.cleared_at && !isGreenExpired(n) && new Date(n.occurred_at).getTime() >= shiftStart);
+  let active = notifications.filter(n => !n.cleared_at && !isGreenExpired(n) && (n.kind === 'join_request' || new Date(n.occurred_at).getTime() >= shiftStart));   // join requests wait for a decision, whatever the shift
   let resolved = notifications.filter(n => n.cleared_at || isGreenExpired(n));
 
   if (filters.site){ active = active.filter(n => n.site_id === filters.site); resolved = resolved.filter(n => n.site_id === filters.site); }
@@ -166,7 +168,7 @@ function renderNotificationsInto(activeId, resolvedId, filterKey){
 
   if (activeEl){
     // Most urgent first: panic, then critical, warning, and completed patrols last.
-    const rank = n => n.kind === 'panic' ? 0 : n.severity === 'red' ? 1 : n.severity === 'orange' ? 2 : 3;
+    const rank = n => n.kind === 'panic' ? 0 : n.severity === 'red' ? 1 : n.kind === 'join_request' ? 2 : n.severity === 'orange' ? 3 : 4;
     active.sort((a, b) => rank(a) - rank(b) || new Date(b.occurred_at) - new Date(a.occurred_at));
     // On the controller dashboard, routine "patrol completed" notices collapse into one
     // line (with 70 sites they'd bury the alerts). Pick "Successful patrol" in the type
@@ -189,6 +191,7 @@ function renderNotificationsInto(activeId, resolvedId, filterKey){
     activeEl.querySelectorAll('[data-notif-submit]').forEach(btn => {
       btn.addEventListener('click', () => submitNotificationComment(btn.dataset.notifSubmit, activeEl));
     });
+    wireJoinRequestButtons(activeEl);
   }
 
   if (resolvedEl){
@@ -228,7 +231,46 @@ function renderNotifications(){
     if (focusId && i.dataset.notifComment === focusId){ i.focus(); try{ i.setSelectionRange(caret, caret); }catch(e){} }
   });
 }
+// ---- Site join approval: Accept / Decline on the dashboard alert ----
+function wireJoinRequestButtons(rootEl){
+  if (!rootEl) return;
+  rootEl.querySelectorAll('[data-join-decide]').forEach(btn => {
+    btn.addEventListener('click', () => decideJoinRequest(btn.dataset.joinDecide, btn.dataset.joinApprove === '1', rootEl));
+  });
+}
+async function decideJoinRequest(requestId, approve, rootEl){
+  const btns = Array.from(document.querySelectorAll(`[data-join-decide="${requestId}"]`));
+  btns.forEach(b => b.disabled = true);
+  const n = notifications.find(x => x.join_request_id === requestId);
+  try{
+    const { data, error } = await sb.rpc('decide_join_request', { p_request_id: requestId, p_approve: approve });
+    if (error){ showToast('Could not save your decision', error.message, 'danger'); return; }
+    const st = data && data.status;
+    if (data && data.already_decided) showToast('Already decided', 'Someone else has already handled this request.', 'warn');
+    else if (st === 'approved') showToast('Guard approved', (n ? n.title.replace(' wants to join ', ' now has access to ') : 'The guard can now use the site') + '.', 'success');
+    else if (st === 'declined') showToast('Request declined', 'The guard has been told.', 'success');
+    else showToast('Could not approve', 'That guard is no longer available to join this site.', 'warn');
+    if (n && n.site_id) delete guardDirectoryCache[n.site_id];     // so the new guard shows up in guard lists
+    await loadNotifications();
+    renderNotifications();
+    if (profile.role === 'admin' && typeof loadUsersAdmin === 'function'){ try{ await loadUsersAdmin(); }catch(e){} }
+  } finally {
+    btns.forEach(b => b.disabled = false);
+  }
+}
+function renderAdminJoinRequests(){
+  const panel = document.getElementById('adminJoinPanel');
+  const list = document.getElementById('adminJoinRequests');
+  if (!panel || !list) return;
+  const pending = notifications.filter(n => n.kind === 'join_request' && !n.cleared_at)
+    .sort((a, b) => new Date(a.occurred_at) - new Date(b.occurred_at));
+  panel.style.display = pending.length ? '' : 'none';
+  list.innerHTML = pending.map(n => uiJoinRequestCard(n, sites.find(s => s.id === n.site_id))).join('');
+  wireJoinRequestButtons(list);
+}
+
 function renderNotificationsCore(){
+  renderAdminJoinRequests();
   populateFilterSiteSelect('adminNotifSiteFilter', notifFilters.admin.site);
   populateFilterSiteSelect('ctrlNotifSiteFilter', notifFilters.ctrl.site);
   renderNotificationsInto(null, 'adminNotifResolved', 'admin');

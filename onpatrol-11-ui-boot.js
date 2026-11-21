@@ -23,6 +23,7 @@ document.querySelectorAll('.tab-btn[data-reports-tab]').forEach(btn => {
 // schedules, routes, sites, profile) and only ever writes to the DOM. It never
 // touches the database, the realtime channels or any existing handler.
 const UI_ICONS = {
+  userPlus:'<svg class="icon" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>',
   alert:  '<svg class="icon" viewBox="0 0 24 24"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><path d="M12 9v4M12 17h.01"/></svg>',
   octagon:'<svg class="icon" viewBox="0 0 24 24"><path d="M7.86 2h8.28L22 7.86v8.28L16.14 22H7.86L2 16.14V7.86Z"/><path d="M12 8v4M12 16h.01"/></svg>',
   check:  '<svg class="icon" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>',
@@ -36,7 +37,8 @@ const UI_KIND_LABELS = {
   late_patrol: 'Late patrol',
   radius_alert: 'Position alert',
   tag_skipped: 'Tag skipped',
-  success_patrol: 'Patrol completed'
+  success_patrol: 'Patrol completed',
+  join_request: 'Join request'
 };
 
 // "14:05" over "Today" / "Yesterday" / "Sep 19" — readable at a glance in tables.
@@ -57,7 +59,31 @@ function uiScanResultLabel(result){
 }
 
 // ---- Alert + incident card builders (used by the existing render functions) ----
+// A guard who entered a site code and is waiting to be let in. Accept / Decline replace the
+// usual comment box; the decision (and who made it) is recorded against the alert.
+function uiJoinRequestCard(n, site){
+  return `
+    <div class="alert-card sev-orange is-join">
+      <div class="alert-head">
+        <div class="alert-ico">${UI_ICONS.userPlus}</div>
+        <div class="alert-main">
+          <div class="alert-title">${escapeHtmlForPrint(n.title)}</div>
+          <div class="alert-context">${notifContextLine(n, site)}</div>
+          <div class="alert-tags"><span class="alert-kind">Join request</span></div>
+        </div>
+        <div class="alert-side">
+          <span class="st st-warn">Approval needed</span>
+          <span class="alert-time">${timeAgo(n.occurred_at)}</span>
+        </div>
+      </div>
+      <div class="alert-actions">
+        <button class="btn btn-primary" type="button" data-join-decide="${n.join_request_id}" data-join-approve="1">Accept</button>
+        <button class="btn" type="button" data-join-decide="${n.join_request_id}" data-join-approve="0">Decline</button>
+      </div>
+    </div>`;
+}
 function uiAlertCard(n, site){
+  if (n.kind === 'join_request') return uiJoinRequestCard(n, site);
   const isPanic = n.kind === 'panic';
   const sev = n.severity === 'red' ? { label: 'Critical', tone: 'crit' }
     : n.severity === 'orange' ? { label: 'Warning', tone: 'warn' }
@@ -143,7 +169,7 @@ function uiIncidentCard(inc, site, guardEntry){
 function uiOpenAlertCount(){
   if (typeof notifications === 'undefined' || !Array.isArray(notifications)) return 0;
   const shiftStart = currentShiftStart(nowMs());
-  return notifications.filter(n => !n.cleared_at && n.severity !== 'green' && new Date(n.occurred_at).getTime() >= shiftStart).length;
+  return notifications.filter(n => !n.cleared_at && n.severity !== 'green' && (n.kind === 'join_request' || new Date(n.occurred_at).getTime() >= shiftStart)).length;   // a join request stays open until decided, even across a shift change
 }
 function paintKpis(){
   document.querySelectorAll('.stat-card.k-crit, .stat-card.k-warn').forEach(card => {

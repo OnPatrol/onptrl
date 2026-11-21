@@ -103,11 +103,24 @@
         <div class="phone-notch"></div>
 
         <div id="guardNoSiteGate" style="display:none; text-align:center; padding:30px 10px;">
+          <div id="guardJoinPending" class="join-pending-card" style="display:none;">
+            <div class="join-pending-ico pulse"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+            <div style="font-size:15px; font-weight:600; margin-bottom:6px;">Pending approval</div>
+            <div class="result-meta" id="guardJoinPendingText" style="margin-bottom:10px;"></div>
+            <div class="result-meta" style="margin-bottom:14px;">An admin or controller has to approve you before you can use the site. This screen updates by itself as soon as they decide.</div>
+            <button class="btn" id="guardJoinCancelBtn" style="width:auto; padding:9px 16px;">Cancel request</button>
+          </div>
+          <div id="guardJoinDeclined" class="join-pending-card is-declined" style="display:none;">
+            <div style="font-size:14px; font-weight:600; margin-bottom:4px;">Request declined</div>
+            <div class="result-meta" id="guardJoinDeclinedText"></div>
+            <div class="result-meta" style="margin-top:6px;">Check the site code with your admin, or try another site below.</div>
+          </div>
+          <div id="guardJoinOptions">
           <div style="font-size:15px; font-weight:600; margin-bottom:4px;">Join your company</div>
           <div class="result-meta" style="margin-bottom:20px;">Ask your admin for the code that matches your role.</div>
 
           <div style="font-size:12.5px; font-weight:600; margin-bottom:4px;">Guards</div>
-          <div class="result-meta" style="margin-bottom:10px;">Enter your site code to start scanning.</div>
+          <div class="result-meta" style="margin-bottom:10px;">Enter your site code. An admin or controller approves it before you can start scanning.</div>
           <button class="btn btn-primary" id="guardJoinSiteBtn" style="width:auto; padding:9px 16px;">Join a site</button>
 
           <div style="border-top:1px solid var(--border); margin:22px 0 18px;"></div>
@@ -117,6 +130,7 @@
           <div id="guardControllerError" class="result-meta" style="color:var(--danger); display:none; margin-bottom:8px; font-family:var(--sans);"></div>
           <input type="text" id="guardControllerCode" placeholder="Controller code" autocomplete="off" autocapitalize="characters" style="text-align:center; margin-bottom:10px;">
           <button class="btn" id="guardClaimControllerBtn" style="width:auto; padding:9px 16px;">Join as a controller</button>
+          </div>
         </div>
 
         <div id="guardMainContent">
@@ -240,6 +254,11 @@
     </div>
 
     <div class="admin-view active" id="admin-notifications">
+      <div class="panel" id="adminJoinPanel" style="display:none;">
+        <h2>Join requests</h2>
+        <div class="result-meta" style="margin-bottom:10px;">Guards who entered a site code and are waiting for approval. They only get access once you accept.</div>
+        <div id="adminJoinRequests" class="alert-list"></div>
+      </div>
       <div class="panel">
         <h2>Recently resolved</h2>
         <div class="result-meta" style="margin-bottom:10px;">Alerts the control room has commented on and cleared, from the last 24 hours. Live monitoring and clearing happens on the Controller dashboard — the full permanent history is in Reports → Controller Comments.</div>
@@ -254,6 +273,7 @@
               <option value="radius_alert">Position alert</option>
               <option value="tag_skipped">Skipped tag</option>
               <option value="success_patrol">Successful patrol</option>
+              <option value="join_request">Join request</option>
             </select>
           </div>
         </div>
@@ -890,6 +910,7 @@
                 <option value="radius_alert">Position alert</option>
                 <option value="tag_skipped">Skipped tag</option>
                 <option value="success_patrol">Successful patrol</option>
+              <option value="join_request">Join request</option>
               </select>
             </div>
           </div>
@@ -1396,7 +1417,7 @@
 <div class="qr-modal-bg" id="joinSiteModalBg">
   <div class="detail-modal">
     <h2 style="margin:0 0 4px; font-size:16px;">Join a site</h2>
-    <div class="result-meta" style="margin-bottom:14px;">Enter the site code your admin gave you.</div>
+    <div class="result-meta" style="margin-bottom:14px;">Enter the site code your admin gave you. Your request is sent to the control room for approval.</div>
     <div id="joinSiteError" class="result-meta" style="color:var(--danger); display:none; margin-bottom:10px; font-family:var(--sans);"></div>
 
     <div class="field-label" style="margin-top:0;">Site code</div>
@@ -1404,7 +1425,7 @@
 
     <div class="btn-row" style="margin-top:14px;">
       <button class="btn" id="joinSiteCancelBtn">Cancel</button>
-      <button class="btn btn-primary" id="joinSiteSubmitBtn">Join site</button>
+      <button class="btn btn-primary" id="joinSiteSubmitBtn">Request to join</button>
     </div>
   </div>
 </div>
