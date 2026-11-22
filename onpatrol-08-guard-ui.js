@@ -735,8 +735,8 @@ let faceLowLight = false;
 let faceLastBrightnessCheckAt = 0;
 let faceBrightnessCanvas = null, faceBrightnessCtx = null;
 const FACE_MATCH_THRESHOLD = 0.55; // faceapi.euclideanDistance — lower is a closer match. Kept for reference; the actual match now happens server-side in clock-in-self/clock-in-teammate using the same value.
-const FACE_DETECT_INTERVAL_MS = 150; // was 350ms — the model itself is the real bottleneck on a slow phone, so this just removes artificially-added wait on faster ones
-const FACE_EAR_HISTORY_MAX = 50;     // ~7-8s of readings at the interval above
+const FACE_DETECT_INTERVAL_MS = 40;  // watching for a blink now only runs the light detector + landmarks (the heavy recognition network runs once, after the blink), so frames come much faster
+const FACE_EAR_HISTORY_MAX = 80;     // a few seconds of readings at that pace
 const FACE_EAR_CLOSE_RATIO = 0.78;        // normal conditions: eye counted as "closing" once EAR drops below this fraction of the recent open-eye baseline
 const FACE_EAR_CLOSE_RATIO_LENIENT = 0.88; // low light, or no blink caught for a while: a smaller dip is enough — camera noise can blur a fast blink's lowest point
 const FACE_EAR_OPEN_RATIO = 0.88;         // normal conditions: and "reopened" once it recovers above this fraction — completing one blink
@@ -851,9 +851,11 @@ async function detectFaceLoop(){
   // staring at a camera that's technically pointed right at them.
   const detectorOptions = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: faceLowLight ? 0.3 : 0.5 });
   try {
-    const det = await faceapi.detectSingleFace(video, detectorOptions).withFaceLandmarks().withFaceDescriptor();
+    // Light models only while watching for the blink: face finder + eye landmarks. The heavy
+    // recognition network (the face descriptor) is deliberately NOT run here - it ran on every frame
+    // before, which left only a few frames a second and let quick blinks slip between them.
+    const det = await faceapi.detectSingleFace(video, detectorOptions).withFaceLandmarks();
     if (det){
-      lastFaceDescriptor = Array.from(det.descriptor);
       box.classList.add('match');
       faceStableFrames++;
 
@@ -879,7 +881,19 @@ async function detectFaceLoop(){
         faceCaptureArmed = true;
         box.classList.remove('match'); box.classList.add('verified');
         statusEl.textContent = 'Verified — capturing…';
-        setTimeout(() => closeFaceModal({ descriptor: lastFaceDescriptor }), 300);
+        // Blink confirmed: now run the recognition network ONCE, on a fresh frame (eyes open again).
+        let full = null;
+        try{ full = await faceapi.detectSingleFace(video, detectorOptions).withFaceLandmarks().withFaceDescriptor(); }catch(e){}
+        if (!faceStream) return;                       // the guard closed the window in the meantime
+        if (!full){                                    // face left the frame at the last instant: keep watching
+          faceCaptureArmed = false; faceBlinkSeen = false; faceEyeState = 'open'; faceStableFrames = 0;
+          box.classList.remove('verified');
+          faceDetectTimer = setTimeout(detectFaceLoop, FACE_DETECT_INTERVAL_MS);
+          return;
+        }
+        lastFaceDescriptor = Array.from(full.descriptor);
+        const descriptor = lastFaceDescriptor;
+        setTimeout(() => closeFaceModal({ descriptor }), 300);
         return;
       }
       statusEl.textContent = faceLowLight
@@ -888,7 +902,6 @@ async function detectFaceLoop(){
           ? 'Still waiting for a blink — make sure your eyes are visible.'
           : 'Face detected — blink naturally to verify it\u2019s really you…');
     } else {
-      lastFaceDescriptor = null;
       box.classList.remove('match');
       faceStableFrames = 0;
       statusEl.textContent = faceLowLight ? 'Low light — position your face inside the oval…' : 'Position your face inside the oval…';
