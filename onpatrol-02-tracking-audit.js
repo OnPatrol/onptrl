@@ -13,7 +13,9 @@ function sitePhoneOf(siteId){ const s = sites.find(x => x.id === siteId); return
 
 // ---------------- Live tracking: control-room side (admin + controller) ----------------
 const TRACK_MINUTES = 30;
-const TRACK_FRESH_MS = 90 * 1000;   // a position older than this is shown as "no recent signal"
+const TRACK_FRESH_MS = 90 * 1000;   // (kept for older rows) a position older than this is shown as "no recent signal"
+const TRACK_ONLINE_MS = 45 * 1000;        // heard from the phone this recently = online (the phone reports in every 15 s)
+const TRACK_BACKGROUND_MS = 10 * 60 * 1000;   // after the app is sent to the background, allow this long before calling it offline
 const trk = { prefix: null, siteId: null, map: null, layer: null, requests: [], devices: [], trails: new Map(), timer: null, channel: null, follow: true, fitted: false, wired: {} };
 const trkEl = id => document.getElementById(id);
 
@@ -48,11 +50,38 @@ function trackingMarkup(p){
 function initTrackingViews(){
   ['ctrl', 'admin'].forEach(p => { const el = trkEl(p + '-tracking'); if (el && !el.innerHTML.trim()) el.innerHTML = trackingMarkup(p); });
 }
+// How a tracked phone is doing, from the last time the control room heard from it (stamped by the server).
+//   online     - reporting in normally
+//   background - the guard switched away from the app; browsers pause it, so "offline" would be a guess
+//   offline    - not heard from for a while: no signal, switched off, or battery flat
+function trackingDeviceState(d){
+  const age = Math.max(0, Date.now() - new Date(d.seen_at || d.updated_at).getTime());
+  if (age <= TRACK_ONLINE_MS) return { key: d.app_state === 'hidden' ? 'background' : 'online', age };
+  if (d.app_state === 'hidden' && age <= TRACK_BACKGROUND_MS) return { key: 'background', age };
+  return { key: 'offline', age };
+}
+function trackingAgo(ms){
+  const s = Math.max(0, Math.round(ms / 1000));
+  return s < 60 ? s + 's' : s < 3600 ? Math.round(s / 60) + 'm' : Math.round(s / 3600) + 'h';
+}
+const TRACK_STATE_CHIP = {
+  online:     '<span class="st st-success">Online</span>',
+  background: '<span class="st st-warn">App in background</span>',
+  offline:    '<span class="st st-crit">Offline</span>'
+};
+function trackingBatteryHtml(d, stateKey){
+  if (d.battery_pct == null) return '<span data-tip="This phone\'s browser does not share its battery level.">battery unknown</span>';
+  const note = stateKey === 'offline' ? ' (last known)' : '';
+  const txt = `battery ${d.battery_pct}%${d.charging ? ' · charging' : ''}${note}`;
+  return d.battery_pct <= 20 && !d.charging
+    ? `<span style="color:var(--danger); font-weight:600;">${txt} · low</span>` : txt;
+}
 function trackingSiteState(siteId){
   const req = trk.requests.find(r => r.site_id === siteId);
   if (!req) return 'off';
-  const fresh = trk.devices.some(d => d.site_id === siteId && Date.now() - new Date(d.updated_at).getTime() < TRACK_FRESH_MS);
-  return fresh ? 'live' : 'waiting';
+  const devs = trk.devices.filter(d => d.site_id === siteId);
+  if (!devs.length) return 'waiting';
+  return devs.some(d => trackingDeviceState(d).key !== 'offline') ? 'live' : 'offline';
 }
 function trackingViewOpened(p){
   initTrackingViews();
@@ -98,7 +127,7 @@ function renderTrackingList(){
   if (!list.length){ el.innerHTML = '<div class="result-meta">No sites match.</div>'; return; }
   el.innerHTML = list.map(s => {
     const st = trackingSiteState(s.id);
-    const chip = st === 'live' ? '<span class="st st-success">Live</span>' : st === 'waiting' ? '<span class="st st-warn">Waiting for phone</span>' : '';
+    const chip = st === 'live' ? '<span class="st st-success">Live</span>' : st === 'waiting' ? '<span class="st st-warn">Waiting for phone</span>' : st === 'offline' ? '<span class="st st-crit">Phone offline</span>' : '';
     return `
       <div class="site-contact-row track-site${trk.siteId === s.id ? ' selected' : ''}">
         <div style="flex:1; min-width:0;">
@@ -117,8 +146,8 @@ function trackingPanelUi(){
   trkEl(p + 'TrackTitle').textContent = s ? s.name : 'Site';
   trkEl(p + 'TrackPhone').innerHTML = s && s.phone ? `Site phone: ${phoneLinkHtml(s.phone)}` : '<span style="color:var(--warn);">No site phone set</span>';
   const chip = trkEl(p + 'TrackStatus');
-  chip.className = 'st ' + (st === 'live' ? 'st-success' : st === 'waiting' ? 'st-warn' : 'st-info');
-  chip.textContent = st === 'live' ? 'Live' : st === 'waiting' ? 'Waiting for phone' : 'Not tracking';
+  chip.className = 'st ' + (st === 'live' ? 'st-success' : st === 'waiting' ? 'st-warn' : st === 'offline' ? 'st-crit' : 'st-info');
+  chip.textContent = st === 'live' ? 'Live' : st === 'waiting' ? 'Waiting for phone' : st === 'offline' ? 'Phone offline' : 'Not tracking';
   trkEl(p + 'TrackStartBtn').style.display = st === 'off' ? '' : 'none';
   trkEl(p + 'TrackExtendBtn').style.display = st === 'off' ? 'none' : '';
   trkEl(p + 'TrackStopBtn').style.display = st === 'off' ? 'none' : '';
@@ -132,11 +161,14 @@ function trackingPanelUi(){
     info = devs.length
       ? devs.map(d => {
           const name = (teamDirectory.find(u => u.id === d.user_id) || {}).full_name || 'Phone';
-          const age = Math.max(0, Math.round((Date.now() - new Date(d.updated_at).getTime()) / 1000));
-          const bits = [`updated ${age < 60 ? age + 's' : Math.round(age / 60) + 'm'} ago`];
+          const ds = trackingDeviceState(d);
+          const fixAge = Math.max(0, Date.now() - new Date(d.updated_at).getTime());
+          const bits = [TRACK_STATE_CHIP[ds.key]];
+          if (ds.key !== 'online') bits.push(`last seen ${trackingAgo(ds.age)} ago`);
+          bits.push(`position ${trackingAgo(fixAge)} ago`);
           if (d.accuracy_m != null) bits.push(`±${Math.round(d.accuracy_m)} m`);
           if (d.speed_mps != null && d.speed_mps > 0.5) bits.push(`${Math.round(d.speed_mps * 3.6)} km/h`);
-          if (d.battery_pct != null) bits.push(`battery ${d.battery_pct}%`);
+          bits.push(trackingBatteryHtml(d, ds.key));
           return `<b>${escapeHtmlForPrint(name)}</b> · ${bits.join(' · ')}`;
         }).join('<br>')
       : 'Waiting for the phone. It must have the app open on its screen with a signal. It usually starts within 10 seconds.';
@@ -173,15 +205,16 @@ function renderTrackingMap(refit){
   let latest = null;
   devs.forEach(d => {
     const ll = [d.lat, d.lng];
-    const stale = Date.now() - new Date(d.updated_at).getTime() > TRACK_FRESH_MS;
+    const ds = trackingDeviceState(d);
+    const stale = ds.key === 'offline';
     const trail = trk.trails.get(d.user_id) || [];
     const last = trail[trail.length - 1];
     if (!last || last[0] !== ll[0] || last[1] !== ll[1]){ trail.push(ll); if (trail.length > 100) trail.shift(); trk.trails.set(d.user_id, trail); }
     if (trail.length > 1) L.polyline(trail, { color: stale ? '#9ca3af' : '#2563eb', weight: 3, opacity: 0.6 }).addTo(trk.layer);
     if (d.accuracy_m) L.circle(ll, { radius: d.accuracy_m, color: '#2563eb', weight: 1, fillOpacity: 0.08 }).addTo(trk.layer);
     const name = (teamDirectory.find(u => u.id === d.user_id) || {}).full_name || 'Phone';
-    L.circleMarker(ll, { radius: 9, color: '#fff', weight: 3, fillColor: stale ? '#9ca3af' : '#2563eb', fillOpacity: 1 })
-      .bindTooltip(escapeHtmlForPrint(name) + (stale ? ' · no recent signal' : ''), { permanent: true, direction: 'top', offset: [0, -10] }).addTo(trk.layer);
+    L.circleMarker(ll, { radius: 9, color: '#fff', weight: 3, fillColor: stale ? '#9ca3af' : ds.key === 'background' ? '#d97706' : '#2563eb', fillOpacity: 1 })
+      .bindTooltip(escapeHtmlForPrint(name) + (stale ? ' · offline' : ds.key === 'background' ? ' · app in background' : ''), { permanent: true, direction: 'top', offset: [0, -10] }).addTo(trk.layer);
     pts.push(ll);
     latest = ll;
   });
@@ -253,7 +286,36 @@ document.addEventListener('click', e => {
 // ---------------- Live tracking: guard phone ----------------
 // The phone only shares its location while a controller/admin has asked for it (the database rejects
 // location updates otherwise), it says so on screen the whole time, and it stops by itself.
-const gtrk = { active: false, silent: false, watchId: null, siteId: null, expiresAt: 0, lastSent: 0, wake: null, checking: false };
+const gtrk = { active: false, silent: false, watchId: null, siteId: null, expiresAt: 0, lastSent: 0, wake: null, checking: false, battery: null, hbTimer: null, hbLast: 0 };
+// The phone reports in every few seconds while tracking - even when the guard is standing still - so the
+// control room can tell "online" from "offline" and see an up-to-date battery level.
+// (Some browsers, e.g. Safari on iPhone and Firefox, cannot read the battery; those report "unknown".)
+async function guardTrackingBatteryInit(){
+  if (gtrk.battery || !navigator.getBattery) return;
+  try{
+    const b = await navigator.getBattery();
+    gtrk.battery = b;
+    ['levelchange', 'chargingchange'].forEach(ev => b.addEventListener(ev, () => guardTrackingHeartbeat(false)));
+  }catch(e){}
+}
+function guardTrackingStatus(){
+  const b = gtrk.battery;
+  return {
+    battery_pct: b ? Math.round(b.level * 100) : null,
+    charging: b ? !!b.charging : null,
+    app_state: document.hidden ? 'hidden' : 'visible'
+  };
+}
+async function guardTrackingHeartbeat(force){
+  if (!gtrk.active || !gtrk.siteId || !session) return;
+  if (navigator.onLine === false) return;                  // nothing can be sent; the control room will see "offline"
+  const now = Date.now();
+  if (!force && now - gtrk.hbLast < 3000) return;          // battery events can arrive in bursts
+  gtrk.hbLast = now;
+  try{
+    await sb.from('device_locations').update(guardTrackingStatus()).eq('site_id', gtrk.siteId).eq('user_id', session.user.id);
+  }catch(e){}
+}
 function guardTrackingIndicator(text){
   const el = document.getElementById('trackingIndicator');
   if (!el) return;
@@ -291,6 +353,9 @@ function guardTrackingStart(req, siteId){
       : 'Live tracking is on — waiting for a location fix…');
   }, { enableHighAccuracy: true, maximumAge: 3000, timeout: 20000 });
   guardTrackingWakeLock();
+  guardTrackingBatteryInit().then(() => guardTrackingHeartbeat(true));
+  if (gtrk.hbTimer) clearInterval(gtrk.hbTimer);
+  gtrk.hbTimer = setInterval(() => guardTrackingHeartbeat(true), 15000);
 }
 async function guardTrackingWakeLock(){
   try{ if (navigator.wakeLock && gtrk.active && !gtrk.wake) gtrk.wake = await navigator.wakeLock.request('screen'); if (gtrk.wake) gtrk.wake.addEventListener('release', () => { gtrk.wake = null; }); }catch(e){}
@@ -302,13 +367,13 @@ async function guardTrackingFix(pos){
   if (now - gtrk.lastSent < 4000) return;
   gtrk.lastSent = now;
   if (!gtrk.silent) guardTrackingIndicator('Live tracking is on — the control room can see this phone\'s location.');
-  let battery = null;
-  try{ if (navigator.getBattery){ const b = await navigator.getBattery(); battery = Math.round(b.level * 100); } }catch(e){}
+  await guardTrackingBatteryInit();
+  const st = guardTrackingStatus();
   const c = pos.coords;
   await sb.from('device_locations').upsert({
     site_id: gtrk.siteId, user_id: session.user.id, lat: c.latitude, lng: c.longitude,
     accuracy_m: c.accuracy != null ? c.accuracy : null, speed_mps: c.speed != null ? c.speed : null,
-    heading_deg: c.heading != null ? c.heading : null, battery_pct: battery, updated_at: new Date().toISOString()
+    heading_deg: c.heading != null ? c.heading : null, battery_pct: st.battery_pct, charging: st.charging, app_state: st.app_state, updated_at: new Date().toISOString()
   }, { onConflict: 'site_id,user_id' });
 }
 function guardTrackingStop(){
@@ -316,11 +381,16 @@ function guardTrackingStop(){
   if (gtrk.wake){ try{ gtrk.wake.release(); }catch(e){} gtrk.wake = null; }
   const siteId = gtrk.siteId;
   gtrk.active = false;
+  if (gtrk.hbTimer){ clearInterval(gtrk.hbTimer); gtrk.hbTimer = null; }
   guardTrackingIndicator('');
   if (siteId && session) sb.from('device_locations').delete().eq('site_id', siteId).eq('user_id', session.user.id).then(() => {}, () => {});
 }
 setInterval(guardTrackingCheck, 10000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden){ guardTrackingCheck(); guardTrackingWakeLock(); } });
+document.addEventListener('visibilitychange', () => {
+  guardTrackingHeartbeat(true);                            // tell the control room whether the app is on screen
+  if (!document.hidden){ guardTrackingCheck(); guardTrackingWakeLock(); }
+});
+window.addEventListener('online', () => guardTrackingHeartbeat(true));   // signal is back: report straight away
 
 // ============================================================
 // Audit trail (admin always; controller only if the admin has switched it on for this company):
