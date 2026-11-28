@@ -507,6 +507,44 @@ document.getElementById('authRoleGuardBtn').addEventListener('click', () => setA
 document.getElementById('authRoleAdminBtn').addEventListener('click', () => setAuthSignupRole('admin'));
 document.getElementById('authRoleControllerBtn').addEventListener('click', () => setAuthSignupRole('controller'));
 
+// ---- Bot protection (Cloudflare Turnstile) ----
+// Supabase can require a Cloudflare Turnstile token on sign-in and sign-up. The check normally runs
+// invisibly (it only shows itself if Cloudflare wants a tap). A token works once, so the widget is
+// reset after every attempt. If the check cannot load (no signal, blocked), the sign-in is not held up:
+// it goes ahead without a token and Supabase decides - it only insists once CAPTCHA is switched on there.
+const TURNSTILE_SITE_KEY = '0x4AAAAAAGWjj5iXPq-AVru9';   // public key; the secret key lives only in Supabase
+let captchaWidgetId = null, captchaToken = null, captchaSetupTries = 0;
+function setupCaptcha(){
+  if (captchaWidgetId !== null) return;
+  if (!window.turnstile){
+    if (captchaSetupTries++ < 60) setTimeout(setupCaptcha, 300);     // the Cloudflare script loads asynchronously
+    return;
+  }
+  const host = document.getElementById('authCaptcha');
+  if (!host) return;
+  captchaWidgetId = window.turnstile.render(host, {
+    sitekey: TURNSTILE_SITE_KEY, theme: 'dark', appearance: 'interaction-only',
+    callback: t => { captchaToken = t; },
+    'expired-callback': () => { captchaToken = null; },
+    'error-callback': () => { captchaToken = null; }
+  });
+}
+async function getCaptchaToken(){
+  setupCaptcha();
+  const start = Date.now();
+  while (!captchaToken){
+    const waited = Date.now() - start;
+    if (waited > (window.turnstile ? 10000 : 3000)) break;           // don't hold the sign-in up if the check is unavailable
+    await new Promise(res => setTimeout(res, 150));
+  }
+  return captchaToken;
+}
+function resetCaptcha(){
+  captchaToken = null;
+  if (window.turnstile && captchaWidgetId !== null){ try{ window.turnstile.reset(captchaWidgetId); }catch(e){} }
+}
+setupCaptcha();
+
 document.getElementById('authSubmitBtn').addEventListener('click', async () => {
   const email = document.getElementById('authEmail').value.trim();
   const password = document.getElementById('authPassword').value;
@@ -541,6 +579,7 @@ document.getElementById('authSubmitBtn').addEventListener('click', async () => {
   const btn = document.getElementById('authSubmitBtn');
   btn.disabled = true;
   try{
+    const captchaTokenNow = await getCaptchaToken();
     if (authMode === 'signup'){
       const fullName = document.getElementById('authFullName').value.trim();
       const phone = document.getElementById('authPhone').value.trim();
@@ -549,6 +588,7 @@ document.getElementById('authSubmitBtn').addEventListener('click', async () => {
       const orgName = document.getElementById('authOrgName').value.trim();
       const creatingCompany = wantsAdmin && authCreatingOrg;
       const { data, error } = await sb.auth.signUp({ email, password, options: {
+        captchaToken: captchaTokenNow || undefined,
         emailRedirectTo: welcomeRedirectUrl(),
         data: { full_name: fullName, phone, signup_role: authSignupRole, org_name: creatingCompany ? orgName : undefined }
       } });
@@ -593,14 +633,17 @@ document.getElementById('authSubmitBtn').addEventListener('click', async () => {
         setAuthMode('signin');
       }
     } else {
-      const { error } = await sb.auth.signInWithPassword({ email, password });
+      const { error } = await sb.auth.signInWithPassword({ email, password, options: { captchaToken: captchaTokenNow || undefined } });
       if (error) throw error;
     }
   } catch(err){
-    errEl.textContent = err.message;
+    errEl.textContent = /captcha/i.test(err.message || '')
+      ? 'The security check did not complete. Check your connection, wait a moment and try again.'
+      : err.message;
     errEl.style.color = 'var(--danger)';
     errEl.style.display = 'block';
   } finally {
+    resetCaptcha();            // a token only works once: get a fresh one for the next attempt
     btn.disabled = false;
   }
 });
